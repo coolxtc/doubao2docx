@@ -277,6 +277,9 @@ class DoubaoHTMLParser:
         
         # 预格式化代码块
         if tag == "pre":
+            # 爬虫注入的 expanded-code pre 会被 code-block-container 处理，这里跳过
+            if element.get("data-expanded-code"):
+                return
             code = element.get_text("\n", strip=True)
             lang = ""
             code_elem = element.find("code")
@@ -303,8 +306,13 @@ class DoubaoHTMLParser:
         if tag == "div" or tag == "section":
             classes = element.get("class", [])
             
-            # 跳过按钮元素
+            # 跳过按钮元素（但先处理其中的 hidden pre）
             if any("button-" in cls for cls in classes):
+                # 检查是否有爬虫注入的 hidden pre
+                expanded_pre = element.find("pre", attrs={"data-expanded-code": "true"})
+                if expanded_pre:
+                    code = expanded_pre.get_text("\n", strip=True)
+                    blocks.append(TextBlock(type="code", content=code, language="language-plaintext"))
                 return
             
             # 检查是否是代码块容器

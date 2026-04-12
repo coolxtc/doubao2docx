@@ -284,37 +284,66 @@ class DoubaoSpider:
         
         豆包页面中，AI生成的代码默认是折叠的，
         需要点击"已生成代码"按钮才能展开查看。
+        
+        点击展开后，代码块出现在按钮容器外部（同级），
+        为方便后续解析，这里将代码内容注入到按钮容器中。
         """
         try:
-            result = await page.evaluate("""
+            await page.evaluate("""
                 () => {
-                    let clicked = 0;
+                    const containers = document.querySelectorAll('div');
                     
-                    // 方法1: 通过按钮文案查找
-                    const buttons = document.querySelectorAll('div');
-                    for (const btn of buttons) {
-                        if (btn.textContent && btn.textContent.includes('已生成代码') && typeof btn.click === 'function') {
-                            btn.click();
-                            clicked++;
-                            continue;
+                    for (const container of containers) {
+                        if (container.textContent && container.textContent.includes('已生成代码')) {
+                            const button = container.querySelector('[class*="button-"]');
+                            if (button && typeof button.click === 'function') {
+                                button.click();
+                            }
                         }
                     }
-                    
-                    // 方法2: 使用CSS选择器备选
-                    if (clicked === 0) {
-                        const fallbackButtons = document.querySelectorAll('[class*="button-L3npDO"]');
-                        fallbackButtons.forEach(btn => {
-                            if (btn.textContent && btn.textContent.includes('已生成代码') && typeof btn.click === 'function') {
-                                btn.click();
-                                clicked++;
-                            }
-                        });
-                    }
-                    
-                    return clicked;
                 }
             """)
-            await page.wait_for_timeout(self.config.code_expand_wait_ms / 1000)
+            await page.wait_for_timeout(3000)  # 等待 3 秒让代码块完全展开
+            
+            await page.evaluate("""
+                () => {
+                    const containers = document.querySelectorAll('div');
+                    
+                    for (const container of containers) {
+                        const button = container.querySelector('[class*="button-"]');
+                        if (!button || !button.textContent.includes('已生成代码')) {
+                            continue;
+                        }
+                        
+                        let nextSibling = container.nextElementSibling;
+                        let codeBlock = null;
+                        
+                        while (nextSibling) {
+                            if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
+                                codeBlock = nextSibling;
+                                break;
+                            }
+                            if (nextSibling.classList && nextSibling.classList.contains('md-box-line-break')) {
+                                nextSibling = nextSibling.nextElementSibling;
+                                continue;
+                            }
+                            break;
+                        }
+                        
+                        if (codeBlock) {
+                            const pre = codeBlock.querySelector('pre');
+                            if (pre) {
+                                const text = pre.textContent;
+                                const hiddenPre = document.createElement('pre');
+                                hiddenPre.style.display = 'none';
+                                hiddenPre.setAttribute('data-expanded-code', 'true');
+                                hiddenPre.textContent = text;
+                                container.appendChild(hiddenPre);
+                            }
+                        }
+                    }
+                }
+            """)
         except Exception as e:
             print(f"展开代码块失败: {e}")
 
@@ -369,21 +398,41 @@ class DoubaoSpider:
         """提取聊天消息列表
         
         主要提取策略：
-        1. 查找所有消息块元素（class包含"message-item"）
-        2. 对每个消息块提取角色和内容
-        3. 如果提取不到，使用备用方法
+        1. 使用 JavaScript 提取所有消息块及其完整内容（包括展开后的代码块）
+        2. 对每个消息块提取角色和 HTML 内容
         """
         messages = []
 
         try:
-            message_blocks = await page.query_selector_all("[class*='message-item']")
-
-            for block in message_blocks:
-                role = await self._extract_role(block)
-                content = await self._extract_content(block)
-
-                if content and role:
-                    messages.append(ChatMessage(role=role, content=content))
+            result = await page.evaluate("""
+                () => {
+                    const results = [];
+                    const messageBlocks = document.querySelectorAll("[class*='message-item']");
+                    
+                    for (const block of messageBlocks) {
+                        const classAttr = block.className || '';
+                        const role = classAttr.includes('justify-end') ? 'user' : 'assistant';
+                        
+                        // 获取 innerHTML
+                        let content = block.innerHTML;
+                        
+                        // 如果有隐藏的 data-expanded-code pre，添加到内容中
+                        const hiddenPres = block.querySelectorAll('pre[data-expanded-code]');
+                        for (const pre of hiddenPres) {
+                            content += pre.outerHTML;
+                        }
+                        
+                        if (content && content.length > 0) {
+                            results.push({ role, content });
+                        }
+                    }
+                    
+                    return results;
+                }
+            """)
+            
+            for item in result:
+                messages.append(ChatMessage(role=item['role'], content=item['content']))
 
             if not messages:
                 messages = await self._extract_fallback(page)

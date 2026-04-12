@@ -140,6 +140,7 @@ class DocxBuilder:
         for run in heading.runs:
             run.font.size = Pt(self.config.style_config.title_font_size)
             run.font.bold = True
+            run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_run_font(run)
 
     def _add_paragraph(self, text: str, style: Optional[str] = None) -> None:
@@ -177,8 +178,11 @@ class DocxBuilder:
             # 切换角色时添加角色标签
             if role != current_role:
                 current_role = role
-                role_label = "用户" if role == "user" else "助手"
-                self.document.add_heading(f"{role_label}", level=3)
+                role_label = "用户" if role == "user" else "豆包"
+                heading = self.document.add_heading(f"{role_label}", level=3)
+                for run in heading.runs:
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+                    self._set_run_font(run)
 
             self._add_text_block(block)
 
