@@ -10,6 +10,7 @@
 import argparse
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 from src.scraper import DoubaoSpider
@@ -44,18 +45,24 @@ async def fetch_and_export(
         - 返回 0 表示成功完成
         - 返回 1 表示发生错误
     """
+    total_start = time.time()
+    
     print(f"正在爬取: {url}")
+    print(f"反爬级别: {anti_detect_level}")
 
     try:
         # async with 是异步上下文管理器，类似于普通代码的 "with"
         # 进入 with 块时初始化浏览器，退出时自动关闭浏览器、清理资源
+        spider_start = time.time()
         async with DoubaoSpider(anti_detect_level=anti_detect_level) as spider:
-            # await 的作用：等待爬虫完成抓取后再继续执行
             chat_data = await spider.fetch(url)
+        
+        spider_time = time.time() - spider_start
+        print(f"[✓] 爬取完成: {len(chat_data.messages)} 条消息 ({spider_time:.1f}秒)")
+        print(f"[✓] 标题: {chat_data.title[:50]}{'...' if len(chat_data.title) > 50 else ''}")
 
-        print(f"爬取完成，获取 {len(chat_data.messages)} 条消息")
-
-        print("正在处理内容...")
+        print("\n--- 内容解析阶段 ---")
+        parse_start = time.time()
         
         # 创建 HTML 解析器实例
         parser = DoubaoHTMLParser()
@@ -65,11 +72,19 @@ async def fetch_and_export(
         # 角色可以是 "user"（用户）或 "assistant"（AI）
         all_blocks: list[tuple[str, TextBlock]] = []
         
+        # 统计各类内容
+        stats = {"paragraph": 0, "heading": 0, "code": 0, "latex": 0, "table": 0, "list": 0, "blockquote": 0}
+        
         # 遍历所有消息，逐条解析
-        for msg in chat_data.messages:
+        for i, msg in enumerate(chat_data.messages):
             parsed = parser.parse(msg.content)
             for block in parsed.blocks:
                 all_blocks.append((msg.role, block))
+                stats[block.type] = stats.get(block.type, 0) + 1
+        
+        parse_time = time.time() - parse_start
+        print(f"[✓] 解析完成: {len(all_blocks)} 个内容块 ({parse_time:.1f}秒)")
+        print(f"    段落: {stats.get('paragraph', 0)}, 标题: {stats.get('heading', 0)}, 代码: {stats.get('code', 0)}, 公式: {stats.get('latex', 0)}, 表格: {stats.get('table', 0)}, 列表: {stats.get('list', 0)}, 引用: {stats.get('blockquote', 0)}")
 
         # link_index.json 记录已导出的文档索引
         # DocNamer 负责根据 URL 和标题生成唯一且不重复的文件名
@@ -83,7 +98,9 @@ async def fetch_and_export(
         # 确保目录存在，如果不存在就创建
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        print("正在生成Word文档...")
+        print(f"\n--- 文档生成阶段 ---")
+        print(f"[→] 正在生成Word文档...")
+        build_start = time.time()
         
         # 创建文档配置和构建器
         config = DocumentConfig(title=chat_data.title)
@@ -91,14 +108,19 @@ async def fetch_and_export(
         
         # build_blocks 遍历所有文本块，根据内容类型应用不同格式
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
+        
+        build_time = time.time() - build_start
+        print(f"[✓] 文档生成完成 ({build_time:.1f}秒)")
 
-        print(f"导出完成: {output_path}")
+        total_time = time.time() - total_start
+        print(f"\n✓ 导出完成: {output_path.name}")
+        print(f"  总耗时: {total_time:.1f}秒")
         return 0
 
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"错误: {e}", file=sys.stderr)
+        print(f"\n✗ 错误: {e}", file=sys.stderr)
         return 1
 
 

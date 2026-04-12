@@ -277,7 +277,7 @@ class DoubaoHTMLParser:
         
         # 预格式化代码块
         if tag == "pre":
-            # 爬虫注入的 expanded-code pre 会被 code-block-container 处理，这里跳过
+            # 爬虫注入的 expanded-code pre 会被按钮容器专门处理，这里跳过避免重复
             if element.get("data-expanded-code"):
                 return
             code = element.get_text("\n", strip=True)

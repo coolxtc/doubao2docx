@@ -209,8 +209,10 @@ class DoubaoSpider:
 
         # 懒启动：如果浏览器还没启动，则启动它
         if not self.browser:
+            print("[...] 启动浏览器...")
             await self.start()
 
+        print("[...] 正在访问页面...")
         # 创建新页面（标签页）
         page = await self.context.new_page()
         
@@ -218,14 +220,18 @@ class DoubaoSpider:
         # timeout: 请求超时时间（毫秒）
         # wait_until="networkidle": 等待网络请求都完成
         await page.goto(url, timeout=self.timeout, wait_until="networkidle")
+        print("[✓] 页面加载完成")
 
         # 等待页面内容加载
+        print("[...] 等待内容渲染...")
         await self._wait_for_content(page)
         
         # 滚动页面加载更多内容
+        print("[...] 滚动加载历史消息...")
         await self._scroll_page(page)
 
         # 提取聊天数据
+        print("[...] 展开代码块并提取数据...")
         chat_data = await self._extract_chat_data(page, url)
         
         # 关闭页面，释放资源
@@ -264,7 +270,7 @@ class DoubaoSpider:
         - 重复滚动直到没有新内容
         """
         last_height = 0
-        for _ in range(self.config.scroll_max_attempts):
+        for i in range(self.config.scroll_max_attempts):
             # 滚动到页面最底部
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             
@@ -276,8 +282,12 @@ class DoubaoSpider:
             
             # 如果高度没变，说明已经滚动到底部
             if new_height == last_height:
+                print(f"[✓] 滚动完成: 已加载全部历史消息")
                 break
             last_height = new_height
+            print(f"[...] 滚动中... ({i+1}/{self.config.scroll_max_attempts})")
+        else:
+            print(f"[!] 滚动达到最大次数，仍有更多内容")
 
     async def _expand_code_blocks(self, page: "Page") -> None:
         """展开所有'已生成代码'按钮
@@ -287,65 +297,127 @@ class DoubaoSpider:
         
         点击展开后，代码块出现在按钮容器外部（同级），
         为方便后续解析，这里将代码内容注入到按钮容器中。
+        
+        包含智能重试机制，确保代码块可靠展开。
         """
-        try:
-            await page.evaluate("""
-                () => {
-                    const containers = document.querySelectorAll('div');
-                    
-                    for (const container of containers) {
-                        if (container.textContent && container.textContent.includes('已生成代码')) {
-                            const button = container.querySelector('[class*="button-"]');
-                            if (button && typeof button.click === 'function') {
-                                button.click();
-                            }
-                        }
-                    }
-                }
-            """)
-            await page.wait_for_timeout(3000)  # 等待 3 秒让代码块完全展开
-            
-            await page.evaluate("""
-                () => {
-                    const containers = document.querySelectorAll('div');
-                    
-                    for (const container of containers) {
-                        const button = container.querySelector('[class*="button-"]');
-                        if (!button || !button.textContent.includes('已生成代码')) {
-                            continue;
-                        }
+        max_retries = 6
+        
+        for attempt in range(max_retries):
+            try:
+                # 点击所有未处理的按钮
+                await page.evaluate("""
+                    () => {
+                        const containers = document.querySelectorAll('div');
                         
-                        let nextSibling = container.nextElementSibling;
-                        let codeBlock = null;
-                        
-                        while (nextSibling) {
-                            if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
-                                codeBlock = nextSibling;
-                                break;
-                            }
-                            if (nextSibling.classList && nextSibling.classList.contains('md-box-line-break')) {
-                                nextSibling = nextSibling.nextElementSibling;
+                        for (const container of containers) {
+                            if (container.querySelector('pre[data-expanded-code]')) {
                                 continue;
                             }
-                            break;
-                        }
-                        
-                        if (codeBlock) {
-                            const pre = codeBlock.querySelector('pre');
-                            if (pre) {
-                                const text = pre.textContent;
-                                const hiddenPre = document.createElement('pre');
-                                hiddenPre.style.display = 'none';
-                                hiddenPre.setAttribute('data-expanded-code', 'true');
-                                hiddenPre.textContent = text;
-                                container.appendChild(hiddenPre);
+                            
+                            if (container.textContent && container.textContent.includes('已生成代码')) {
+                                const button = container.querySelector('[class*="button-"]');
+                                if (button) {
+                                    try {
+                                        button.click();
+                                    } catch (e) {
+                                        const event = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
+                                        button.dispatchEvent(event);
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            """)
-        except Exception as e:
-            print(f"展开代码块失败: {e}")
+                """)
+                print(f"[...] 等待代码块展开 (尝试 {attempt + 1}/{max_retries})...")
+                
+                # 等待代码块展开
+                # 第1次等待短一些，重试时递增
+                base_wait = 2.5  # 基础等待 2.5 秒
+                extra_wait = attempt * 2  # 每次重试增加 2 秒
+                wait_time = base_wait + extra_wait
+                await page.wait_for_timeout(wait_time)
+                
+                # 注入代码块内容
+                result = await page.evaluate("""
+                    () => {
+                        let injected = 0;
+                        let codeBlocksFound = 0;
+                        let buttonsWithoutCode = 0;
+                        const containers = document.querySelectorAll('div');
+                        
+                        for (const container of containers) {
+                            if (container.querySelector('pre[data-expanded-code]')) {
+                                continue;
+                            }
+                            
+                            const button = container.querySelector('[class*="button-"]');
+                            if (!button || !button.textContent.includes('已生成代码')) {
+                                continue;
+                            }
+                            
+                            let nextSibling = container.nextElementSibling;
+                            let foundCodeBlock = false;
+                            
+                            for (let i = 0; i < 5 && nextSibling; i++) {
+                                if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
+                                    foundCodeBlock = true;
+                                    codeBlocksFound++;
+                                    const pre = nextSibling.querySelector('pre');
+                                    if (pre) {
+                                        const hiddenPre = document.createElement('pre');
+                                        hiddenPre.style.display = 'none';
+                                        hiddenPre.setAttribute('data-expanded-code', 'true');
+                                        hiddenPre.textContent = pre.textContent;
+                                        container.appendChild(hiddenPre);
+                                        injected++;
+                                    }
+                                    break;
+                                }
+                                nextSibling = nextSibling.nextElementSibling;
+                            }
+                            
+                            if (!foundCodeBlock) {
+                                buttonsWithoutCode++;
+                            }
+                        }
+                        return { injected, codeBlocksFound, buttonsWithoutCode };
+                    }
+                """)
+                
+                # 如果有按钮但代码块未出现，尝试再次点击
+                if result['buttonsWithoutCode'] > 0 and result['codeBlocksFound'] == 0:
+                    await page.evaluate("""
+                        () => {
+                            const containers = document.querySelectorAll('div');
+                            for (const container of containers) {
+                                if (container.querySelector('pre[data-expanded-code]')) {
+                                    continue;
+                                }
+                                if (container.textContent && container.textContent.includes('已生成代码')) {
+                                    const button = container.querySelector('[class*="button-"]');
+                                    if (button) {
+                                        try {
+                                            button.click();
+                                        } catch (e) {
+                                            const event = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
+                                            button.dispatchEvent(event);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    """)
+                
+                if result['injected'] > 0:
+                    break
+                elif result['codeBlocksFound'] == 0 and result['buttonsWithoutCode'] == 0:
+                    # 没有按钮，不需要展开
+                    break
+                elif attempt == max_retries - 1 and result['injected'] == 0:
+                    pass  # 静默失败，不打印调试信息
+                    
+            except Exception as e:
+                print(f"展开代码块失败 (尝试 {attempt + 1}): {e}")
 
     async def _extract_chat_data(self, page: "Page", url: str) -> ChatData:
         """从页面提取完整的聊天数据
@@ -365,6 +437,7 @@ class DoubaoSpider:
         await self._scroll_page(page)
         
         # 展开代码块
+        print("[...] 展开代码块...")
         await self._expand_code_blocks(page)
         
         # 等待展开动画完成
