@@ -89,13 +89,17 @@ async def fetch_and_export(
         # link_index.json 记录已导出的文档索引
         # DocNamer 负责根据 URL 和标题生成唯一且不重复的文件名
         index_file = output_dir / "link_index.json"
+        
+        # 确保 data 目录存在
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
         namer = DocNamer(index_file)
         filename_base = namer.get_filename(url, chat_data.title, custom_index)
         
         # 完整的输出路径：output_dir/export/文件名.docx
         output_path = output_dir / "export" / f"{filename_base}.docx"
         
-        # 确保目录存在，如果不存在就创建
+        # 确保 export 目录存在
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         print(f"\n--- 文档生成阶段 ---")
