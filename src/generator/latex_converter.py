@@ -39,17 +39,16 @@ class LaTeXConverter:
             (是否可用, 错误信息)
         """
         import subprocess
-        for cmd in ["pandoc", "pandoc-crossref"]:
-            try:
-                result = subprocess.run(
-                    [cmd, "--version"],
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode != 0:
-                    return False, f"{cmd} 未正确安装"
-            except FileNotFoundError:
-                return False, f"{cmd} 未安装，请运行: brew install {cmd}"
+        try:
+            result = subprocess.run(
+                ["pandoc", "--version"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                return False, "pandoc 未正确安装"
+        except FileNotFoundError:
+            return False, "pandoc 未安装"
         return True, ""
     
     def convert_inline(self, latex_formula: str) -> str:
