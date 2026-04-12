@@ -52,9 +52,9 @@ src/
 ## 重要约束
 
 - 使用 `python3` 而非 `python`（系统默认可能是 Python 2）
-- 反爬级别 high 目前与 medium 相同
 - 公式转换失败时使用 Unicode fallback
 - 同一天同一 URL 再次导出不会增加序号
+- Windows 平台已做资源清理兼容处理
 
 ## 已有注释风格
 

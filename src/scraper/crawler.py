@@ -124,6 +124,7 @@ class DoubaoSpider:
         # 浏览器相关属性，初始化为None
         self.browser: Optional["Browser"] = None
         self.context: Optional["BrowserContext"] = None
+        self.playwright = None  # Playwright 引擎实例
 
     async def __aenter__(self):
         """异步上下文管理器入口 - 支持 with...as 语法
@@ -158,10 +159,10 @@ class DoubaoSpider:
         from playwright.async_api import async_playwright
         
         # 启动Playwright引擎
-        playwright = await async_playwright().start()
+        self.playwright = await async_playwright().start()
         
         # 启动Chromium浏览器（无头模式）
-        self.browser = await playwright.chromium.launch(headless=True)
+        self.browser = await self.playwright.chromium.launch(headless=True)
         
         # 创建浏览器上下文（独立的会话环境）
         self.context = await self.browser.new_context()
@@ -177,10 +178,39 @@ class DoubaoSpider:
         
         使用 async with 语法会自动调用此方法。
         """
-        if self.context:
-            await self.context.close()
-        if self.browser:
-            await self.browser.close()
+        import asyncio
+        import platform
+        import warnings
+        
+        # 抑制 Windows 上的 ResourceWarning
+        if platform.system() == "Windows":
+            warnings.filterwarnings("ignore", category=ResourceWarning)
+        
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception:
+            pass
+        
+        try:
+            if self.browser:
+                await self.browser.close()
+        except Exception:
+            pass
+        
+        # 关闭 Playwright 引擎
+        try:
+            if self.playwright:
+                await self.playwright.stop()
+        except Exception:
+            pass
+        
+        # Windows 上的资源清理处理
+        if platform.system() == "Windows":
+            # 强制垃圾回收，清理未释放的子进程
+            import gc
+            gc.collect()
+            await asyncio.sleep(0.25)
 
     async def fetch(self, url: str) -> ChatData:
         """爬取指定URL的聊天记录 - 主方法
@@ -437,7 +467,6 @@ class DoubaoSpider:
         await self._scroll_page(page)
         
         # 展开代码块
-        print("[...] 展开代码块...")
         await self._expand_code_blocks(page)
         
         # 等待展开动画完成

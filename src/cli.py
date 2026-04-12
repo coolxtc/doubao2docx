@@ -177,14 +177,27 @@ def main() -> int:
     # 输出目录设置：项目根目录下的 data 文件夹
     output_dir = Path(__file__).parent.parent / "data"
 
-    # asyncio.run() 是启动异步函数的唯一方式
-    # 它会创建一个事件循环并运行传入的协程
-    return asyncio.run(fetch_and_export(
-        args.url,
-        output_dir,
-        args.level,
-        args.index
-    ))
+    # Windows 上需要特殊处理，避免 asyncio.run 退出时的资源警告
+    import platform
+    import warnings
+    import gc
+    
+    if platform.system() == "Windows":
+        warnings.filterwarnings("ignore", category=ResourceWarning)
+    
+    try:
+        result = asyncio.run(fetch_and_export(
+            args.url,
+            output_dir,
+            args.level,
+            args.index
+        ))
+    finally:
+        # Windows 上的资源清理
+        if platform.system() == "Windows":
+            gc.collect()
+    
+    return result
 
 
 # if __name__ == "__main__" 是 Python 惯用法
