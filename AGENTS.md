@@ -35,7 +35,7 @@ python -m src.cli <豆包链接>
 
 ## 输出位置
 
-- 文档：`data/export/*.docx`
+- 文档：`data/export/YYYYMMDD/*.docx`（按日期分类）
 - 索引：`data/link_index.json`
 
 ## 项目结构

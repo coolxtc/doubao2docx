@@ -96,8 +96,12 @@ async def fetch_and_export(
         namer = DocNamer(index_file)
         filename_base = namer.get_filename(url, chat_data.title, custom_index)
         
-        # 完整的输出路径：output_dir/export/文件名.docx
-        output_path = output_dir / "export" / f"{filename_base}.docx"
+        # 获取日期字符串（文件名格式：日期-序号 标题，日期占前6位）
+        date_str = filename_base[:6]
+        
+        # 完整的输出路径：output_dir/export/日期/文件名.docx
+        # 按日期分类存储，同一天的文档放在同一文件夹
+        output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
         
         # 确保 export 目录存在
         output_path.parent.mkdir(parents=True, exist_ok=True)
