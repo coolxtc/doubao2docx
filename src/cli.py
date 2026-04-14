@@ -93,22 +93,35 @@ async def fetch_and_export_batch(
     print(f"[批次导出模式] 并发数: {concurrency}")
     print(f"总计 {total} 个 URL\n")
     
-    # 预分配序号：确保按入参顺序分配序号
+    # 预分配序号：已有 URL 复用序号，新 URL 按顺序分配
+    # 按入参顺序遍历，仅对未记录的新 URL 分配序号
     index_file = Path("data/link_index.json")
     namer = DocNamer(index_file)
-    base_index = namer.get_next_base_index()
+    namer._cleanup_old_entries()
+    namer._load()  # 确保读取最新状态
+    records = namer._get_today_records()
+    
+    # 已有 URL 集合（用于判断是否需要分配新序号）
+    existing_urls = set(records.keys())
+    # 新 URL 按入参顺序分配序号，起始值为当天最大序号+1
+    next_new_index = namer._get_today_max_index() + 1
+    url_to_index: dict[str, int] = {}
+    
+    for url in urls:
+        if url not in existing_urls:
+            url_to_index[url] = next_new_index
+            next_new_index += 1
     
     semaphore = asyncio.Semaphore(concurrency)
     
-    async def bounded_export(task_index: int, url: str, custom_index: int):
+    async def bounded_export(task_index: int, url: str, custom_index: int | None):
         async with semaphore:
             return await fetch_and_export_single(
                 url, output_dir, anti_detect_level, custom_index, task_index, total
             )
     
-    # 按入参顺序预分配序号：URL1 -> base_index+1, URL2 -> base_index+2, ...
     tasks = [
-        bounded_export(i + 1, url, base_index + i)
+        bounded_export(i + 1, url, url_to_index.get(url))
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

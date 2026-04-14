@@ -179,15 +179,15 @@ class DocNamer:
     ) -> str:
         """生成文件名 - 主方法
         
-        规则：
-        1. 如果指定了 custom_index，使用该序号
-        2. 如果 URL 之前已导出，使用已有序号
+        序号优先级（从高到低）：
+        1. 如果 URL 之前已导出，复用已有序号（忽略 custom_index）
+        2. 如果指定了 custom_index，使用该序号（仅针对新 URL）
         3. 否则，使用当天最大序号 +1
         
         Args:
             url: 链接地址
             title: 文档标题
-            custom_index: 手动指定的序号，None 则自动分配
+            custom_index: 手动指定的序号，仅对新 URL 生效
             
         Returns:
             文件名（不含扩展名），格式：日期-序号 标题
@@ -200,13 +200,16 @@ class DocNamer:
             records = self._get_today_records()
             clean_title = self._clean_title(title)
             
-            if custom_index is not None:
-                index = custom_index
-                records[url] = LinkRecord(index=index, title=clean_title)
-            elif url in records:
+            if url in records:
+                # 已导出的 URL 优先复用已有序号（batch 场景下避免序号冲突）
                 index = records[url].index
                 records[url].title = clean_title
+            elif custom_index is not None:
+                # 新 URL + 指定序号
+                index = custom_index
+                records[url] = LinkRecord(index=index, title=clean_title)
             else:
+                # 新 URL + 自动分配序号
                 index = self._get_today_max_index() + 1
                 records[url] = LinkRecord(index=index, title=clean_title)
             
