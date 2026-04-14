@@ -84,7 +84,7 @@ async def fetch_and_export_batch(
     urls: list[str],
     output_dir: Path,
     anti_detect_level: str = "medium",
-    concurrency: int = 3,
+    concurrency: int = 5,
 ) -> BatchReport:
     """批量导出多个 URL"""
     report = BatchReport()
@@ -142,7 +142,7 @@ def main() -> int:
     parser.add_argument("urls", nargs="+", help="豆包聊天页面URL（支持多个）")
     parser.add_argument("--level", choices=["low", "medium", "high"], default="medium", help="反爬级别")
     parser.add_argument("--index", type=int, default=None, help="手动指定文档序号（仅单URL模式）")
-    parser.add_argument("--concurrency", type=int, default=3, help="并发数（默认: 3）")
+    parser.add_argument("--concurrency", type=int, default=5, help="并发数（默认: 5）")
     
     args = parser.parse_args()
     

@@ -186,7 +186,7 @@ https://www.doubao.com/thread/ad8e9da8e8159
 # 导出单个聊天记录
 python -m src.cli https://www.doubao.com/thread/ad8e9da8e8159
 
-# 批量导出多个聊天记录（并发数默认3）
+# 批量导出多个聊天记录（并发数默认5）
 python -m src.cli url1 url2 url3
 
 # 批量导出并指定并发数
@@ -202,7 +202,7 @@ python -m src.cli https://www.doubao.com/thread/test --index 5
 ### 批量导出示例
 
 ```
-[批次导出模式] 并发数: 3
+[批次导出模式] 并发数: 5
 总计 5 个 URL
 
 [1/5] 正在导出: https://www.doubao.com/thread/abc
@@ -241,7 +241,7 @@ python -m src.cli https://www.doubao.com/thread/test --index 5
 | `urls` | 豆包聊天页面URL（支持多个） | - | 必填 |
 | `--level` | 反爬检测级别 | low / medium / high | medium |
 | `--index` | 手动指定文档序号（仅单URL模式） | 数字 | 自动分配 |
-| `--concurrency` | 批量导出并发数 | 数字 | 3 |
+| `--concurrency` | 批量导出并发数 | 数字 | 5 |
 
 #### 反爬级别说明
 
@@ -349,7 +349,7 @@ doubao-export/
 支持批量导出多个 URL：
 
 ```bash
-# 批量导出，默认并发数3
+# 批量导出，默认并发数5
 python -m src.cli url1 url2 url3
 
 # 调整并发数

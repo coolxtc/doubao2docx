@@ -33,7 +33,7 @@ python -m src.cli <豆包链接>
 | `urls` | 豆包聊天页面 URL（支持多个） | - |
 | `--level` | 反爬级别：low/medium/high | medium |
 | `--index` | 手动指定文档序号（仅单URL） | 自动 |
-| `--concurrency` | 批量导出并发数 | 3 |
+| `--concurrency` | 批量导出并发数 | 5 |
 
 ## 输出位置
 
