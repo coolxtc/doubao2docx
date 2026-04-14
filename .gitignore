@@ -42,5 +42,4 @@ Thumbs.db
 htmlcov/
 
 # Project specific
-data/export/*.docx
-data/link_index.json
+data/

@@ -379,10 +379,10 @@ class DoubaoSpider:
                 
                 # 等待代码块展开
                 # 第1次等待短一些，重试时递增
-                base_wait = 2.5  # 基础等待 2.5 秒
-                extra_wait = attempt * 2  # 每次重试增加 2 秒
-                wait_time = base_wait + extra_wait
-                await page.wait_for_timeout(wait_time)
+                base_wait_ms = 2500  # 基础等待 2.5 秒（毫秒）
+                extra_wait_ms = attempt * 2000  # 每次重试增加 2 秒
+                wait_time_ms = base_wait_ms + extra_wait_ms
+                await page.wait_for_timeout(wait_time_ms)
                 
                 # 注入代码块内容
                 result = await page.evaluate("""
