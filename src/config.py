@@ -263,6 +263,7 @@ class GlobalConfig:
     index: IndexConfig | None = None
     pandoc: PandocConfig | None = None
     url_fallback_length: int = 20
+    enable_progress_bar: bool = True
 
     def __post_init__(self):
         overrides = get_config_overrides()
@@ -283,6 +284,10 @@ class GlobalConfig:
         # 全局配置项（支持环境变量覆盖）
         self.url_fallback_length, _ = _env_override(
             "url_fallback_length", self.url_fallback_length, "GLOBAL_"
+        )
+        
+        self.enable_progress_bar, _ = _env_override(
+            "enable_progress_bar", self.enable_progress_bar, "GLOBAL_"
         )
 
     @classmethod

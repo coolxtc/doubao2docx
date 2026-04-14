@@ -18,7 +18,7 @@ import asyncio
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING
 
 from ..config import CrawlerConfig
 from ..exceptions import CrawlerError
@@ -27,9 +27,63 @@ if TYPE_CHECKING:
     from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 
 
+# 爬虫步骤枚举，用于进度跟踪
+class FetchStep:
+    STARTING = "任务开始"
+    RECEIVED = "收到任务"
+    LOADING_PAGE = "访问页面"
+    PAGE_LOADED = "页面加载完成"
+    SCROLLING = "滚动加载"
+    EXPANDING_CODE = "展开代码块"
+    EXTRACTING = "提取数据"
+    COMPLETED = "完成"
+
+
+# 步骤到索引的映射
+STEP_INDEX = {
+    FetchStep.STARTING: 0,
+    FetchStep.RECEIVED: 1,
+    FetchStep.LOADING_PAGE: 2,
+    FetchStep.PAGE_LOADED: 3,
+    FetchStep.SCROLLING: 4,
+    FetchStep.EXPANDING_CODE: 5,
+    FetchStep.EXTRACTING: 6,
+    FetchStep.COMPLETED: 7,
+}
+
+STEP_COUNT = 8
+
+# 步骤简称（用于显示）
+STEP_SHORT = {
+    0: "启动",
+    1: "任务",
+    2: "访问",
+    3: "加载",
+    4: "滚动",
+    5: "代码",
+    6: "提取",
+    7: "完成",
+}
+
+
 def _log(prefix: str, msg: str) -> None:
     elapsed = time.time() - _task_start_time
-    print(f"{prefix}{msg} [+{elapsed:.1f}s]")
+    print(f"{prefix} {msg} [+{elapsed:.1f}s]")
+
+
+def _format_progress(prefix: str, current_step: int, current_action: str = "") -> str:
+    """生成单行动态状态，如 [1/5][abc] ●●○○○○ 访问页面"""
+    dots = ""
+    for i in range(STEP_COUNT):
+        if i < current_step:
+            dots += "●"
+        elif i == current_step:
+            dots += "→"
+        else:
+            dots += "○"
+    if current_action:
+        return f"{prefix} {dots} {current_action}"
+    return f"{prefix} {dots}"
 
 
 _task_start_time = time.time()
@@ -118,6 +172,7 @@ class DoubaoSpider:
         anti_detect_level: str = "medium",
         config: CrawlerConfig = None,
         tag: str = "",
+        progress_callback: Callable[[str], None] | None = None,
     ) -> None:
         """初始化爬虫实例
         
@@ -141,11 +196,16 @@ class DoubaoSpider:
         self.timeout = self.config.timeout
         self.wait_for_selector = self.config.wait_for_selector
         self.tag = tag
+        self.progress_callback = progress_callback
         
         # 浏览器相关属性，初始化为None
         self.browser: Optional["Browser"] = None
         self.context: Optional["BrowserContext"] = None
         self.playwright = None  # Playwright 引擎实例
+    
+    def _report_progress(self, step: str) -> None:
+        if self.progress_callback:
+            self.progress_callback(step)
 
     async def __aenter__(self):
         """异步上下文管理器入口 - 支持 with...as 语法
@@ -207,6 +267,7 @@ class DoubaoSpider:
         if platform.system() == "Windows":
             warnings.filterwarnings("ignore", category=ResourceWarning)
         
+        # 关闭时的异常可以忽略，因为可能是资源已被清理
         try:
             if self.context:
                 await self.context.close()
@@ -219,7 +280,6 @@ class DoubaoSpider:
         except Exception:
             pass
 
-        # 关闭 Playwright 引擎
         try:
             if self.playwright:
                 await self.playwright.stop()
@@ -233,58 +293,41 @@ class DoubaoSpider:
             await asyncio.sleep(self.config.browser_close_delay)
 
     async def fetch(self, url: str) -> ChatData:
-        """爬取指定URL的聊天记录 - 主方法
-        
-        完成整个爬取流程：
-        1. 验证URL格式
-        2. 懒启动：如果浏览器还没启动，则启动它
-        3. 创建新页面并访问URL
-        4. 等待内容加载
-        5. 滚动页面加载更多内容
-        6. 提取聊天数据
-        7. 清理页面资源
-        
-        Args:
-            url: 豆包聊天页面URL，格式如 https://www.doubao.com/thread/xxx
-            
-        Returns:
-            ChatData: 包含url、title、messages、raw_html的数据对象
-            
-        Raises:
-            ValueError: 如果URL格式无效
-        """
         # 验证URL格式
         if not self._validate_url(url):
             raise CrawlerError(f"无效的豆包URL: {url}")
 
         tag = self.tag
-        prefix = f"[{tag}] " if tag else ""
+        prefix = f"[{tag}]" if tag else ""
+        
+        self._report_progress(FetchStep.RECEIVED)
         
         # 懒启动：如果浏览器还没启动，则启动它
         if not self.browser:
-            _log(prefix, "[...] 启动浏览器...")
+            self._report_progress(FetchStep.STARTING)
             await self.start()
 
-        _log(prefix, "[...] 正在访问页面...")
-        # 创建新页面（标签页）
+        # 创建新页面并访问URL
         page = await self.context.new_page()
+        self._report_progress(FetchStep.LOADING_PAGE)
         
-        # 访问URL并等待网络空闲
-        # timeout: 请求超时时间（毫秒）
-        # wait_until="networkidle": 等待网络请求都完成
         await page.goto(url, timeout=self.page_load_timeout, wait_until="networkidle")
-        _log(prefix, "[✓] 页面加载完成")
-
+        self._report_progress(FetchStep.PAGE_LOADED)
+        
         # 滚动页面加载更多内容
-        _log(prefix, "[...] 滚动加载历史消息...")
+        self._report_progress(FetchStep.SCROLLING)
         await self._scroll_page(page)
 
         # 提取聊天数据
-        _log(prefix, "[...] 展开代码块并提取数据...")
+        self._report_progress(FetchStep.EXPANDING_CODE)
         chat_data = await self._extract_chat_data(page, url)
+        
+        self._report_progress(FetchStep.EXTRACTING)
         
         # 关闭页面，释放资源
         await page.close()
+        
+        self._report_progress(FetchStep.COMPLETED)
 
         return chat_data
 
@@ -299,16 +342,7 @@ class DoubaoSpider:
         return bool(re.match(self.DOUBAO_URL_PATTERN, url))
 
     async def _scroll_page(self, page: "Page") -> None:
-        """滚动页面加载更多内容
-        
-        豆包聊天页面使用"无限滚动"（lazy loading）技术：
-        - 初始只显示部分消息
-        - 滚动到底部时再加载更多
-        - 重复滚动直到没有新内容
-        """
-        tag = self.tag
-        prefix = f"[{tag}] " if tag else ""
-        
+        """滚动页面加载更多内容"""
         last_height = 0
         for i in range(self.config.scroll_max_attempts):
             try:
@@ -317,7 +351,6 @@ class DoubaoSpider:
                     timeout=self.scroll_timeout / 1000
                 )
             except asyncio.TimeoutError:
-                _log(prefix, f"[!] 滚动超时 (尝试 {i+1})")
                 break
             
             await page.wait_for_timeout(self.config.scroll_wait_ms)
@@ -328,16 +361,11 @@ class DoubaoSpider:
                     timeout=self.scroll_timeout / 1000
                 )
             except asyncio.TimeoutError:
-                _log(prefix, f"[!] 获取页面高度超时")
                 break
             
             if new_height == last_height:
-                _log(prefix, "[✓] 滚动完成: 已加载全部历史消息")
                 break
             last_height = new_height
-            _log(prefix, f"[...] 滚动中... ({i+1}/{self.config.scroll_max_attempts})")
-        else:
-            _log(prefix, f"[!] 滚动达到最大次数，仍有更多内容")
 
     async def _expand_code_blocks(self, page: "Page") -> None:
         """展开所有'已生成代码'按钮
@@ -385,8 +413,6 @@ class DoubaoSpider:
                 extra_wait_ms = attempt * self.config.code_expand_extra_ms
                 wait_time_ms = base_wait_ms + extra_wait_ms
                 await page.wait_for_timeout(wait_time_ms)
-                
-                _log(prefix, f"[...] 等待代码块展开 (尝试 {attempt + 1}/{max_retries})...")
                 
                 # 注入代码块内容
                 result = await page.evaluate("""

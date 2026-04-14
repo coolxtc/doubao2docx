@@ -400,11 +400,16 @@ class DocxBuilder:
         except Exception as e:
             raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
-            # 清理临时文件
-            if tmp_tex_path and os.path.exists(tmp_tex_path):
-                os.unlink(tmp_tex_path)
-            if tmp_docx_path and os.path.exists(tmp_docx_path):
-                os.unlink(tmp_docx_path)
+            # 清理临时文件（Windows 上可能因文件占用而失败，忽略即可）
+            import sys
+            for path in [tmp_tex_path, tmp_docx_path]:
+                if path:
+                    try:
+                        if os.path.exists(path):
+                            os.unlink(path)
+                    except OSError:
+                        # Windows 上文件可能被占用，静默忽略
+                        pass
 
         return None
 

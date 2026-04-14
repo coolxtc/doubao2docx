@@ -6,6 +6,12 @@ import re
 import sys
 import time
 from pathlib import Path
+from dataclasses import dataclass
+from typing import Optional
+
+from rich.console import Console
+from rich.live import Live
+from rich.table import Table
 
 from src.config import GlobalConfig
 from src.scraper import DoubaoSpider
@@ -21,11 +27,140 @@ _config = GlobalConfig()
 # 预编译的正则表达式，用于从 URL 提取 thread ID
 THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
 
+# 步骤名称 (与 FetchStep 对应)
+FETCH_STEP_NAMES = {
+    "任务开始": 0,
+    "收到任务": 1,
+    "访问页面": 2,
+    "页面加载完成": 3,
+    "滚动加载": 4,
+    "展开代码块": 5,
+    "提取数据": 6,
+    "爬取完成": 7,
+}
+
+
+# 全局任务管理器
+_task_manager: "TaskManager | None" = None
+
 
 def _get_url_tag(url: str) -> str:
     """提取 URL 中的 thread ID 作为标签"""
     match = THREAD_ID_PATTERN.search(url)
     return match.group(1) if match else url[:_config.url_fallback_length]
+
+
+@dataclass
+class TaskStatus:
+    task_index: int
+    total: int
+    url_tag: str
+    step: int = 0
+    status: str = "等待"
+    result: str = ""
+    elapsed: float = 0.0
+    
+    def to_line(self) -> str:
+        dots = "●" * self.step + "○" * (9 - self.step) if self.step < 9 else "●●●●●●●●●"
+        elapsed_str = f"({self.elapsed:.1f}s)" if self.elapsed > 0 else ""
+        return f"[{self.task_index}/{self.total}][{self.url_tag}] {dots} [{self.status}] {elapsed_str} {self.result}"
+
+
+class TaskManager:
+    """支持交互式终端动态刷新，非交互式终端降级为纯文本"""
+    
+    def __init__(self, total: int):
+        self.total = total
+        self.tasks: list[TaskStatus] = []
+        self._live: Optional[Live] = None
+        self._console = Console()
+        self._is_interactive = self._console.is_terminal
+    
+    def add_task(self, task_index: int, url_tag: str) -> TaskStatus:
+        task = TaskStatus(task_index=task_index, total=self.total, url_tag=url_tag)
+        self.tasks.append(task)
+        return task
+    
+    def update(self, task_index: int, step: int, status: str, result: str = "", elapsed: float = 0.0) -> None:
+        for task in self.tasks:
+            if task.task_index == task_index:
+                task.step = step
+                task.status = status
+                task.result = result
+                task.elapsed = elapsed
+                break
+        
+        if self._is_interactive and self._live is not None:
+            self._live.update(self._build_table())
+    
+    def _build_table(self) -> Table:
+        table = Table(show_header=True, show_lines=False, box=None, pad_edge=False)
+        table.add_column("序号", width=None)
+        table.add_column("进度", width=10)
+        table.add_column("状态", width=None)
+        table.add_column("耗时", width=6)
+        table.add_column("结果", width=None)
+        
+        for task in self.tasks:
+            if task.step >= 8:
+                dots = "[green]●●●●●●●●[/green]"
+                status_style = "green"
+                result_style = "green"
+                elapsed_style = "green"
+            elif task.step == 0:
+                dots = "[dim]○○○○○○○○[/dim]"
+                status_style = "dim"
+                result_style = "dim"
+                elapsed_style = "dim"
+            else:
+                done = task.step
+                current = "→"
+                remaining = 8 - task.step - 1
+                dots = f"[green]{'●' * done}[/green][yellow]{current}[/yellow][dim]{'○' * remaining}[/dim]"
+                status_style = "yellow"
+                result_style = "dim"
+                elapsed_style = "yellow"
+            
+            status_text = f"[{status_style}]{task.status}[/{status_style}]"
+            elapsed_text = f"[{elapsed_style}]{task.elapsed:.1f}s[/{elapsed_style}]" if task.elapsed > 0 else ""
+            result_text = f"[{result_style}]{task.result}[/{result_style}]" if task.result else ""
+            
+            table.add_row(
+                f"[cyan][{task.task_index}][{task.url_tag}][/cyan]",
+                dots,
+                status_text,
+                elapsed_text,
+                result_text,
+            )
+        
+        return table
+    
+    def start(self) -> None:
+        if self._is_interactive:
+            self._live = Live(
+                self._build_table(),
+                console=self._console,
+                refresh_per_second=4,
+                transient=False,
+            )
+            self._live.start()
+    
+    def stop(self) -> None:
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+    
+    def clear(self) -> None:
+        if self._live is not None:
+            self._live.stop()
+            self._live = None
+    
+    def print_all(self) -> None:
+        if self._is_interactive:
+            pass
+        else:
+            for task in self.tasks:
+                print(task.to_line())
 
 
 async def fetch_and_export_single(
@@ -37,14 +172,24 @@ async def fetch_and_export_single(
     total: int = 1,
 ) -> tuple[str, bool, str | None, str | None]:
     """单个 URL 导出，返回 (url, success, filename, error)"""
+    global _task_manager
+    
     url_tag = _get_url_tag(url)
     tag = f"[{task_index}/{total}][{url_tag}]"
     reset_timer()
     total_start = time.time()
-    print(f"{tag} 开始导出")
+    _step_start_time = time.time()
+    
+    def on_progress(step: str) -> None:
+        global _task_manager
+        if _task_manager and step in FETCH_STEP_NAMES:
+            # elapsed: 当前步骤完成后到现在的耗时（秒）
+            elapsed = time.time() - _step_start_time
+            step_idx = FETCH_STEP_NAMES[step]
+            _task_manager.update(task_index, step_idx, step, elapsed=elapsed)
     
     try:
-        async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag) as spider:
+        async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag, progress_callback=on_progress) as spider:
             chat_data = await spider.fetch(url)
         
         parser = DoubaoHTMLParser()
@@ -70,7 +215,8 @@ async def fetch_and_export_single(
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
         
         elapsed = time.time() - total_start
-        print(f"{tag} [✓] {filename_base}.docx ({elapsed:.1f}秒)")
+        if _task_manager:
+            _task_manager.update(task_index, 8, "完成", f"{filename_base}.docx", elapsed=elapsed)
         
         return url, True, f"{filename_base}.docx", None
         
@@ -78,21 +224,29 @@ async def fetch_and_export_single(
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 爬取失败: {display_msg}")
+        if _task_manager:
+            _task_manager.update(task_index, 8, "失败", error_msg[:50])
         raise
     except ParseError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 解析失败: {display_msg}")
+        if _task_manager:
+            _task_manager.update(task_index, 8, "失败", error_msg[:50])
         raise
     except ExportError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 导出失败: {display_msg}")
+        if _task_manager:
+            _task_manager.update(task_index, 8, "失败", error_msg[:50])
         raise
     except Exception as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 失败: {display_msg}")
+        if _task_manager:
+            _task_manager.update(task_index, 8, "失败", error_msg[:50])
         raise
 
 
@@ -167,12 +321,20 @@ async def fetch_and_export_batch(
             url_to_index[url] = next_new_index
             next_new_index += 1
     
+    global _task_manager
+    manager = TaskManager(total)
+    _task_manager = manager
+    for i, url in enumerate(urls):
+        url_tag = _get_url_tag(url)
+        manager.add_task(i + 1, url_tag)
+    manager.start()
+    
     semaphore = asyncio.Semaphore(concurrency)
     
     async def bounded_export(task_index: int, url: str, custom_index: int | None):
         async with semaphore:
-            return await bounded_export_with_retry(
-                url, output_dir, anti_detect_level, custom_index, task_index, total, _config
+            return await fetch_and_export_single(
+                url, output_dir, anti_detect_level, custom_index, task_index, total
             )
     
     tasks = [
@@ -180,6 +342,10 @@ async def fetch_and_export_batch(
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    manager.stop()
+    manager.print_all()
+    _task_manager = None
     
     for result in results:
         if isinstance(result, Exception):
