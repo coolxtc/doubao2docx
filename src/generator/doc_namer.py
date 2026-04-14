@@ -174,6 +174,7 @@ class DocNamer:
             文件名（不含扩展名），格式：日期-序号 标题
         """
         lock_file = self.index_file.with_suffix(".lock")
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_file, "w") as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_EX)
             try:

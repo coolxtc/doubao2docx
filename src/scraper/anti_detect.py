@@ -39,21 +39,11 @@ class AntiDetectMiddleware:
     - 我们通过JavaScript把这个属性改为 undefined（未定义）
     """
     
-    # 预定义的常见浏览器User-Agent列表
-    # User-Agent 是浏览器向服务器发送的标识字符串
-    # 包含了浏览器类型、版本、操作系统等信息
-    USER_AGENTS = [
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    ]
-
     def __init__(
         self,
         random_user_agent: bool = True,
         disableAutomation: bool = True,
+        user_agents: list[str] | None = None,
     ) -> None:
         """初始化反爬中间件
         
@@ -62,9 +52,17 @@ class AntiDetectMiddleware:
                                True: 每次请求随机选择列表中的一个
             disableAutomation: 是否隐藏webdriver自动化标识
                                True: 修改 navigator.webdriver 为 undefined
+            user_agents: User-Agent 列表，为 None 时使用默认值
         """
         self.random_user_agent = random_user_agent
         self.disableAutomation = disableAutomation
+        self.user_agents = user_agents or [
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        ]
 
     async def apply(self, context: "BrowserContext") -> None:
         """应用反爬措施到浏览器上下文
@@ -100,7 +98,7 @@ class AntiDetectMiddleware:
         - 通过 set_extra_http_headers 设置HTTP请求头
         - 这样该上下文发出的所有请求都会带上这个UA
         """
-        user_agent = random.choice(self.USER_AGENTS)
+        user_agent = random.choice(self.user_agents)
         await context.set_extra_http_headers({"User-Agent": user_agent})
 
     async def _disable_automation(self, context: "BrowserContext") -> None:

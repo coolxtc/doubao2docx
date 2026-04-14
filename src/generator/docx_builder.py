@@ -364,6 +364,9 @@ class DocxBuilder:
         else:
             tex_content = f"\\({latex}\\)"
 
+        tmp_tex_path = None
+        tmp_docx_path = None
+        
         # 写入临时 tex 文件
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".tex", delete=False
@@ -394,9 +397,9 @@ class DocxBuilder:
             print(f"转换失败: {e}")
         finally:
             # 清理临时文件
-            if os.path.exists(tmp_tex_path):
+            if tmp_tex_path and os.path.exists(tmp_tex_path):
                 os.unlink(tmp_tex_path)
-            if os.path.exists(tmp_docx_path):
+            if tmp_docx_path and os.path.exists(tmp_docx_path):
                 os.unlink(tmp_docx_path)
 
         return None

@@ -560,40 +560,6 @@ class DoubaoSpider:
 
         return messages
 
-    async def _extract_role(self, element) -> Optional[str]:
-        """从消息元素中提取角色（user或assistant）
-        
-        通过CSS类名判断：
-        - 如果class包含"justify-end"，则是用户消息
-        - 否则是AI助手消息
-        """
-        try:
-            class_attr = await element.get_attribute("class") or ""
-            if "justify-end" in class_attr:
-                return "user"
-            else:
-                return "assistant"
-        except Exception:
-            pass
-        return None
-
-    async def _extract_content(self, element) -> Optional[str]:
-        """从消息元素中提取内容
-        
-        策略：
-        1. 如果HTML包含data-custom-copy-text属性，使用完整HTML
-        2. 如果内容较长（>100字符），也使用完整HTML
-        """
-        try:
-            html = await element.evaluate("(el) => el.innerHTML")
-            if html and "data-custom-copy-text" in html:
-                return html
-            if html and len(html) > 100:
-                return html
-        except Exception:
-            pass
-        return None
-
     async def _extract_fallback(self, page: "Page") -> list[ChatMessage]:
         """备用消息提取方法
         

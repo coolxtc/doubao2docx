@@ -104,6 +104,25 @@ class CrawlerConfig:
     # 程序会等待这个元素出现后再开始处理，确保网页加载完成
     wait_for_selector: str = ".chat-content"
 
+    # 反爬虫 User-Agent 列表
+    # 随机选择其中一个 User-Agent 发送请求，模拟不同浏览器
+    user_agents: list[str] | None = None
+
+    # ------------------------------------------------------------
+    # __post_init__ 方法
+    # ------------------------------------------------------------
+    def __post_init__(self):
+        """初始化后的处理方法 - 自动创建默认值"""
+        # 如果 user_agents 是空的，使用默认列表
+        if self.user_agents is None:
+            self.user_agents = [
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+            ]
+
 
 # ============================================================
 # 第二部分：文档样式配置类

@@ -29,6 +29,17 @@ class LaTeXConverter:
     2. 如果失败，使用 Unicode 字符作为 fallback
     """
     
+    _UNICODE_REPLACEMENTS = {
+        r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
+        r"\pi": "π", r"\theta": "θ", r"\lambda": "λ", r"\sigma": "σ",
+        r"\omega": "ω", r"\sum": "∑", r"\int": "∫", r"\infty": "∞",
+        r"\sqrt": "√", r"\frac": "½", r"\times": "×", r"\div": "÷",
+        r"\pm": "±", r"\leq": "≤", r"\geq": "≥", r"\neq": "≠",
+        r"\approx": "≈", r"\rightarrow": "→", r"\leftarrow": "←",
+        r"\Rightarrow": "⇒", r"\forall": "∀", r"\exists": "∃",
+        r"\in": "∈", r"\subset": "⊂", r"\cup": "∪", r"\cap": "∩",
+    }
+    
     def __init__(self) -> None:
         pass
     
@@ -69,18 +80,8 @@ class LaTeXConverter:
         Returns:
             转换后的 Unicode 字符串
         """
-        replacements = {
-            r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
-            r"\pi": "π", r"\theta": "θ", r"\lambda": "λ", r"\sigma": "σ",
-            r"\omega": "ω", r"\sum": "∑", r"\int": "∫", r"\infty": "∞",
-            r"\sqrt": "√", r"\frac": "½", r"\times": "×", r"\div": "÷",
-            r"\pm": "±", r"\leq": "≤", r"\geq": "≥", r"\neq": "≠",
-            r"\approx": "≈", r"\rightarrow": "→", r"\leftarrow": "←",
-            r"\Rightarrow": "⇒", r"\forall": "∀", r"\exists": "∃",
-            r"\in": "∈", r"\subset": "⊂", r"\cup": "∪", r"\cap": "∩",
-        }
         result = latex_formula
-        for k, v in replacements.items():
+        for k, v in self._UNICODE_REPLACEMENTS.items():
             result = result.replace(k, v)
         
         # 简化花括号：_{abc} -> _abc, ^{abc} -> ^abc, {abc} -> abc

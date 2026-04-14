@@ -74,8 +74,9 @@ async def fetch_and_export_single(
         return url, True, f"{filename_base}.docx", None
         
     except Exception as e:
-        error_msg = str(e)[:100]
-        print(f"{tag} [✗] 失败: {error_msg}")
+        error_msg = str(e)
+        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+        print(f"{tag} [✗] 失败: {display_msg}")
         return url, False, None, error_msg
 
 
