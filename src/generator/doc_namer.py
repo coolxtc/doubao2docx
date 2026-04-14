@@ -16,10 +16,11 @@
 """
 
 import json
-import fcntl
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+from filelock import FileLock
 
 
 class LinkRecord:
@@ -191,27 +192,24 @@ class DocNamer:
         Returns:
             文件名（不含扩展名），格式：日期-序号 标题
         """
-        lock_file = self.index_file.with_suffix(".lock")
-        lock_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(lock_file, "w") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            try:
-                date_str = self._get_date_str()
-                records = self._get_today_records()
-                clean_title = self._clean_title(title)
-                
-                if custom_index is not None:
-                    index = custom_index
-                    records[url] = LinkRecord(index=index, title=clean_title)
-                elif url in records:
-                    index = records[url].index
-                    records[url].title = clean_title
-                else:
-                    index = self._get_today_max_index() + 1
-                    records[url] = LinkRecord(index=index, title=clean_title)
-                
-                self._save()
-            finally:
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        lock_path = str(self.index_file) + ".lock"
+        self.index_file.parent.mkdir(parents=True, exist_ok=True)
+        lock = FileLock(lock_path, timeout=10)
+        with lock:
+            date_str = self._get_date_str()
+            records = self._get_today_records()
+            clean_title = self._clean_title(title)
+            
+            if custom_index is not None:
+                index = custom_index
+                records[url] = LinkRecord(index=index, title=clean_title)
+            elif url in records:
+                index = records[url].index
+                records[url].title = clean_title
+            else:
+                index = self._get_today_max_index() + 1
+                records[url] = LinkRecord(index=index, title=clean_title)
+            
+            self._save()
         
         return f"{date_str}-{index} {clean_title}"
