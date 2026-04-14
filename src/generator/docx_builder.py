@@ -427,8 +427,8 @@ class DocxBuilder:
         """添加代码块 - 带灰色背景"""
         para = self.document.add_paragraph()
         run = para.add_run(code)
-        run.font.name = self.config.font_name
         run.font.size = Pt(self.config.style_config.code_font_size)
+        self._set_run_font(run)
         
         # 添加灰色背景
         pPr = para._element.get_or_add_pPr()
