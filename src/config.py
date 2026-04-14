@@ -97,8 +97,10 @@ def _collect_env_overrides() -> dict:
     result = {}
     
     int_fields = {
-        "crawler": ["timeout", "scroll_max_attempts", "scroll_wait_ms",
+        "crawler": ["page_load_timeout", "scroll_timeout", "api_timeout",
+                    "timeout", "scroll_max_attempts", "scroll_wait_ms",
                     "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms",
+                    "code_expand_max_retries",
                     "retry_max_attempts", "retry_base_delay_ms", "retry_max_delay_ms"],
         "index": ["max_age_days", "lock_timeout"],
         "pandoc": ["timeout"],
@@ -149,12 +151,19 @@ def _collect_env_overrides() -> dict:
 
 @dataclass
 class CrawlerConfig:
+    # 分级超时配置（毫秒）
+    page_load_timeout: int = 30000
+    scroll_timeout: int = 15000
+    api_timeout: int = 10000
+    
+    # 统一超时（兼容旧配置）
     timeout: int = 30000
     scroll_max_attempts: int = 10
     scroll_wait_ms: int = 1000
     code_expand_settle_ms: int = 2000
     code_expand_base_ms: int = 2500
     code_expand_extra_ms: int = 2000
+    code_expand_max_retries: int = 6
     wait_for_selector: str = ".chat-content"
     browser_close_delay: float = 0.25
     retry_max_attempts: int = 3

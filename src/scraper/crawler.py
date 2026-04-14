@@ -14,6 +14,7 @@
 6. 提取聊天标题和消息内容
 """
 
+import asyncio
 import re
 import time
 from dataclasses import dataclass, field
@@ -134,6 +135,9 @@ class DoubaoSpider:
         self.anti_detect = create_anti_detect_middleware(anti_detect_level)
         
         # 从配置中读取超时时间和等待选择器
+        self.page_load_timeout = self.config.page_load_timeout
+        self.scroll_timeout = self.config.scroll_timeout
+        self.api_timeout = self.config.api_timeout
         self.timeout = self.config.timeout
         self.wait_for_selector = self.config.wait_for_selector
         self.tag = tag
@@ -268,7 +272,7 @@ class DoubaoSpider:
         # 访问URL并等待网络空闲
         # timeout: 请求超时时间（毫秒）
         # wait_until="networkidle": 等待网络请求都完成
-        await page.goto(url, timeout=self.timeout, wait_until="networkidle")
+        await page.goto(url, timeout=self.page_load_timeout, wait_until="networkidle")
         _log(prefix, "[✓] 页面加载完成")
 
         # 滚动页面加载更多内容
@@ -307,16 +311,26 @@ class DoubaoSpider:
         
         last_height = 0
         for i in range(self.config.scroll_max_attempts):
-            # 滚动到页面最底部
-            await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            try:
+                await asyncio.wait_for(
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)"),
+                    timeout=self.scroll_timeout / 1000
+                )
+            except asyncio.TimeoutError:
+                _log(prefix, f"[!] 滚动超时 (尝试 {i+1})")
+                break
             
-            # 等待新内容加载
             await page.wait_for_timeout(self.config.scroll_wait_ms)
             
-            # 获取新的页面高度
-            new_height = await page.evaluate("document.body.scrollHeight")
+            try:
+                new_height = await asyncio.wait_for(
+                    page.evaluate("document.body.scrollHeight"),
+                    timeout=self.scroll_timeout / 1000
+                )
+            except asyncio.TimeoutError:
+                _log(prefix, f"[!] 获取页面高度超时")
+                break
             
-            # 如果高度没变，说明已经滚动到底部
             if new_height == last_height:
                 _log(prefix, "[✓] 滚动完成: 已加载全部历史消息")
                 break
@@ -338,7 +352,7 @@ class DoubaoSpider:
         """
         tag = self.tag
         prefix = f"[{tag}] " if tag else ""
-        max_retries = 6
+        max_retries = self.config.code_expand_max_retries
         
         for attempt in range(max_retries):
             try:
