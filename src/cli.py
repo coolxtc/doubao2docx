@@ -10,7 +10,7 @@ from pathlib import Path
 from src.config import GlobalConfig
 from src.scraper import DoubaoSpider
 from src.scraper.crawler import reset_timer
-from src.preprocessor.doubao_parser import DoubaoHTMLParser, TextBlock
+from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer
 from src.generator.batch_report import BatchReport
 

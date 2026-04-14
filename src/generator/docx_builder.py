@@ -37,7 +37,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.oxml import parse_xml
 
-from ..preprocessor.doubao_parser import TextBlock, TableData, InlineContent, _strip_latex_delimiters
+from ..preprocessor import TextBlock, TableData, InlineContent
+from ..preprocessor.base import BaseParser as _BaseParser
 from ..config import DocumentStyleConfig
 from .latex_converter import LaTeXConverter
 
@@ -298,7 +299,7 @@ class DocxBuilder:
             return
 
         # 预处理：去除边界符、补偿空格
-        latex = _strip_latex_delimiters(latex)
+        latex = _BaseParser._strip_latex_delimiters(latex)
         latex = self._compensate_text_latex(latex)
 
         # 尝试转换为 Word 公式（OMML）
@@ -325,7 +326,7 @@ class DocxBuilder:
         if not latex.strip():
             return
 
-        latex = _strip_latex_delimiters(latex)
+        latex = _BaseParser._strip_latex_delimiters(latex)
         latex = self._compensate_text_latex(latex)
 
         math_element = self._latex_to_omml(latex, is_display)

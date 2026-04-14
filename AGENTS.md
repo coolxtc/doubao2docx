@@ -63,3 +63,11 @@ src/
 ## 已有注释风格
 
 代码注释面向 Python 新手，详细解释概念和原理。保持这个风格。
+
+## preprocessor 模块导出
+
+```
+src/preprocessor/__init__.py 导出:
+    BaseParser, PlatformConfig, DoubaoHTMLParser
+    TableData, InlineContent, TextBlock, ParsedPage
+```

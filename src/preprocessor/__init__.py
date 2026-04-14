@@ -1,7 +1,12 @@
-"""数据预处理模块"""
-from .doubao_parser import DoubaoHTMLParser, TextBlock
+from .base import BaseParser, PlatformConfig, TableData, InlineContent, TextBlock, ParsedPage
+from .doubao_parser import DoubaoHTMLParser
 
 __all__ = [
+    "BaseParser",
+    "PlatformConfig",
     "DoubaoHTMLParser",
+    "TableData",
+    "InlineContent",
     "TextBlock",
+    "ParsedPage",
 ]

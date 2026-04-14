@@ -299,7 +299,8 @@ doubao-export/
 │   │   └── anti_detect.py       # 反爬处理
 │   ├── preprocessor/            # 数据解析模块
 │   │   ├── __init__.py
-│   │   └── doubao_parser.py     # HTML 解析器
+│   │   ├── base.py              # 解析器基类（抽象基类 + 平台配置）
+│   │   └── doubao_parser.py     # 豆包 HTML 解析器
 │   └── generator/               # 文档生成模块
 │       ├── __init__.py
 │       ├── docx_builder.py      # Word 文档构建器
@@ -314,6 +315,31 @@ doubao-export/
 ├── Makefile                     # 构建脚本
 └── README.md                    # 项目说明文档
 ```
+
+---
+
+## 架构说明
+
+### 解析器架构
+
+解析器采用插件化设计，支持扩展到其他 AI 平台：
+
+```
+BaseParser (抽象基类)
+    └── DoubaoHTMLParser (豆包实现)
+
+PlatformConfig (平台配置)
+    ├── name: 平台标识
+    ├── latex_attr: LaTeX 公式属性名
+    ├── math_display_classes: 展示公式 CSS 类
+    ├── code_container_class: 代码容器 CSS 类
+    └── ...
+```
+
+**扩展新平台**：
+1. 创建 `PlatformConfig` 实例，配置平台差异字段
+2. 继承 `BaseParser`，实现 `parse()` 方法
+3. 在 `__init__.py` 中导出
 
 ---
 
