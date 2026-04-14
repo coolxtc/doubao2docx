@@ -56,7 +56,9 @@ class AntiDetectMiddleware:
         
         self.random_user_agent = random_user_agent
         self.disableAutomation = disableAutomation
-        self.user_agents = CrawlerConfig().user_agents
+        # 复用配置中的 User-Agent 列表，避免每次创建新实例
+        config = CrawlerConfig()
+        self.user_agents = config.user_agents
 
     async def apply(self, context: "BrowserContext") -> None:
         """应用反爬措施到浏览器上下文

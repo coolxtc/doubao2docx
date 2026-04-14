@@ -360,27 +360,25 @@ class DocxBuilder:
             return None
 
         if is_display:
-            tex_content = f"$$\n{latex}\n$$"
+            tex_content = f'$$\n{latex}\n$$'
         else:
-            tex_content = f"\\({latex}\\)"
+            tex_content = f'\\({latex}\\)'
 
         tmp_tex_path = None
         tmp_docx_path = None
-        
-        # 写入临时 tex 文件
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".tex", delete=False
-        ) as tmp_tex:
-            tmp_tex.write(tex_content)
-            tmp_tex_path = tmp_tex.name
-
-        # 创建临时 docx 文件
-        with tempfile.NamedTemporaryFile(
-            suffix=".docx", delete=False
-        ) as tmp_docx:
-            tmp_docx_path = tmp_docx.name
 
         try:
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.tex', delete=False
+            ) as tmp_tex:
+                tmp_tex.write(tex_content)
+                tmp_tex_path = tmp_tex.name
+
+            with tempfile.NamedTemporaryFile(
+                suffix='.docx', delete=False
+            ) as tmp_docx:
+                tmp_docx_path = tmp_docx.name
+
             # 执行 pandoc 转换
             cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)

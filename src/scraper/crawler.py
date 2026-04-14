@@ -294,15 +294,6 @@ class DoubaoSpider:
         """
         return bool(re.match(self.DOUBAO_URL_PATTERN, url))
 
-    async def _wait_for_content(self, page: "Page") -> None:
-        wait_time = 3
-        for _ in range(3):
-            await page.wait_for_timeout(wait_time * 1000)
-            if await page.query_selector(self.wait_for_selector):
-                return
-            wait_time *= 2
-        await page.wait_for_timeout(self.config.content_load_wait_ms)
-
     async def _scroll_page(self, page: "Page") -> None:
         """滚动页面加载更多内容
         
