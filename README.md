@@ -141,7 +141,8 @@ pip install -r requirements.txt
 - **python-docx**：Word 文档操作库
 - **beautifulsoup4**：HTML 解析库
 - **lxml**：XML/HTML 解析器
-- **pytest**：测试框架（可选）
+- **filelock**：文件锁，防止多进程同时写入索引文件
+- **pyyaml**：YAML 配置文件解析库
 
 ### 第三步：安装 Playwright 浏览器
 
@@ -247,6 +248,59 @@ python -m src.cli https://www.doubao.com/thread/test --index 5
 
 - **low（低）**：只使用随机 User-Agent，适合网络稳定的情况
 - **medium（中）**：随机 User-Agent + 隐藏自动化特征，默认推荐
+
+---
+
+## 配置调整
+
+工具支持通过配置文件或环境变量调整参数，无需修改代码。
+
+### 配置文件方式
+
+项目根目录的 `config.yaml` 包含所有可调整的配置项：
+
+```yaml
+crawler:
+  timeout: 30000              # 请求超时（毫秒）
+  scroll_max_attempts: 10     # 最大滚动次数
+  scroll_wait_ms: 1000       # 滚动后等待时间
+
+index:
+  max_age_days: 10           # 历史记录保留天数
+  lock_timeout: 10            # 文件锁超时（秒）
+```
+
+修改后重启工具即可生效。
+
+### 环境变量方式
+
+也可以通过环境变量覆盖配置：
+
+```bash
+# Unix/macOS
+export CRAWLER_TIMEOUT=60000
+export INDEX_MAX_AGE_DAYS=30
+export PANDOC_TIMEOUT=20
+
+# Windows
+set CRAWLER_TIMEOUT=60000
+set INDEX_MAX_AGE_DAYS=30
+```
+
+### 可用配置项
+
+| 配置项 | 说明 | 默认值 | 环境变量 |
+|-------|------|--------|---------|
+| `crawler.timeout` | 请求超时(ms) | 30000 | `CRAWLER_TIMEOUT` |
+| `crawler.scroll_max_attempts` | 最大滚动次数 | 10 | `CRAWLER_SCROLL_MAX_ATTEMPTS` |
+| `crawler.scroll_wait_ms` | 滚动等待(ms) | 1000 | `CRAWLER_SCROLL_WAIT_MS` |
+| `crawler.browser_close_delay` | 浏览器关闭延迟(s) | 0.25 | `CRAWLER_BROWSER_CLOSE_DELAY` |
+| `index.max_age_days` | 过期天数 | 10 | `INDEX_MAX_AGE_DAYS` |
+| `index.lock_timeout` | 文件锁超时(s) | 10 | `INDEX_LOCK_TIMEOUT` |
+| `pandoc.timeout` | Pandoc超时(s) | 15 | `PANDOC_TIMEOUT` |
+| `document_style.title_font_size` | 标题字号 | 18 | `DOCUMENT_STYLE_TITLE_FONT_SIZE` |
+| `document_style.code_font_size` | 代码字号 | 10 | `DOCUMENT_STYLE_CODE_FONT_SIZE` |
+| `global.url_fallback_length` | URL截断长度 | 20 | `GLOBAL_URL_FALLBACK_LENGTH` |
 - **high（高）**：同 medium，可扩展更多反检测措施
 
 ---
@@ -401,6 +455,8 @@ python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 | beautifulsoup4 | >= 4.12.0 | 解析 HTML 内容 |
 | lxml | >= 5.0.0 | HTML 解析器底层库 |
 | filelock | >= 3.13.0 | 文件锁，防止多进程同时写入索引文件 |
+| pyyaml | >= 6.0 | YAML 配置文件解析库 |
+| pytest | >= 7.4.0 | 测试框架（可选） |
 
 ### 系统依赖
 

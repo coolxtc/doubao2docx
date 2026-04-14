@@ -24,7 +24,25 @@ python -m src.cli <豆包链接>
 1. Python 3.10+
 2. Playwright Chromium 浏览器 (`playwright install chromium`)
 3. filelock>=3.13.0（随 requirements.txt 自动安装，用于文件锁）
-4. 可选：pandoc（用于 LaTeX 公式转换）
+4. pyyaml>=6.0（随 requirements.txt 自动安装，用于配置文件）
+5. 可选：pandoc（用于 LaTeX 公式转换）
+
+## 配置说明
+
+配置文件 `config.yaml` 位于项目根目录，支持以下配置：
+
+| 配置组 | 配置项 | 说明 |
+|--------|--------|------|
+| crawler | timeout | 请求超时(ms) |
+| crawler | scroll_max_attempts | 最大滚动次数 |
+| crawler | browser_close_delay | 浏览器关闭延迟(s) |
+| index | max_age_days | 历史记录保留天数 |
+| index | lock_timeout | 文件锁超时(s) |
+| pandoc | timeout | Pandoc超时(s) |
+| document_style | title_font_size | 标题字号 |
+| document_style | code_font_size | 代码字号 |
+
+也可通过环境变量覆盖，如 `CRAWLER_TIMEOUT=60000`。
 
 ## CLI 参数
 

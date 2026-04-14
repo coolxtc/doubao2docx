@@ -1,119 +1,164 @@
-# ============================================================
-# 全局配置模块
-# ============================================================
-# 这个文件的作用是：保存程序中需要用到的各种设置参数
-# 类似于一个"设置菜单"，把常用的数值集中管理
-# 方便以后修改，不需要到处找代码
-# ============================================================
-
 """
-全局配置模块 - 存放整个程序需要用到的配置项
-
-为什么要用配置文件？
-- 如果直接把参数写在代码里，改动时需要找很多地方
-- 把参数放在一个"设置本"里，以后要调整直接改这里就行
-
-这个文件包含三类配置：
-1. CrawlerConfig - 爬虫设置（控制网页抓取行为）
-2. DocumentStyleConfig - 文档样式设置（控制输出文档的格式）
-3. GlobalConfig - 全局配置（管理上面两个配置）
+全局配置模块 - 支持 YAML 文件和环境变量加载
 """
 
-# ------------------------------------------------------------
-# 导入Python标准库的dataclass装饰器
-# ------------------------------------------------------------
-# dataclass 是一个"装饰器"，加上这个标记后：
-# - Python会自动生成 __init__ 方法（初始化）
-# - 自动生成 __repr__ 方法（方便打印查看）
-# - 自动生成 __eq__ 方法（方便比较）
-#
-# 简单理解：就像自动售票机，告诉我们需要哪些参数，它自动处理
-# ------------------------------------------------------------
-from dataclasses import dataclass
+import os
+import sys
+from dataclasses import dataclass, fields
+from pathlib import Path
+
+# 尝试导入 yaml，失败时使用默认值
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
 
 
 # ============================================================
-# 第一部分：爬虫配置类
+# 配置加载器
 # ============================================================
-# 用途：存放网页抓取相关的设置参数
-# "Crawler" = 爬虫程序，"Config" = 配置
-# 爬虫程序可以自动访问网页、下载内容，像虫子在网页上爬来爬去
+
+def _get_config_path() -> Path | None:
+    """获取配置文件路径"""
+    # 优先查找项目根目录的 config.yaml
+    if hasattr(sys, '_MEIPASS'):
+        # PyInstaller 打包环境
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).parent.parent
+    
+    config_path = base_path / "config.yaml"
+    return config_path if config_path.exists() else None
+
+
+def _env_override(key: str, value, prefix: str = "") -> tuple[str, bool]:
+    """
+    检查环境变量覆盖，返回 (最终值, 是否被覆盖)
+    
+    环境变量命名规则：前缀_层级_键名，全部大写
+    例如：CRAWLER_TIMEOUT, INDEX_MAX_AGE_DAYS
+    """
+    env_key = f"{prefix}{key}".upper()
+    env_value = os.environ.get(env_key)
+    
+    if env_value is None:
+        return value, False
+    
+    # 根据原始值类型转换环境变量
+    if isinstance(value, bool):
+        return env_value.lower() in ('true', '1', 'yes'), True
+    elif isinstance(value, int):
+        return int(env_value), True
+    elif isinstance(value, float):
+        return float(env_value), True
+    elif isinstance(value, list):
+        # 列表类型从 YAML 加载，不从环境变量覆盖
+        return value, False
+    else:
+        return env_value, True
+
+
+def _apply_env_overrides(data: dict, prefix: str = "") -> dict:
+    """递归应用环境变量覆盖到配置字典"""
+    result = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            result[key] = _apply_env_overrides(value, f"{prefix}{key}_")
+        else:
+            result[key], _ = _env_override(key, value, prefix)
+    return result
+
+
+def load_yaml_config() -> dict:
+    """从 YAML 文件加载配置"""
+    config_path = _get_config_path()
+    
+    if config_path is None or not YAML_AVAILABLE:
+        return {}
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f) or {}
+
+
+def get_config_overrides() -> dict:
+    """获取所有配置覆盖（YAML + 环境变量）"""
+    yaml_config = load_yaml_config()
+    
+    if yaml_config:
+        return _apply_env_overrides(yaml_config)
+    
+    # 即使没有 YAML 配置，也从环境变量收集覆盖
+    return _collect_env_overrides()
+
+
+def _collect_env_overrides() -> dict:
+    """仅从环境变量收集配置覆盖"""
+    result = {}
+    
+    int_fields = {
+        "crawler": ["timeout", "scroll_max_attempts", "scroll_wait_ms",
+                     "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms"],
+        "index": ["max_age_days", "lock_timeout"],
+        "pandoc": ["timeout"],
+        "document_style": ["title_font_size", "code_font_size"],
+        "global": ["url_fallback_length"],
+    }
+    float_fields = {
+        "crawler": ["browser_close_delay"],
+    }
+    
+    prefixes = {
+        "crawler": "CRAWLER_",
+        "index": "INDEX_",
+        "pandoc": "PANDOC_",
+        "document_style": "DOCUMENT_STYLE_",
+        "global": "GLOBAL_",
+    }
+    
+    for section, fields in int_fields.items():
+        for field in fields:
+            env_var = f"{prefixes[section]}{field.upper()}"
+            env_value = os.environ.get(env_var)
+            if env_value is not None:
+                if section not in result:
+                    result[section] = {}
+                result[section][field] = int(env_value)
+    
+    for section, fields in float_fields.items():
+        for field in fields:
+            env_var = f"{prefixes[section]}{field.upper()}"
+            env_value = os.environ.get(env_var)
+            if env_value is not None:
+                if section not in result:
+                    result[section] = {}
+                result[section][field] = float(env_value)
+    
+    # 字符串类型（wait_for_selector）
+    env_value = os.environ.get("CRAWLER_WAIT_FOR_SELECTOR")
+    if env_value is not None:
+        result.setdefault("crawler", {})["wait_for_selector"] = env_value
+    
+    return result
+
+
 # ============================================================
+# 爬虫配置类
+# ============================================================
+
 @dataclass
 class CrawlerConfig:
-    """爬虫配置 - 存放网页抓取相关的设置参数
-    
-    包含参数说明：
-    - timeout: 请求超时时间，程序访问网页时如果超过这个时间没响应就放弃（毫秒）
-    - scroll_max_attempts: 最多滚动次数，防止无限滚动采集过多数据
-    - scroll_wait_ms: 滚动后等待时间，让网页有时间加载新内容
-    - content_load_wait_ms: 页面加载完成后等待时间，确保内容加载完成
-    - code_expand_wait_ms: 点击展开代码块后等待时间
-    - code_expand_settle_ms: 代码块展开后等待稳定时间，避免读到正在加载的内容
-    - wait_for_selector: 等待网页上出现这个元素后再开始处理（CSS选择器）
-    """
-    
-    # 请求超时时间，单位：毫秒（ms）
-    # 30000ms = 30秒，超过30秒没响应就放弃请求
-    # 网络不好时网页可能加载比较慢，设置30秒比较稳妥
     timeout: int = 30000
-    
-    # 最多滚动尝试次数
-    # 很多网页是"无限滚动"的，不阻止会一直滚下去
-    # 设置10次表示最多滚动10次就停止，防止采集过多无用数据
     scroll_max_attempts: int = 10
-    
-    # 滚动后等待时间（毫秒）
-    # 程序发送滚动指令后，需要等待网页加载新内容
-    # 1秒是合理的等待时间，大部分网页1秒内可以加载完成
     scroll_wait_ms: int = 1000
-    
-    # 页面内容加载等待时间（毫秒）
-    # 打开新网页时需要等待内容加载完成
-    # 首次加载内容更多（图片、视频等），所以比滚动等待时间长
-    content_load_wait_ms: int = 3000
-    
-    # 等待内容渲染的超时时间（毫秒）
-    # 如果超时则等待固定时间后继续
-    content_render_timeout_ms: int = 10000
-    
-    # 代码块展开后的等待时间（毫秒）
-    # 有些网页上的代码块默认是折叠的，需要点击展开
-    # 展开操作后需要等待内容加载出来
-    code_expand_wait_ms: int = 2000
-    
-    # 代码块展开后稳定等待时间（毫秒）
-    # 代码块刚展开时可能还在"跳动"或动画中
-    # 等待2秒让布局稳定下来再读取内容
     code_expand_settle_ms: int = 2000
-
-    # 代码块展开基础等待时间（毫秒）
-    # 每次尝试展开代码块时，先等待基础时间让内容加载
-    # 2.5秒考虑到有些代码块内容较多，需要较长时间加载
     code_expand_base_ms: int = 2500
-
-    # 代码块展开指数退避增量（毫秒）
-    # 每次重试时额外增加的等待时间，形成指数退避
-    # 尝试1: 2500ms, 尝试2: 4500ms, 尝试3: 6500ms...
-    # 这样可以避免每次都等太久，又能保证长代码块有足够时间加载
     code_expand_extra_ms: int = 2000
-
-    # 等待网页出现的元素（CSS选择器）
-    # CSS选择器就像网页上的"地址"，通过它可以找到对应内容
-    # ".chat-content" 表示查找 class="chat-content" 的元素
-    # 程序会等待这个元素出现后再开始处理，确保网页加载完成
     wait_for_selector: str = ".chat-content"
-
-    # 反爬虫 User-Agent 列表
-    # 随机选择其中一个 User-Agent 发送请求，模拟不同浏览器
+    browser_close_delay: float = 0.25
     user_agents: list[str] | None = None
 
-    # ------------------------------------------------------------
-    # __post_init__ 方法
-    # ------------------------------------------------------------
     def __post_init__(self):
-        """初始化后的处理方法 - 自动创建默认值"""
-        # 如果 user_agents 是空的，使用默认列表
         if self.user_agents is None:
             self.user_agents = [
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -123,73 +168,122 @@ class CrawlerConfig:
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
             ]
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "CrawlerConfig":
+        """从字典创建实例，只设置提供的字段"""
+        if data is None:
+            return cls()
+        
+        valid_fields = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
+
 
 # ============================================================
-# 第二部分：文档样式配置类
+# 文档样式配置类
 # ============================================================
-# 用途：存放输出文档的格式设置（字体、字号等）
-# ============================================================
+
 @dataclass
 class DocumentStyleConfig:
-    """文档样式配置 - 存放输出文档的格式设置
-    
-    包含参数说明：
-    - title_font_size: 文档标题的字号（磅）
-    - code_font_size: 代码块的字号（磅），通常比正文字号小
-    """
-    
-    # 标题字体大小（单位：磅，point）
-    # 中文文档常用"二号"字，约等于18磅
     title_font_size: int = 18
-    
-    # 代码块字体大小（单位：磅）
-    # 代码通常比较长，用小字号可以显示更多内容
-    # 类似于编程书籍中的代码块，常用小字体
     code_font_size: int = 10
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "DocumentStyleConfig":
+        """从字典创建实例，只设置提供的字段"""
+        if data is None:
+            return cls()
+        
+        valid_fields = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
+
 
 # ============================================================
-# 第三部分：全局配置类
+# 索引配置类
 # ============================================================
-# 用途：统一的配置管理器，管理上面两个配置类
-# 类似于"总菜单"，下面管着多个"子菜单"
+
+@dataclass
+class IndexConfig:
+    max_age_days: int = 10
+    lock_timeout: int = 10
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "IndexConfig":
+        """从字典创建实例，只设置提供的字段"""
+        if data is None:
+            return cls()
+        
+        valid_fields = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
+
+
 # ============================================================
+# Pandoc 配置类
+# ============================================================
+
+@dataclass
+class PandocConfig:
+    timeout: int = 15
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PandocConfig":
+        """从字典创建实例，只设置提供的字段"""
+        if data is None:
+            return cls()
+        
+        valid_fields = {f.name for f in fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered)
+
+
+# ============================================================
+# 全局配置类
+# ============================================================
+
 @dataclass 
 class GlobalConfig:
-    """全局配置 - 管理所有配置的顶层配置
-    
-    这个类用来统一管理爬虫配置和文档样式配置。
-    如果某个配置没有手动设置，会自动创建默认实例。
-    """
-    
-    # 爬虫相关配置，初始为None会在初始化后自动创建默认实例
     crawler: CrawlerConfig | None = None
-    
-    # 文档样式配置，初始为None会在初始化后自动创建默认实例
     document_style: DocumentStyleConfig | None = None
-
-    # URL 标签 fallback 截断长度
-    # 当无法从 URL 提取 thread ID 时，截取 URL 前 N 位作为标签
+    index: IndexConfig | None = None
+    pandoc: PandocConfig | None = None
     url_fallback_length: int = 20
 
-    # ------------------------------------------------------------
-    # __post_init__ 方法
-    # ------------------------------------------------------------
-    # 这是dataclass提供的特殊钩子方法
-    # 会在__init__方法执行完后自动调用
-    # 用途：检查配置是否为None，如果是就创建默认实例
-    # ------------------------------------------------------------
     def __post_init__(self):
-        """初始化后的处理方法 - 自动创建默认配置实例
+        overrides = get_config_overrides()
         
-        这个方法会在对象创建后自动执行，确保：
-        - 爬虫配置有默认值可用
-        - 文档样式配置有默认值可用
-        """
-        # 如果爬虫配置是空的，就创建默认的爬虫配置实例
         if self.crawler is None:
-            self.crawler = CrawlerConfig()
+            crawler_data = overrides.get("crawler", {})
+            self.crawler = CrawlerConfig.from_dict(crawler_data)
         
-        # 如果文档样式配置是空的，就创建默认的实例
         if self.document_style is None:
-            self.document_style = DocumentStyleConfig()
+            self.document_style = DocumentStyleConfig.from_dict(overrides.get("document_style"))
+        
+        if self.index is None:
+            self.index = IndexConfig.from_dict(overrides.get("index"))
+        
+        if self.pandoc is None:
+            self.pandoc = PandocConfig.from_dict(overrides.get("pandoc"))
+        
+        # 全局配置项（支持环境变量覆盖）
+        self.url_fallback_length, _ = _env_override(
+            "url_fallback_length", self.url_fallback_length, "GLOBAL_"
+        )
+
+    @classmethod
+    def reload(cls) -> "GlobalConfig":
+        """重新加载配置（从 YAML 和环境变量）"""
+        return cls()
+
+
+# 全局配置实例（延迟初始化）
+_config: GlobalConfig | None = None
+
+
+def get_config() -> GlobalConfig:
+    """获取全局配置实例（单例）"""
+    global _config
+    if _config is None:
+        _config = GlobalConfig()
+    return _config

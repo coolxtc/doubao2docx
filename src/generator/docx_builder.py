@@ -106,6 +106,10 @@ class DocxBuilder:
         # 列表相关的状态跟踪
         self._last_list_type = None
         self._list_counter = 0
+        
+        # 从配置读取 pandoc 超时
+        from ..config import get_config
+        self._pandoc_timeout = get_config().pandoc.timeout
 
     def _setup_document(self) -> None:
         """设置文档基础样式 - 页边距和默认字体"""
@@ -382,7 +386,7 @@ class DocxBuilder:
 
             # 执行 pandoc 转换
             cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._pandoc_timeout)
 
             if result.returncode == 0 and os.path.exists(tmp_docx_path):
                 doc = Document(tmp_docx_path)

@@ -1,19 +1,4 @@
-"""
-文档名称生成器
-
-这个模块负责为导出的 Word 文档生成唯一的文件名。
-同时维护一个索引文件（link_index.json）记录已导出的文档。
-
-主要功能：
-- 生成唯一文件名：日期-序号 标题.docx
-- 维护链接索引，记录已导出的文档
-- 自动清理过期数据（10天前的记录）
-
-核心概念：
-- 日期格式：260412（YYMMDD）
-- 序号：同一天内递增
-- 索引文件：JSON格式，存储链接和对应的序号/标题
-"""
+"""文档名称生成器 - 为导出的 Word 文档生成唯一文件名"""
 
 import json
 from datetime import datetime, timedelta
@@ -21,6 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from filelock import FileLock
+
+from ..config import get_config
 
 
 class LinkRecord:
@@ -52,20 +39,7 @@ class DocNamer:
     
     文件名格式：日期-序号 标题.docx
     示例：260412-1 固定翼飞机设计.docx
-    
-    工作原理：
-    1. 读取索引文件，获取当天已有记录
-    2. 如果 URL 已存在，使用已有的序号
-    3. 如果是新 URL，使用当天最大序号 +1
-    4. 保存更新后的索引
-    5. 返回生成的文件名
-    
-    自动清理：
-    - 超过 10 天的记录会被自动删除
     """
-    
-    # 过期数据保留天数
-    MAX_AGE_DAYS = 10
     
     def __init__(self, index_file: Path) -> None:
         """初始化
@@ -75,6 +49,12 @@ class DocNamer:
         """
         self.index_file = index_file
         self._data: dict[str, dict[str, LinkRecord]] = {}
+        
+        # 从配置读取
+        config = get_config()
+        self._max_age_days = config.index.max_age_days
+        self._lock_timeout = config.index.lock_timeout
+        
         self._load()
     
     def _load(self) -> None:
@@ -150,9 +130,9 @@ class DocNamer:
         return max(r.index for r in records.values())
     
     def _cleanup_old_entries(self) -> None:
-        """清理过期数据 - 删除超过10天的记录"""
+        """清理过期数据"""
         today = self._get_date_str()
-        cutoff = self._get_date_str(datetime.now() - timedelta(days=self.MAX_AGE_DAYS))
+        cutoff = self._get_date_str(datetime.now() - timedelta(days=self._max_age_days))
         
         dates_to_remove = [
             d for d in self._data.keys() 
@@ -194,7 +174,7 @@ class DocNamer:
         """
         lock_path = str(self.index_file) + ".lock"
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
-        lock = FileLock(lock_path, timeout=10)
+        lock = FileLock(lock_path, timeout=self._lock_timeout)
         with lock:
             date_str = self._get_date_str()
             records = self._get_today_records()

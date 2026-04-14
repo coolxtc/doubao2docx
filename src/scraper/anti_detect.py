@@ -52,13 +52,12 @@ class AntiDetectMiddleware:
             disableAutomation: 是否隐藏webdriver自动化标识
                                True: 修改 navigator.webdriver 为 undefined
         """
-        from ..config import CrawlerConfig
+        from ..config import get_config
         
         self.random_user_agent = random_user_agent
         self.disableAutomation = disableAutomation
-        # 复用配置中的 User-Agent 列表，避免每次创建新实例
-        config = CrawlerConfig()
-        self.user_agents = config.user_agents
+        # 使用全局配置单例
+        self.user_agents = get_config().crawler.user_agents
 
     async def apply(self, context: "BrowserContext") -> None:
         """应用反爬措施到浏览器上下文

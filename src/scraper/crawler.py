@@ -223,10 +223,9 @@ class DoubaoSpider:
         
         # Windows 上的资源清理处理
         if platform.system() == "Windows":
-            # 强制垃圾回收，清理未释放的子进程
             import gc
             gc.collect()
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(self.config.browser_close_delay)
 
     async def fetch(self, url: str) -> ChatData:
         """爬取指定URL的聊天记录 - 主方法
