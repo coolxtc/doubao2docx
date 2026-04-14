@@ -304,7 +304,8 @@ doubao-export/
 │       ├── __init__.py
 │       ├── docx_builder.py      # Word 文档构建器
 │       ├── latex_converter.py   # LaTeX 公式转换
-│       └── doc_namer.py         # 文档命名器
+│       ├── doc_namer.py         # 文档命名器
+│       └── batch_report.py      # 批量导出报告生成器
 ├── data/                        # 数据输出目录
 │   ├── export/                  # 导出的 Word 文档
 │   └── link_index.json          # 链接索引文件
@@ -355,7 +356,7 @@ python -m src.cli url1 url2 url3
 python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 ```
 
-批量导出完成后会自动生成报告文件（`data/batch_report_*.txt`），记录成功/失败情况。
+批量导出完成后会在终端直接打印汇总报告，记录成功/失败情况（不保存文件）。
 
 ### Q7: 导出后的文档在哪里？
 
@@ -373,6 +374,7 @@ python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 | python-docx | >= 1.1.0 | 操作 Word 文档 |
 | beautifulsoup4 | >= 4.12.0 | 解析 HTML 内容 |
 | lxml | >= 5.0.0 | HTML 解析器底层库 |
+| filelock | >= 3.13.0 | 文件锁，防止多进程同时写入索引文件 |
 
 ### 系统依赖
 

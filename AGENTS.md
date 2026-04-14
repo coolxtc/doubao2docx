@@ -23,7 +23,8 @@ python -m src.cli <豆包链接>
 
 1. Python 3.10+
 2. Playwright Chromium 浏览器 (`playwright install chromium`)
-3. 可选：pandoc（用于 LaTeX 公式转换）
+3. filelock>=3.13.0（随 requirements.txt 自动安装，用于文件锁）
+4. 可选：pandoc（用于 LaTeX 公式转换）
 
 ## CLI 参数
 
@@ -37,7 +38,7 @@ python -m src.cli <豆包链接>
 ## 输出位置
 
 - 文档：`data/export/YYYYMMDD/*.docx`（按日期分类）
-- 报告：`data/batch_report_YYYYMMDD_HHMMSS.txt`（批量导出）
+- 报告：批量导出完成后在终端直接打印，不保存文件
 - 索引：`data/link_index.json`
 
 ## 项目结构
