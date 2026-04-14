@@ -116,6 +116,24 @@ class DocNamer:
         day = f"{dt.day:02d}"
         return f"{year}{month}{day}"
     
+    def get_date_str(self) -> str:
+        """获取当前日期字符串 - 公共方法
+        
+        Returns:
+            当前日期，格式：YYMMDD
+        """
+        return self._get_date_str()
+    
+    def get_next_base_index(self) -> int:
+        """获取下一个可用序号（从1开始）
+        
+        用于预分配序号，确保批量导出时按顺序分配。
+        
+        Returns:
+            下一个可用的序号
+        """
+        return self._get_today_max_index() + 1
+    
     def _get_today_records(self) -> dict[str, LinkRecord]:
         """获取今天的记录，不存在则创建"""
         date_str = self._get_date_str()

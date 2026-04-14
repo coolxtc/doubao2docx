@@ -60,7 +60,7 @@ async def fetch_and_export_single(
         namer = DocNamer(index_file)
         filename_base = namer.get_filename(url, chat_data.title, custom_index)
         
-        date_str = filename_base[:6]
+        date_str = namer.get_date_str()
         output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -93,15 +93,24 @@ async def fetch_and_export_batch(
     print(f"[批次导出模式] 并发数: {concurrency}")
     print(f"总计 {total} 个 URL\n")
     
+    # 预分配序号：确保按入参顺序分配序号
+    index_file = Path("data/link_index.json")
+    namer = DocNamer(index_file)
+    base_index = namer.get_next_base_index()
+    
     semaphore = asyncio.Semaphore(concurrency)
     
-    async def bounded_export(index: int, url: str):
+    async def bounded_export(task_index: int, url: str, custom_index: int):
         async with semaphore:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, None, index, total
+                url, output_dir, anti_detect_level, custom_index, task_index, total
             )
     
-    tasks = [bounded_export(i + 1, url) for i, url in enumerate(urls)]
+    # 按入参顺序预分配序号：URL1 -> base_index+1, URL2 -> base_index+2, ...
+    tasks = [
+        bounded_export(i + 1, url, base_index + i)
+        for i, url in enumerate(urls)
+    ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     for result in results:

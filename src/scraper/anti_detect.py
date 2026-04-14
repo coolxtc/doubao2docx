@@ -43,7 +43,6 @@ class AntiDetectMiddleware:
         self,
         random_user_agent: bool = True,
         disableAutomation: bool = True,
-        user_agents: list[str] | None = None,
     ) -> None:
         """初始化反爬中间件
         
@@ -52,17 +51,12 @@ class AntiDetectMiddleware:
                                True: 每次请求随机选择列表中的一个
             disableAutomation: 是否隐藏webdriver自动化标识
                                True: 修改 navigator.webdriver 为 undefined
-            user_agents: User-Agent 列表，为 None 时使用默认值
         """
+        from ..config import CrawlerConfig
+        
         self.random_user_agent = random_user_agent
         self.disableAutomation = disableAutomation
-        self.user_agents = user_agents or [
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-        ]
+        self.user_agents = CrawlerConfig().user_agents
 
     async def apply(self, context: "BrowserContext") -> None:
         """应用反爬措施到浏览器上下文
