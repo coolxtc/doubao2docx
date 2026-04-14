@@ -66,6 +66,12 @@ src/
 | 2026-04-14 | 代码块展开等待时间单位错误 | scraper/crawler.py | wait_for_timeout 参数从秒改为毫秒 |
 | 2026-04-14 | 批量导出序号并发冲突 | generator/doc_namer.py | 添加文件锁 (fcntl) |
 | 2026-04-14 | 代码块中文显示字体不对 | generator/docx_builder.py | 使用 _set_run_font 方法设置中文字体 |
+| 2026-04-14 | 重复保存索引文件 | generator/doc_namer.py | 删除锁外重复的 _save() 调用 |
+| 2026-04-14 | 时间参数单位错误 | scraper/crawler.py | 修复 wait_for_timeout 参数（移除 /1000） |
+| 2026-04-14 | 硬编码值提取 | config.py | 添加 code_expand_base_ms, code_expand_extra_ms, url_fallback_length |
+| 2026-04-14 | 正则预编译 | cli.py | 模块级预编译正则表达式 |
+| 2026-04-14 | 异常捕获优化 | generator/docx_builder.py | 改为捕获具体异常类型 |
+| 2026-04-14 | 类型标注修正 | config.py | 使用 \| None 类型标注 |
 
 ## 已有注释风格
 

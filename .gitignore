@@ -43,3 +43,7 @@ htmlcov/
 
 # Project specific
 data/
+
+# opencode
+.opencode
+.sisyphus

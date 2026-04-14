@@ -195,5 +195,4 @@ class DocNamer:
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         
-        self._save()
         return f"{date_str}-{index} {clean_title}"

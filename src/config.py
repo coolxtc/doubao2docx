@@ -86,7 +86,18 @@ class CrawlerConfig:
     # 代码块刚展开时可能还在"跳动"或动画中
     # 等待2秒让布局稳定下来再读取内容
     code_expand_settle_ms: int = 2000
-    
+
+    # 代码块展开基础等待时间（毫秒）
+    # 每次尝试展开代码块时，先等待基础时间让内容加载
+    # 2.5秒考虑到有些代码块内容较多，需要较长时间加载
+    code_expand_base_ms: int = 2500
+
+    # 代码块展开指数退避增量（毫秒）
+    # 每次重试时额外增加的等待时间，形成指数退避
+    # 尝试1: 2500ms, 尝试2: 4500ms, 尝试3: 6500ms...
+    # 这样可以避免每次都等太久，又能保证长代码块有足够时间加载
+    code_expand_extra_ms: int = 2000
+
     # 等待网页出现的元素（CSS选择器）
     # CSS选择器就像网页上的"地址"，通过它可以找到对应内容
     # ".chat-content" 表示查找 class="chat-content" 的元素
@@ -133,11 +144,15 @@ class GlobalConfig:
     """
     
     # 爬虫相关配置，初始为None会在初始化后自动创建默认实例
-    crawler: CrawlerConfig = None
+    crawler: CrawlerConfig | None = None
     
     # 文档样式配置，初始为None会在初始化后自动创建默认实例
-    document_style: DocumentStyleConfig = None
-    
+    document_style: DocumentStyleConfig | None = None
+
+    # URL 标签 fallback 截断长度
+    # 当无法从 URL 提取 thread ID 时，截取 URL 前 N 位作为标签
+    url_fallback_length: int = 20
+
     # ------------------------------------------------------------
     # __post_init__ 方法
     # ------------------------------------------------------------

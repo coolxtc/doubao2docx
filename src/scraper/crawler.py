@@ -320,7 +320,7 @@ class DoubaoSpider:
             await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             
             # 等待新内容加载
-            await page.wait_for_timeout(self.config.scroll_wait_ms / 1000)
+            await page.wait_for_timeout(self.config.scroll_wait_ms)
             
             # 获取新的页面高度
             new_height = await page.evaluate("document.body.scrollHeight")
@@ -376,8 +376,8 @@ class DoubaoSpider:
                     }
                 """)
                 # 等待代码块展开
-                base_wait_ms = 2500
-                extra_wait_ms = attempt * 2000
+                base_wait_ms = self.config.code_expand_base_ms
+                extra_wait_ms = attempt * self.config.code_expand_extra_ms
                 wait_time_ms = base_wait_ms + extra_wait_ms
                 await page.wait_for_timeout(wait_time_ms)
                 
@@ -486,7 +486,7 @@ class DoubaoSpider:
         await self._expand_code_blocks(page)
         
         # 等待展开动画完成
-        await page.wait_for_timeout(self.config.code_expand_settle_ms / 1000)
+        await page.wait_for_timeout(self.config.code_expand_settle_ms)
         
         # 提取消息列表
         messages = await self._extract_messages(page)

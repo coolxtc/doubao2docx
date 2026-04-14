@@ -130,7 +130,7 @@ class DocxBuilder:
         run.font.size = Pt(self.config.font_size)
         try:
             run._element.rPr.rFonts.set(qn('w:eastAsia'), self.config.font_name)
-        except:
+        except (AttributeError, TypeError):
             pass
 
     def _add_title(self, title: str) -> None:

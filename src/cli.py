@@ -2,22 +2,29 @@
 
 import argparse
 import asyncio
+import re
 import sys
 import time
 from pathlib import Path
 
+from src.config import GlobalConfig
 from src.scraper import DoubaoSpider
 from src.scraper.crawler import reset_timer
 from src.preprocessor.doubao_parser import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer
 from src.generator.batch_report import BatchReport
 
+# 全局配置实例
+_config = GlobalConfig()
+
+# 预编译的正则表达式，用于从 URL 提取 thread ID
+THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
+
 
 def _get_url_tag(url: str) -> str:
     """提取 URL 中的 thread ID 作为标签"""
-    import re
-    match = re.search(r'/thread/([a-zA-Z0-9]+)', url)
-    return match.group(1) if match else url[:20]
+    match = THREAD_ID_PATTERN.search(url)
+    return match.group(1) if match else url[:_config.url_fallback_length]
 
 
 async def fetch_and_export_single(
