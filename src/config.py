@@ -98,14 +98,15 @@ def _collect_env_overrides() -> dict:
     
     int_fields = {
         "crawler": ["timeout", "scroll_max_attempts", "scroll_wait_ms",
-                     "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms"],
+                    "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms",
+                    "retry_max_attempts", "retry_base_delay_ms", "retry_max_delay_ms"],
         "index": ["max_age_days", "lock_timeout"],
         "pandoc": ["timeout"],
         "document_style": ["title_font_size", "code_font_size"],
         "global": ["url_fallback_length"],
     }
     float_fields = {
-        "crawler": ["browser_close_delay"],
+        "crawler": ["browser_close_delay", "retry_backoff_factor"],
     }
     
     prefixes = {
@@ -156,6 +157,10 @@ class CrawlerConfig:
     code_expand_extra_ms: int = 2000
     wait_for_selector: str = ".chat-content"
     browser_close_delay: float = 0.25
+    retry_max_attempts: int = 3
+    retry_base_delay_ms: int = 1000
+    retry_max_delay_ms: int = 10000
+    retry_backoff_factor: float = 2.0
     user_agents: list[str] | None = None
 
     def __post_init__(self):

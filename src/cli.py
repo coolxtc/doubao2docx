@@ -78,22 +78,61 @@ async def fetch_and_export_single(
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 爬取失败: {display_msg}")
-        return url, False, None, error_msg
+        raise
     except ParseError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 解析失败: {display_msg}")
-        return url, False, None, error_msg
+        raise
     except ExportError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 导出失败: {display_msg}")
-        return url, False, None, error_msg
+        raise
     except Exception as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 失败: {display_msg}")
-        return url, False, None, error_msg
+        raise
+
+
+async def bounded_export_with_retry(
+    url: str,
+    output_dir: Path,
+    anti_detect_level: str,
+    custom_index: int | None,
+    task_index: int,
+    total: int,
+    config: GlobalConfig,
+) -> tuple[str, bool, str | None, str | None]:
+    crawler_cfg = config.crawler
+    max_attempts = crawler_cfg.retry_max_attempts
+    
+    if max_attempts <= 0:
+        return await fetch_and_export_single(
+            url, output_dir, anti_detect_level, custom_index, task_index, total
+        )
+    
+    base_delay = crawler_cfg.retry_base_delay_ms / 1000
+    max_delay = crawler_cfg.retry_max_delay_ms / 1000
+    backoff_factor = crawler_cfg.retry_backoff_factor
+    
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await fetch_and_export_single(
+                url, output_dir, anti_detect_level, custom_index, task_index, total
+            )
+        except (CrawlerError, ParseError, ExportError) as e:
+            last_error = e
+            if attempt < max_attempts:
+                delay = min(base_delay * (backoff_factor ** (attempt - 1)), max_delay)
+                url_tag = _get_url_tag(url)
+                tag = f"[{task_index}/{total}][{url_tag}]"
+                print(f"{tag} [!] 第 {attempt} 次重试失败: {str(e)[:50]}, {delay:.1f}s 后重试...")
+                await asyncio.sleep(delay)
+    
+    raise last_error
 
 
 async def fetch_and_export_batch(
@@ -132,8 +171,8 @@ async def fetch_and_export_batch(
     
     async def bounded_export(task_index: int, url: str, custom_index: int | None):
         async with semaphore:
-            return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, custom_index, task_index, total
+            return await bounded_export_with_retry(
+                url, output_dir, anti_detect_level, custom_index, task_index, total, _config
             )
     
     tasks = [
@@ -188,8 +227,8 @@ def main() -> int:
     
     try:
         if len(args.urls) == 1:
-            result = asyncio.run(fetch_and_export_single(
-                args.urls[0], output_dir, args.level, args.index, 1, 1
+            result = asyncio.run(bounded_export_with_retry(
+                args.urls[0], output_dir, args.level, args.index, 1, 1, _config
             ))
             return 0 if result[1] else 1
         else:

@@ -39,6 +39,22 @@ crawler:
   # 避免 Windows 资源清理问题
   browser_close_delay: 0.25
 
+  # 最大重试次数
+  # 爬取失败后重试次数，0 表示不重试
+  retry_max_attempts: 3
+
+  # 重试基础延迟（毫秒）
+  # 第一次重试前等待的时间
+  retry_base_delay_ms: 1000
+
+  # 重试最大延迟上限（毫秒）
+  # 退避延迟不会超过此值
+  retry_max_delay_ms: 10000
+
+  # 指数退避因子
+  # 每次失败后延迟翻倍：1s → 2s → 4s
+  retry_backoff_factor: 2
+
   # User-Agent 列表（随机选择）
   # 模拟不同浏览器访问，降低被识别为爬虫的概率
   user_agents:
