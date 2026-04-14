@@ -5,11 +5,11 @@
 
 核心概念：
 - PlatformConfig: 平台配置数据类，包含各平台的差异配置
-- BaseParser: 解析器抽象基类，定义统一接口
+- BaseParser: 解析器抽象基类，定义统一接口和抽象钩子方法
 
 扩展新平台：
-1. 创建 PlatformConfig 子类或实例
-2. 继承 BaseParser 并实现 parse() 方法
+1. 继承 BaseParser
+2. 实现所有 @abstractmethod 钩子方法
 3. 在 __init__.py 中导出
 """
 
@@ -146,39 +146,58 @@ class ParsedPage:
 class BaseParser(ABC):
     """解析器抽象基类 - 定义统一接口
     
-    所有平台解析器都应继承此类，实现 parse() 方法。
-    通用逻辑已在此基类中实现，平台特定逻辑在子类中实现。
+    所有平台解析器都应继承此类，实现所有抽象钩子方法。
+    通用逻辑已在基类中实现，平台特定逻辑通过钩子方法注入。
     
     使用方式：
         class MyParser(BaseParser):
             def __init__(self):
                 self.config = PlatformConfig(name="myplatform")
             
-    @abstractmethod
-    def parse(self, html: str) -> ParsedPage:
-                # 实现解析逻辑
+            # 实现所有抽象钩子方法
+            def _is_math_element(self, element) -> bool:
+                return element.has_attr(self.config.latex_attr)
+            
+            def _is_display_math(self, element) -> bool:
+                ...
+            
+            # ... 其他钩子方法
+            
+            # 可选：覆盖 _parse_impl 完全自定义解析流程
+            def _parse_impl(self, html: str) -> ParsedPage:
+                # 完全自定义实现
                 pass
-        
-        parser = MyParser()
-        result = parser.parse(html_string)
     """
     
     # 子类必须设置此属性
     config: PlatformConfig
     
-    @abstractmethod
-    def parse(self, html: str) -> ParsedPage:
-        """由子类实现"""
-        pass
+    # -------------------------------------------------------------------------
+    # 模板方法 - 提供解析流程骨架
+    # -------------------------------------------------------------------------
     
-    def _parse_impl(self, html: str) -> ParsedPage:
-        """解析 HTML 页面 - 主入口方法
+    def parse(self, html: str) -> ParsedPage:
+        """解析 HTML 页面 - 模板方法入口
         
         Args:
             html: HTML 字符串
             
         Returns:
             ParsedPage: 包含 title 和 blocks 的解析结果
+        """
+        return self._parse_impl(html)
+    
+    def _parse_impl(self, html: str) -> ParsedPage:
+        """解析实现 - 可被子类覆盖
+        
+        默认实现提供了完整的解析流程骨架。
+        如果子类需要完全自定义解析逻辑，可以覆盖此方法。
+        
+        Args:
+            html: HTML 字符串
+            
+        Returns:
+            ParsedPage: 解析结果
         """
         soup = BeautifulSoup(html, self.config.parser)
         
@@ -193,10 +212,114 @@ class BaseParser(ABC):
         
         return ParsedPage(title=title, blocks=blocks)
     
+    # -------------------------------------------------------------------------
+    # 抽象钩子方法 - 子类必须实现
+    # -------------------------------------------------------------------------
+    
+    @abstractmethod
+    def _get_title_selectors(self) -> list[str]:
+        """获取标题选择器列表
+        
+        返回用于查找页面标题的 CSS 选择器列表。
+        基类使用第一个匹配的选择器。
+        
+        Returns:
+            CSS 选择器字符串列表，如 ["h1", ".title", "[class*='title']"]
+        """
+        raise NotImplementedError("子类必须实现 _get_title_selectors()")
+    
+    @abstractmethod
+    def _is_math_element(self, element: Tag) -> bool:
+        """判断元素是否为公式元素
+        
+        子类根据平台特定的方式判断元素是否包含数学公式。
+        
+        Args:
+            element: HTML 元素
+            
+        Returns:
+            True 如果元素是公式元素，否则 False
+        """
+        raise NotImplementedError("子类必须实现 _is_math_element()")
+    
+    @abstractmethod
+    def _is_display_math(self, element: Tag) -> bool:
+        """判断元素是否为展示公式
+        
+        展示公式是独占一行的公式，通常有特殊的样式标记。
+        
+        Args:
+            element: HTML 元素
+            
+        Returns:
+            True 如果是展示公式，否则 False（行内公式）
+        """
+        raise NotImplementedError("子类必须实现 _is_display_math()")
+    
+    @abstractmethod
+    def _is_code_container(self, element: Tag) -> bool:
+        """判断元素是否为代码容器
+        
+        代码容器是包含代码块的父元素，用于识别完整的代码块结构。
+        
+        Args:
+            element: HTML 元素
+            
+        Returns:
+            True 如果元素是代码容器，否则 False
+        """
+        raise NotImplementedError("子类必须实现 _is_code_container()")
+    
+    @abstractmethod
+    def _is_paragraph_container(self, element: Tag) -> bool:
+        """判断元素是否为段落容器
+        
+        段落容器是包含段落内容的父元素。
+        
+        Args:
+            element: HTML 元素
+            
+        Returns:
+            True 如果元素是段落容器，否则 False
+        """
+        raise NotImplementedError("子类必须实现 _is_paragraph_container()")
+    
+    @abstractmethod
+    def _is_code_button(self, element: Tag) -> bool:
+        """判断元素是否为代码展开按钮
+        
+        代码展开按钮是用于展开/折叠代码块的交互元素。
+        
+        Args:
+            element: HTML 元素
+            
+        Returns:
+            True 如果元素是代码按钮，否则 False
+        """
+        raise NotImplementedError("子类必须实现 _is_code_button()")
+    
+    @abstractmethod
+    def _extract_latex_content(self, element: Tag) -> str:
+        """从公式元素中提取 LaTeX 内容
+        
+        从元素中提取数学公式的 LaTeX 源码。
+        
+        Args:
+            element: 公式元素
+            
+        Returns:
+            LaTeX 公式字符串
+        """
+        raise NotImplementedError("子类必须实现 _extract_latex_content()")
+    
+    # -------------------------------------------------------------------------
+    # 通用方法 - 不依赖平台特定逻辑
+    # -------------------------------------------------------------------------
+    
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """提取标题
         
-        使用配置中的 heading_selectors 查找标题。
+        使用钩子方法返回的选择器查找标题。
         备选方案：<title> 标签。
         
         Args:
@@ -205,9 +328,9 @@ class BaseParser(ABC):
         Returns:
             提取的标题文本
         """
-        # 尝试使用 heading_selectors
-        for selector in self.config.heading_selectors.split(","):
-            tag = soup.select_one(selector.strip())
+        # 尝试使用选择器
+        for selector in self._get_title_selectors():
+            tag = soup.select_one(selector)
             if tag:
                 return tag.get_text(strip=True)
         
@@ -222,7 +345,6 @@ class BaseParser(ABC):
         """从容器中提取所有内容块
         
         遍历容器的直接子元素，处理每个元素。
-        子类可重写此方法以自定义块提取逻辑。
         
         Args:
             container: 内容容器
@@ -248,7 +370,6 @@ class BaseParser(ABC):
         """处理单个元素 - 根据标签类型分发处理
         
         这是主要的分发逻辑，根据 HTML 标签名调用不同的处理方法。
-        子类可重写此方法以添加平台特定的处理逻辑。
         
         Args:
             element: HTML 元素
@@ -323,8 +444,8 @@ class BaseParser(ABC):
             self._process_inline_element(element, blocks)
             return
         
-        # 带有 LaTeX 公式属性的元素（使用配置中的 latex_attr）
-        if element.has_attr(self.config.latex_attr):
+        # 使用钩子判断是否为公式元素
+        if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
         
@@ -343,10 +464,8 @@ class BaseParser(ABC):
             element: div 或 section 元素
             blocks: 累积的内容块列表
         """
-        classes = element.get("class", [])
-        
-        # 跳过按钮元素
-        if any(cls.startswith(self.config.code_button_pattern) for cls in classes):
+        # 跳过代码按钮元素
+        if self._is_code_button(element):
             # 检查是否有 expanded pre
             expanded_pre = element.find("pre", attrs={self.config.code_expanded_attr: "true"})
             if expanded_pre:
@@ -354,18 +473,18 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type="code", content=code, language="language-plaintext"))
             return
         
-        # 带有 LaTeX 公式属性的元素
-        if element.has_attr(self.config.latex_attr):
+        # 使用钩子判断是否为公式元素
+        if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
         
-        # 检查是否是代码块容器
-        if self.config.code_container_class in classes:
+        # 使用钩子判断是否为代码容器
+        if self._is_code_container(element):
             self._process_code_container(element, blocks)
             return
         
-        # 检查是否是段落容器
-        if any(cls.startswith(self.config.paragraph_prefix) for cls in classes):
+        # 使用钩子判断是否为段落容器
+        if self._is_paragraph_container(element):
             self._process_paragraph(element, blocks)
             return
         
@@ -440,7 +559,7 @@ class BaseParser(ABC):
             return
         
         has_strong = li.find("strong") or li.find("b")
-        has_math = li.find(attrs={self.config.latex_attr: True})
+        has_math = self._find_math_in_element(li)
         
         # 简单的列表项
         if not has_strong and not has_math:
@@ -475,23 +594,28 @@ class BaseParser(ABC):
             if isinstance(child, NavigableString):
                 current_text += str(child)
             elif isinstance(child, Tag):
-                if child.has_attr(self.config.latex_attr):
+                # 使用钩子判断是否为公式元素
+                if self._is_math_element(child):
                     flush()
-                    latex = child.get(self.config.latex_attr, "")
-                    is_display = self._parse_math_display_flag(child)
+                    latex = self._extract_latex_content(child)
+                    is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
+                # 换行 div
                 elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
+                # 换行标签
                 elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
+                # 加粗
                 elif child.name in ("strong", "b"):
                     bold_items = self._extract_strong_recursive(child)
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
                         items.append(bi)
+                # 其他内容
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
@@ -515,8 +639,8 @@ class BaseParser(ABC):
             element: 段落元素
             blocks: 累积的内容块列表
         """
-        # 查找段落中的数学公式元素
-        math_elements = element.find_all(attrs={self.config.latex_attr: True})
+        # 使用钩子查找段落中的数学公式元素
+        math_elements = self._find_math_in_element(element)
         has_strong = element.find("strong") or element.find("b")
         
         # 如果没有特殊元素，直接提取纯文本
@@ -542,11 +666,11 @@ class BaseParser(ABC):
             if isinstance(child, NavigableString):
                 current_text += str(child)
             elif isinstance(child, Tag):
-                # 数学公式
-                if child.has_attr(self.config.latex_attr):
+                # 使用钩子判断是否为公式元素
+                if self._is_math_element(child):
                     flush()
-                    latex = child.get(self.config.latex_attr, "")
-                    is_display = self._parse_math_display_flag(child)
+                    latex = self._extract_latex_content(child)
+                    is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 # 加粗
                 elif child.name in ("strong", "b"):
@@ -555,7 +679,7 @@ class BaseParser(ABC):
                         flush()
                     for bi in bold_items:
                         items.append(bi)
-                # 换行div
+                # 换行 div
                 elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
@@ -599,10 +723,10 @@ class BaseParser(ABC):
                 # 嵌套的加粗
                 if child.name in ("strong", "b"):
                     items.extend(self._extract_strong_recursive(child))
-                # 嵌套的公式
-                elif child.has_attr(self.config.latex_attr):
-                    latex = child.get(self.config.latex_attr, "")
-                    is_display = self._parse_math_display_flag(child)
+                # 嵌套的公式 - 使用钩子判断
+                elif self._is_math_element(child):
+                    latex = self._extract_latex_content(child)
+                    is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 # 其他内容
                 else:
@@ -658,7 +782,7 @@ class BaseParser(ABC):
             element: 内联元素
             blocks: 累积的内容块列表
         """
-        math_in_children = element.find_all(attrs={self.config.latex_attr: True})
+        math_in_children = self._find_math_in_element(element)
         if math_in_children:
             self._process_element_with_inline_math(element, blocks)
         else:
@@ -672,8 +796,13 @@ class BaseParser(ABC):
                     blocks.append(TextBlock(type="paragraph", content=text, language="bold" if bold else None))
     
     def _process_element_with_inline_math(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理包含公式的内联元素"""
-        math_elements = element.find_all(attrs={self.config.latex_attr: True})
+        """处理包含公式的内联元素
+        
+        Args:
+            element: 包含公式的内联元素
+            blocks: 累积的内容块列表
+        """
+        math_elements = self._find_math_in_element(element)
         
         if not math_elements:
             text = element.get_text(strip=True)
@@ -709,14 +838,21 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type="paragraph", content=combined))
     
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """解析数学公式元素"""
-        latex = element.get(self.config.latex_attr, "")
+        """解析数学公式元素
+        
+        Args:
+            element: 公式元素
+            blocks: 累积的内容块列表
+        """
+        # 使用钩子提取 LaTeX 内容
+        latex = self._extract_latex_content(element)
         
         if not latex:
             latex = element.get_text(strip=True)
         
         latex = self._strip_latex_delimiters(latex)
-        is_display = self._parse_math_display_flag(element)
+        # 使用钩子判断是否为展示公式
+        is_display = self._is_display_math(element)
         
         blocks.append(TextBlock(
             type="latex",
@@ -724,7 +860,29 @@ class BaseParser(ABC):
             language="display" if is_display else "inline"
         ))
     
-    def _parse_table(self, table: Tag) -> Optional[TableData]:
+    # -------------------------------------------------------------------------
+    # 辅助方法 - 提供通用功能，供钩子方法或子类使用
+    # -------------------------------------------------------------------------
+    
+    def _find_math_in_element(self, element: Tag) -> list[Tag]:
+        """在元素中查找所有公式元素
+        
+        使用钩子方法判断每个子元素是否为公式元素。
+        
+        Args:
+            element: 要搜索的父元素
+            
+        Returns:
+            公式元素列表
+        """
+        math_elements = []
+        for child in element.find_all(recursive=False):
+            if self._is_math_element(child):
+                math_elements.append(child)
+        return math_elements
+    
+    @staticmethod
+    def _parse_table(table: Tag) -> Optional[TableData]:
         """解析表格 - 提取表头和数据行
         
         Args:
@@ -775,21 +933,6 @@ class BaseParser(ABC):
             cell_bold = cell_bold[1:] if cell_bold else []
         
         return TableData(headers=headers, rows=rows, header_bold=header_bold, cell_bold=cell_bold)
-    
-    def _parse_math_display_flag(self, element: Union[Tag, dict]) -> bool:
-        """解析数学公式的 display 标志
-        
-        判断公式是"行内公式"还是"展示公式"（独占一行的公式）。
-        展示公式通常更大、更醒目。
-        
-        Args:
-            element: BeautifulSoup Tag 或包含 class 的字典
-            
-        Returns:
-            True if display mode (展示公式), False if inline (行内公式)
-        """
-        class_str = " ".join(element.get("class", []))
-        return any(cls in class_str for cls in self.config.math_display_classes)
     
     @staticmethod
     def _strip_latex_delimiters(latex: str) -> str:
