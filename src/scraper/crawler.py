@@ -15,6 +15,7 @@
 """
 
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
@@ -22,6 +23,19 @@ from ..config import CrawlerConfig
 
 if TYPE_CHECKING:
     from playwright.async_api import async_playwright, Page, Browser, BrowserContext
+
+
+def _log(prefix: str, msg: str) -> None:
+    elapsed = time.time() - _task_start_time
+    print(f"{prefix}{msg} [+{elapsed:.1f}s]")
+
+
+_task_start_time = time.time()
+
+
+def reset_timer() -> None:
+    global _task_start_time
+    _task_start_time = time.time()
 
 
 @dataclass
@@ -101,6 +115,7 @@ class DoubaoSpider:
         self,
         anti_detect_level: str = "medium",
         config: CrawlerConfig = None,
+        tag: str = "",
     ) -> None:
         """初始化爬虫实例
         
@@ -120,6 +135,7 @@ class DoubaoSpider:
         # 从配置中读取超时时间和等待选择器
         self.timeout = self.config.timeout
         self.wait_for_selector = self.config.wait_for_selector
+        self.tag = tag
         
         # 浏览器相关属性，初始化为None
         self.browser: Optional["Browser"] = None
@@ -237,12 +253,15 @@ class DoubaoSpider:
         if not self._validate_url(url):
             raise ValueError(f"无效的豆包URL: {url}")
 
+        tag = self.tag
+        prefix = f"[{tag}] " if tag else ""
+        
         # 懒启动：如果浏览器还没启动，则启动它
         if not self.browser:
-            print("[...] 启动浏览器...")
+            _log(prefix, "[...] 启动浏览器...")
             await self.start()
 
-        print("[...] 正在访问页面...")
+        _log(prefix, "[...] 正在访问页面...")
         # 创建新页面（标签页）
         page = await self.context.new_page()
         
@@ -250,18 +269,14 @@ class DoubaoSpider:
         # timeout: 请求超时时间（毫秒）
         # wait_until="networkidle": 等待网络请求都完成
         await page.goto(url, timeout=self.timeout, wait_until="networkidle")
-        print("[✓] 页面加载完成")
+        _log(prefix, "[✓] 页面加载完成")
 
-        # 等待页面内容加载
-        print("[...] 等待内容渲染...")
-        await self._wait_for_content(page)
-        
         # 滚动页面加载更多内容
-        print("[...] 滚动加载历史消息...")
+        _log(prefix, "[...] 滚动加载历史消息...")
         await self._scroll_page(page)
 
         # 提取聊天数据
-        print("[...] 展开代码块并提取数据...")
+        _log(prefix, "[...] 展开代码块并提取数据...")
         chat_data = await self._extract_chat_data(page, url)
         
         # 关闭页面，释放资源
@@ -280,16 +295,13 @@ class DoubaoSpider:
         return bool(re.match(self.DOUBAO_URL_PATTERN, url))
 
     async def _wait_for_content(self, page: "Page") -> None:
-        """等待页面内容加载完成
-        
-        策略：
-        1. 尝试等待指定的选择器出现
-        2. 如果超时，则等待固定时间
-        """
-        try:
-            await page.wait_for_selector(self.wait_for_selector, timeout=self.timeout)
-        except Exception:
-            await page.wait_for_timeout(self.config.content_load_wait_ms / 1000)
+        wait_time = 3
+        for _ in range(3):
+            await page.wait_for_timeout(wait_time * 1000)
+            if await page.query_selector(self.wait_for_selector):
+                return
+            wait_time *= 2
+        await page.wait_for_timeout(self.config.content_load_wait_ms)
 
     async def _scroll_page(self, page: "Page") -> None:
         """滚动页面加载更多内容
@@ -299,6 +311,9 @@ class DoubaoSpider:
         - 滚动到底部时再加载更多
         - 重复滚动直到没有新内容
         """
+        tag = self.tag
+        prefix = f"[{tag}] " if tag else ""
+        
         last_height = 0
         for i in range(self.config.scroll_max_attempts):
             # 滚动到页面最底部
@@ -312,12 +327,12 @@ class DoubaoSpider:
             
             # 如果高度没变，说明已经滚动到底部
             if new_height == last_height:
-                print(f"[✓] 滚动完成: 已加载全部历史消息")
+                _log(prefix, "[✓] 滚动完成: 已加载全部历史消息")
                 break
             last_height = new_height
-            print(f"[...] 滚动中... ({i+1}/{self.config.scroll_max_attempts})")
+            _log(prefix, f"[...] 滚动中... ({i+1}/{self.config.scroll_max_attempts})")
         else:
-            print(f"[!] 滚动达到最大次数，仍有更多内容")
+            _log(prefix, f"[!] 滚动达到最大次数，仍有更多内容")
 
     async def _expand_code_blocks(self, page: "Page") -> None:
         """展开所有'已生成代码'按钮
@@ -330,6 +345,8 @@ class DoubaoSpider:
         
         包含智能重试机制，确保代码块可靠展开。
         """
+        tag = self.tag
+        prefix = f"[{tag}] " if tag else ""
         max_retries = 6
         
         for attempt in range(max_retries):
@@ -358,7 +375,7 @@ class DoubaoSpider:
                         }
                     }
                 """)
-                print(f"[...] 等待代码块展开 (尝试 {attempt + 1}/{max_retries})...")
+                _log(prefix, f"[...] 等待代码块展开 (尝试 {attempt + 1}/{max_retries})...")
                 
                 # 等待代码块展开
                 # 第1次等待短一些，重试时递增
@@ -447,7 +464,7 @@ class DoubaoSpider:
                     pass  # 静默失败，不打印调试信息
                     
             except Exception as e:
-                print(f"展开代码块失败 (尝试 {attempt + 1}): {e}")
+                _log(prefix, f"展开代码块失败 (尝试 {attempt + 1}): {e}")
 
     async def _extract_chat_data(self, page: "Page", url: str) -> ChatData:
         """从页面提取完整的聊天数据

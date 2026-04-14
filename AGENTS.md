@@ -29,13 +29,15 @@ python -m src.cli <豆包链接>
 
 | 参数 | 说明 | 默认 |
 |------|------|------|
-| `url` | 豆包聊天页面 URL（必填） | - |
+| `urls` | 豆包聊天页面 URL（支持多个） | - |
 | `--level` | 反爬级别：low/medium/high | medium |
-| `--index` | 手动指定文档序号 | 自动 |
+| `--index` | 手动指定文档序号（仅单URL） | 自动 |
+| `--concurrency` | 批量导出并发数 | 3 |
 
 ## 输出位置
 
 - 文档：`data/export/YYYYMMDD/*.docx`（按日期分类）
+- 报告：`data/batch_report_YYYYMMDD_HHMMSS.txt`（批量导出）
 - 索引：`data/link_index.json`
 
 ## 项目结构
@@ -43,10 +45,11 @@ python -m src.cli <豆包链接>
 ```
 src/
 ├── cli.py           # 入口
-├── config.py        # 配置
-├── scraper/         # 爬虫（Playwright）
-├── preprocessor/    # 解析（BeautifulSoup）
-└── generator/       # 生成（python-docx）
+├── config.py       # 配置
+├── scraper/        # 爬虫（Playwright）
+├── preprocessor/   # 解析（BeautifulSoup）
+└── generator/     # 生成（python-docx）
+    └── batch_report.py  # 批量导出报告
 ```
 
 ## 重要约束
