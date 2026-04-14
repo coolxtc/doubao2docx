@@ -16,6 +16,7 @@
 """
 
 import json
+import fcntl
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -172,27 +173,27 @@ class DocNamer:
         Returns:
             文件名（不含扩展名），格式：日期-序号 标题
         """
-        # 清理过期数据
-        self._cleanup_old_entries()
-        # 重新加载（确保获取最新数据）
-        self._load()
-        
-        date_str = self._get_date_str()
-        records = self._get_today_records()
-        clean_title = self._clean_title(title)
-        
-        if custom_index is not None:
-            # 使用指定的序号
-            index = custom_index
-            records[url] = LinkRecord(index=index, title=clean_title)
-        elif url in records:
-            # URL 已存在，使用已有序号，更新标题
-            index = records[url].index
-            records[url].title = clean_title
-        else:
-            # 新 URL，分配新序号
-            index = self._get_today_max_index() + 1
-            records[url] = LinkRecord(index=index, title=clean_title)
+        lock_file = self.index_file.with_suffix(".lock")
+        with open(lock_file, "w") as f:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                date_str = self._get_date_str()
+                records = self._get_today_records()
+                clean_title = self._clean_title(title)
+                
+                if custom_index is not None:
+                    index = custom_index
+                    records[url] = LinkRecord(index=index, title=clean_title)
+                elif url in records:
+                    index = records[url].index
+                    records[url].title = clean_title
+                else:
+                    index = self._get_today_max_index() + 1
+                    records[url] = LinkRecord(index=index, title=clean_title)
+                
+                self._save()
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
         
         self._save()
         return f"{date_str}-{index} {clean_title}"
