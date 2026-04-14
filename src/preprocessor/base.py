@@ -19,6 +19,8 @@ from typing import Optional, Any, Union
 
 from bs4 import BeautifulSoup, Tag, NavigableString
 
+from ..exceptions import ParseError
+
 
 # =============================================================================
 # PlatformConfig - 平台配置

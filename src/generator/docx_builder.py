@@ -40,6 +40,7 @@ from docx.oxml import parse_xml
 from ..preprocessor import TextBlock, TableData, InlineContent
 from ..preprocessor.base import BaseParser as _BaseParser
 from ..config import DocumentStyleConfig
+from ..exceptions import ExportError
 from .latex_converter import LaTeXConverter
 
 
@@ -315,7 +316,7 @@ class DocxBuilder:
                 p.add_run(" ")
                 return
             except Exception as e:
-                print(f"添加公式失败: {e}")
+                raise ExportError(f"添加公式失败: {e}") from e
 
         # Fallback: 使用 Unicode 字符表示
         unicode_text = self.latex_converter.convert_inline(latex)
@@ -340,7 +341,7 @@ class DocxBuilder:
                 if as_standalone:
                     para.add_run(" ")
             except Exception as e:
-                print(f"添加公式失败: {e}")
+                raise ExportError(f"添加公式失败: {e}") from e
         else:
             unicode_text = self.latex_converter.convert_inline(latex)
             run = para.add_run(unicode_text)
@@ -397,7 +398,7 @@ class DocxBuilder:
             if result.stderr:
                 print(f"pandoc警告: {result.stderr[:200]}")
         except Exception as e:
-            print(f"转换失败: {e}")
+            raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
             # 清理临时文件
             if tmp_tex_path and os.path.exists(tmp_tex_path):

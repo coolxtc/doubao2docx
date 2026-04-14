@@ -13,6 +13,7 @@ from src.scraper.crawler import reset_timer
 from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer
 from src.generator.batch_report import BatchReport
+from src.exceptions import CrawlerError, ParseError, ExportError
 
 # 全局配置实例
 _config = GlobalConfig()
@@ -73,6 +74,21 @@ async def fetch_and_export_single(
         
         return url, True, f"{filename_base}.docx", None
         
+    except CrawlerError as e:
+        error_msg = str(e)
+        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+        print(f"{tag} [✗] 爬取失败: {display_msg}")
+        return url, False, None, error_msg
+    except ParseError as e:
+        error_msg = str(e)
+        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+        print(f"{tag} [✗] 解析失败: {display_msg}")
+        return url, False, None, error_msg
+    except ExportError as e:
+        error_msg = str(e)
+        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+        print(f"{tag} [✗] 导出失败: {display_msg}")
+        return url, False, None, error_msg
     except Exception as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
@@ -128,7 +144,8 @@ async def fetch_and_export_batch(
     
     for result in results:
         if isinstance(result, Exception):
-            report.add_failure(str(result), "未知错误")
+            error_type = type(result).__name__
+            report.add_failure(str(result), f"{error_type}")
         else:
             url, success, filename, error = result
             if success:

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING
 
 from ..config import CrawlerConfig
+from ..exceptions import CrawlerError
 
 if TYPE_CHECKING:
     from playwright.async_api import async_playwright, Page, Browser, BrowserContext
@@ -207,13 +208,13 @@ class DoubaoSpider:
                 await self.context.close()
         except Exception:
             pass
-        
+
         try:
             if self.browser:
                 await self.browser.close()
         except Exception:
             pass
-        
+
         # 关闭 Playwright 引擎
         try:
             if self.playwright:
@@ -250,7 +251,7 @@ class DoubaoSpider:
         """
         # 验证URL格式
         if not self._validate_url(url):
-            raise ValueError(f"无效的豆包URL: {url}")
+            raise CrawlerError(f"无效的豆包URL: {url}")
 
         tag = self.tag
         prefix = f"[{tag}] " if tag else ""

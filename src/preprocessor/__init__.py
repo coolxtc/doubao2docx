@@ -1,5 +1,6 @@
 from .base import BaseParser, PlatformConfig, TableData, InlineContent, TextBlock, ParsedPage
 from .doubao_parser import DoubaoHTMLParser
+from ..exceptions import ParseError
 
 __all__ = [
     "BaseParser",
@@ -9,4 +10,5 @@ __all__ = [
     "InlineContent",
     "TextBlock",
     "ParsedPage",
+    "ParseError",
 ]
