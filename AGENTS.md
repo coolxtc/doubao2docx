@@ -59,7 +59,7 @@ src/
 └── generator/      # 生成（python-docx）
     ├── docx_builder.py   # 文档构建
     ├── latex_converter.py # LaTeX 公式转换
-    └── doc_namer.py     # 文件命名 + FileLock
+    └── doc_namer.py     # 文件命名 + 序号管理（threading.Lock）
 ```
 
 ## 进度显示（TaskManager）
@@ -85,7 +85,7 @@ src/
 ## 重要约束
 
 1. **必须用 `python3`** 而非 `python`（避免 Python 2 问题）
-2. **同一天同一 URL 不会增加序号**（通过 FileLock 保证）
+2. **同一天同一 URL 不会增加序号**（通过 threading.Lock 保证）
 3. **公式转换失败时使用 Unicode fallback**
 4. **Windows 兼容性已处理**：gc.collect()、browser_close_delay、ResourceWarning 过滤
 
@@ -106,3 +106,28 @@ from src.preprocessor import (
 
 - 文档：`data/export/YYYYMMDD/*.docx`
 - 索引：`data/link_index.json`
+
+## 已知问题
+
+| 问题 | 说明 | 状态 |
+|------|------|------|
+| **缺少 `__main__.py`** | 无法使用 `python3 -m src` 运行 | 建议添加 |
+| **pyproject.toml 无 scripts** | 未配置 `[project.scripts]`，无法安装后用命令运行 | 建议添加 |
+| **README 提及 Makefile** | 文档与实际不符 | 需删除或创建 |
+
+### 建议修复
+
+1. 创建 `src/__main__.py`：
+```python
+from src.cli import main
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+2. pyproject.toml 添加：
+```toml
+[project.scripts]
+doubao-export = "src.cli:main"
+```
+
+3. 删除 README 中 Makefile 相关描述

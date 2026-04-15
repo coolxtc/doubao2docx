@@ -141,7 +141,7 @@ pip install -r requirements.txt
 - **python-docx**：Word 文档操作库
 - **beautifulsoup4**：HTML 解析库
 - **lxml**：XML/HTML 解析器
-- **filelock**：文件锁，防止多进程同时写入索引文件
+- **rich**：终端格式化输出
 - **pyyaml**：YAML 配置文件解析库
 
 ### 第三步：安装 Playwright 浏览器
@@ -452,7 +452,7 @@ python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 | python-docx | >= 1.1.0 | 操作 Word 文档 |
 | beautifulsoup4 | >= 4.12.0 | 解析 HTML 内容 |
 | lxml | >= 5.0.0 | HTML 解析器底层库 |
-| filelock | >= 3.13.0 | 文件锁，防止多进程同时写入索引文件 |
+
 | pyyaml | >= 6.0 | YAML 配置文件解析库 |
 | pytest | >= 7.4.0 | 测试框架（可选） |
 
