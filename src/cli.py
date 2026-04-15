@@ -101,7 +101,7 @@ class TaskManager:
         table.add_column("进度", width=10)
         table.add_column("状态", width=8)
         table.add_column("耗时", width=5)
-        table.add_column("结果")
+        table.add_column("结果", no_wrap=True, max_width=30)
         
         for task in self.tasks:
             if task.step >= 10:
