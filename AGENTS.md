@@ -55,7 +55,7 @@ src/
 ├── config.py        # 配置加载（YAML + 环境变量）
 ├── exceptions.py    # 自定义异常
 ├── scraper/         # 爬虫（Playwright）
-│   └── crawler.py  # FetchStep 枚举、8步进度回调
+│   └── crawler.py  # FetchStep 枚举、7步爬虫进度回调
 ├── preprocessor/    # 解析（BeautifulSoup）
 │   └── doubao_parser.py
 └── generator/      # 生成（python-docx）
@@ -75,7 +75,9 @@ src/
 5. 展开代码块
 6. 提取数据
 7. 爬取完成  ← FetchStep.COMPLETED
-8. 完成      ← 文档生成完成
+8. 解析内容
+9. 生成文档
+10. 完成      ← 文档生成完成
 ```
 
 - 使用 **Rich Live** 动态刷新

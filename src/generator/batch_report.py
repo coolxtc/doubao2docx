@@ -94,7 +94,7 @@ class BatchReport:
         # 构建报告头部
         lines = [
             "=" * 50,
-            f"批量导出报告 - {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"导出报告 - {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}",
             "=" * 50,
             "",
             f"总计: {total} 个 URL",

@@ -32,11 +32,13 @@ FETCH_STEP_NAMES = {
     "任务开始": 0,
     "收到任务": 1,
     "访问页面": 2,
-    "页面加载完成": 3,
+    "加载完成": 3,
     "滚动加载": 4,
-    "展开代码块": 5,
+    "展开代码": 5,
     "提取数据": 6,
     "爬取完成": 7,
+    "解析内容": 8,
+    "生成文档": 9,
 }
 
 
@@ -56,12 +58,12 @@ class TaskStatus:
     total: int
     url_tag: str
     step: int = 0
-    status: str = "等待"
+    status: str = "等待中"
     result: str = ""
     elapsed: float = 0.0
     
     def to_line(self) -> str:
-        dots = "●" * self.step + "○" * (9 - self.step) if self.step < 9 else "●●●●●●●●●"
+        dots = "●" * self.step + "○" * (10 - self.step) if self.step < 10 else "●●●●●●●●●●"
         elapsed_str = f"({self.elapsed:.1f}s)" if self.elapsed > 0 else ""
         return f"[{self.task_index}/{self.total}][{self.url_tag}] {dots} [{self.status}] {elapsed_str} {self.result}"
 
@@ -95,27 +97,27 @@ class TaskManager:
     
     def _build_table(self) -> Table:
         table = Table(show_header=True, show_lines=False, box=None, pad_edge=False)
-        table.add_column("序号", width=None)
+        table.add_column("序号", width=4)
         table.add_column("进度", width=10)
-        table.add_column("状态", width=None)
-        table.add_column("耗时", width=6)
-        table.add_column("结果", width=None)
+        table.add_column("状态", width=8)
+        table.add_column("耗时", width=5)
+        table.add_column("结果")
         
         for task in self.tasks:
-            if task.step >= 8:
-                dots = "[green]●●●●●●●●[/green]"
+            if task.step >= 10:
+                dots = "[green]●●●●●●●●●●[/green]"
                 status_style = "green"
                 result_style = "green"
                 elapsed_style = "green"
             elif task.step == 0:
-                dots = "[dim]○○○○○○○○[/dim]"
+                dots = "[dim]○○○○○○○○○○[/dim]"
                 status_style = "dim"
                 result_style = "dim"
                 elapsed_style = "dim"
             else:
                 done = task.step
                 current = "→"
-                remaining = 8 - task.step - 1
+                remaining = 10 - task.step - 1
                 dots = f"[green]{'●' * done}[/green][yellow]{current}[/yellow][dim]{'○' * remaining}[/dim]"
                 status_style = "yellow"
                 result_style = "dim"
@@ -178,19 +180,24 @@ async def fetch_and_export_single(
     tag = f"[{task_index}/{total}][{url_tag}]"
     reset_timer()
     total_start = time.time()
-    _step_start_time = time.time()
     
     def on_progress(step: str) -> None:
-        global _task_manager
         if _task_manager and step in FETCH_STEP_NAMES:
-            # elapsed: 当前步骤完成后到现在的耗时（秒）
-            elapsed = time.time() - _step_start_time
+            elapsed = time.time() - total_start
             step_idx = FETCH_STEP_NAMES[step]
             _task_manager.update(task_index, step_idx, step, elapsed=elapsed)
+    
+    def update_step(name: str) -> None:
+        if _task_manager and name in FETCH_STEP_NAMES:
+            elapsed = time.time() - total_start
+            step_idx = FETCH_STEP_NAMES[name]
+            _task_manager.update(task_index, step_idx, name, elapsed=elapsed)
     
     try:
         async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag, progress_callback=on_progress) as spider:
             chat_data = await spider.fetch(url)
+        
+        update_step("解析内容")
         
         parser = DoubaoHTMLParser()
         all_blocks: list[tuple[str, TextBlock]] = []
@@ -210,13 +217,15 @@ async def fetch_and_export_single(
         output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
+        update_step("生成文档")
+        
         config = DocumentConfig(title=chat_data.title)
         builder = DocxBuilder(config)
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
         
         elapsed = time.time() - total_start
         if _task_manager:
-            _task_manager.update(task_index, 8, "完成", f"{filename_base}.docx", elapsed=elapsed)
+            _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
         
         return url, True, f"{filename_base}.docx", None
         
@@ -225,28 +234,28 @@ async def fetch_and_export_single(
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 爬取失败: {display_msg}")
         if _task_manager:
-            _task_manager.update(task_index, 8, "失败", error_msg[:50])
+            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
     except ParseError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 解析失败: {display_msg}")
         if _task_manager:
-            _task_manager.update(task_index, 8, "失败", error_msg[:50])
+            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
     except ExportError as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 导出失败: {display_msg}")
         if _task_manager:
-            _task_manager.update(task_index, 8, "失败", error_msg[:50])
+            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
     except Exception as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 失败: {display_msg}")
         if _task_manager:
-            _task_manager.update(task_index, 8, "失败", error_msg[:50])
+            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
 
 
@@ -295,24 +304,18 @@ async def fetch_and_export_batch(
     anti_detect_level: str = "medium",
     concurrency: int = 5,
 ) -> BatchReport:
-    """批量导出多个 URL"""
+    """批量导出多个 URL（TaskManager 由调用方管理）"""
     report = BatchReport()
     total = len(urls)
     
-    print(f"[批次导出模式] 并发数: {concurrency}")
-    print(f"总计 {total} 个 URL\n")
-    
     # 预分配序号：已有 URL 复用序号，新 URL 按顺序分配
-    # 按入参顺序遍历，仅对未记录的新 URL 分配序号
     index_file = Path("data/link_index.json")
     namer = DocNamer(index_file)
     namer._cleanup_old_entries()
-    namer._load()  # 确保读取最新状态
+    namer._load()
     records = namer._get_today_records()
     
-    # 已有 URL 集合（用于判断是否需要分配新序号）
     existing_urls = set(records.keys())
-    # 新 URL 按入参顺序分配序号，起始值为当天最大序号+1
     next_new_index = namer._get_today_max_index() + 1
     url_to_index: dict[str, int] = {}
     
@@ -320,14 +323,6 @@ async def fetch_and_export_batch(
         if url not in existing_urls:
             url_to_index[url] = next_new_index
             next_new_index += 1
-    
-    global _task_manager
-    manager = TaskManager(total)
-    _task_manager = manager
-    for i, url in enumerate(urls):
-        url_tag = _get_url_tag(url)
-        manager.add_task(i + 1, url_tag)
-    manager.start()
     
     semaphore = asyncio.Semaphore(concurrency)
     
@@ -342,10 +337,6 @@ async def fetch_and_export_batch(
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    manager.stop()
-    manager.print_all()
-    _task_manager = None
     
     for result in results:
         if isinstance(result, Exception):
@@ -392,18 +383,39 @@ def main() -> int:
         warnings.filterwarnings("ignore", category=ResourceWarning)
     
     try:
-        if len(args.urls) == 1:
+        total = len(args.urls)
+        
+        global _task_manager
+        manager = TaskManager(total)
+        _task_manager = manager
+        for i, url in enumerate(args.urls):
+            url_tag = _get_url_tag(url)
+            manager.add_task(i + 1, url_tag)
+        manager.start()
+        
+        if total == 1:
             result = asyncio.run(bounded_export_with_retry(
                 args.urls[0], output_dir, args.level, args.index, 1, 1, _config
             ))
-            return 0 if result[1] else 1
+            manager.stop()
+            manager.print_all()
+            _task_manager = None
+            report = BatchReport()
+            if result[1]:
+                report.add_success(args.urls[0], result[2])
+            else:
+                report.add_failure(args.urls[0], result[3] or "未知错误")
         else:
             report = asyncio.run(fetch_and_export_batch(
                 args.urls, output_dir, args.level, args.concurrency
             ))
-            report.print_summary()
-            failure_count = sum(1 for r in report.results if not r.success)
-            return 0 if failure_count == 0 else 1
+            manager.stop()
+            manager.print_all()
+            _task_manager = None
+        
+        report.print_summary()
+        failure_count = sum(1 for r in report.results if not r.success)
+        return 0 if failure_count == 0 else 1
     finally:
         if platform.system() == "Windows":
             gc.collect()
