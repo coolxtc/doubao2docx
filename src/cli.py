@@ -169,9 +169,10 @@ async def fetch_and_export_single(
     url: str,
     output_dir: Path,
     anti_detect_level: str = "medium",
-    custom_index: int | None = None,
     task_index: int = 0,
     total: int = 1,
+    namer: "DocNamer" = None,
+    order: int = 0,
 ) -> tuple[str, bool, str | None, str | None]:
     """单个 URL 导出，返回 (url, success, filename, error)"""
     global _task_manager
@@ -210,8 +211,12 @@ async def fetch_and_export_single(
         index_file = output_dir / "link_index.json"
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        namer = DocNamer(index_file)
-        filename_base = namer.get_filename(url, chat_data.title, custom_index)
+        if namer is None:
+            namer = DocNamer(index_file)
+        if order > 0:
+            filename_base = namer.get_filename_by_order(order, url, chat_data.title)
+        else:
+            filename_base = namer.get_filename(url, chat_data.title)
         
         date_str = namer.get_date_str()
         output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
@@ -263,7 +268,6 @@ async def bounded_export_with_retry(
     url: str,
     output_dir: Path,
     anti_detect_level: str,
-    custom_index: int | None,
     task_index: int,
     total: int,
     config: GlobalConfig,
@@ -273,7 +277,7 @@ async def bounded_export_with_retry(
     
     if max_attempts <= 0:
         return await fetch_and_export_single(
-            url, output_dir, anti_detect_level, custom_index, task_index, total
+            url, output_dir, anti_detect_level, task_index, total
         )
     
     base_delay = crawler_cfg.retry_base_delay_ms / 1000
@@ -284,7 +288,7 @@ async def bounded_export_with_retry(
     for attempt in range(1, max_attempts + 1):
         try:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, custom_index, task_index, total
+                url, output_dir, anti_detect_level, task_index, total
             )
         except (CrawlerError, ParseError, ExportError) as e:
             last_error = e
@@ -303,38 +307,27 @@ async def fetch_and_export_batch(
     output_dir: Path,
     anti_detect_level: str = "medium",
     concurrency: int = 5,
-    custom_index: int | None = None,
 ) -> BatchReport:
     """批量导出多个 URL（TaskManager 由调用方管理）"""
     report = BatchReport()
     total = len(urls)
     
-    # 预分配序号：已有 URL 复用序号，新 URL 按顺序分配
     index_file = Path("data/link_index.json")
     namer = DocNamer(index_file)
     namer._cleanup_old_entries()
     namer._load()
-    records = namer._get_today_records()
-    
-    existing_urls = set(records.keys())
-    next_new_index = namer._get_today_max_index() + 1
-    url_to_index: dict[str, int] = {}
-    
-    for url in urls:
-        if url not in existing_urls:
-            url_to_index[url] = next_new_index
-            next_new_index += 1
+    namer.set_next_index(namer._get_today_max_index() + 1)
     
     semaphore = asyncio.Semaphore(concurrency)
     
-    async def bounded_export(task_index: int, url: str, idx: int | None):
+    async def bounded_export(task_index: int, url: str, order: int):
         async with semaphore:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, idx, task_index, total
+                url, output_dir, anti_detect_level, task_index, total, namer, order
             )
     
     tasks = [
-        bounded_export(i + 1, url, custom_index + i if custom_index is not None else url_to_index.get(url))
+        bounded_export(i + 1, url, i + 1)
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -368,7 +361,6 @@ def main() -> int:
     
     parser.add_argument("urls", nargs="+", help="豆包聊天页面URL（支持多个）")
     parser.add_argument("--level", choices=["low", "medium", "high"], default="medium", help="反爬级别")
-    parser.add_argument("--index", type=int, default=None, help="手动指定文档序号（仅单URL模式）")
     parser.add_argument("--concurrency", type=int, default=5, help="并发数（默认: 5）")
     
     args = parser.parse_args()
@@ -396,15 +388,13 @@ def main() -> int:
         
         if total == 1:
             urls = [args.urls[0]]
-            custom_index = args.index
             concurrency = 1
         else:
             urls = args.urls
-            custom_index = None
             concurrency = args.concurrency
         
         report = asyncio.run(fetch_and_export_batch(
-            urls, output_dir, args.level, concurrency, custom_index
+            urls, output_dir, args.level, concurrency
         ))
         manager.stop()
         manager.print_all()

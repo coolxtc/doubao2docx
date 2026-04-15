@@ -1,11 +1,9 @@
 """文档名称生成器 - 为导出的 Word 文档生成唯一文件名"""
 
 import json
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
-
-from filelock import FileLock
 
 from ..config import get_config
 
@@ -50,10 +48,11 @@ class DocNamer:
         self.index_file = index_file
         self._data: dict[str, dict[str, LinkRecord]] = {}
         
-        # 从配置读取
         config = get_config()
         self._max_age_days = config.index.max_age_days
-        self._lock_timeout = config.index.lock_timeout
+        
+        self._next_index = 0
+        self._lock = threading.Lock()
         
         self._load()
     
@@ -151,46 +150,43 @@ class DocNamer:
             title = title.replace(char, "")
         return title.strip()
     
-    def get_filename(
-        self, 
-        url: str, 
-        title: str, 
-        custom_index: Optional[int] = None
-    ) -> str:
-        """生成文件名 - 主方法
-        
-        序号优先级（从高到低）：
-        1. 如果 URL 之前已导出，复用已有序号（忽略 custom_index）
-        2. 如果指定了 custom_index，使用该序号（仅针对新 URL）
-        3. 否则，使用当天最大序号 +1
-        
-        Args:
-            url: 链接地址
-            title: 文档标题
-            custom_index: 手动指定的序号，仅对新 URL 生效
-            
-        Returns:
-            文件名（不含扩展名），格式：日期-序号 标题
-        """
-        lock_path = str(self.index_file) + ".lock"
+    def set_next_index(self, index: int) -> None:
+        with self._lock:
+            self._next_index = index
+    
+    def get_filename(self, url: str, title: str) -> str:
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
-        lock = FileLock(lock_path, timeout=self._lock_timeout)
-        with lock:
+        
+        with self._lock:
             date_str = self._get_date_str()
             records = self._get_today_records()
             clean_title = self._clean_title(title)
             
-            if url in records:
-                # 已导出的 URL 优先复用已有序号（batch 场景下避免序号冲突）
+            if url in records and records[url].index > 0:
                 index = records[url].index
                 records[url].title = clean_title
-            elif custom_index is not None:
-                # 新 URL + 指定序号
-                index = custom_index
-                records[url] = LinkRecord(index=index, title=clean_title)
             else:
-                # 新 URL + 自动分配序号
-                index = self._get_today_max_index() + 1
+                index = self._next_index
+                self._next_index += 1
+                records[url] = LinkRecord(index=index, title=clean_title)
+            
+            self._save()
+        
+        return f"{date_str}-{index} {clean_title}"
+    
+    def get_filename_by_order(self, order: int, url: str, title: str) -> str:
+        self.index_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        with self._lock:
+            date_str = self._get_date_str()
+            records = self._get_today_records()
+            clean_title = self._clean_title(title)
+            
+            if url in records and records[url].index > 0:
+                index = records[url].index
+                records[url].title = clean_title
+            else:
+                index = order
                 records[url] = LinkRecord(index=index, title=clean_title)
             
             self._save()

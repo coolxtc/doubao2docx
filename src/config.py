@@ -102,7 +102,7 @@ def _collect_env_overrides() -> dict:
                     "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms",
                     "code_expand_max_retries",
                     "retry_max_attempts", "retry_base_delay_ms", "retry_max_delay_ms"],
-        "index": ["max_age_days", "lock_timeout"],
+        "index": ["max_age_days"],
         "pandoc": ["timeout"],
         "document_style": ["title_font_size", "code_font_size"],
         "global": ["url_fallback_length"],
@@ -220,7 +220,6 @@ class DocumentStyleConfig:
 @dataclass
 class IndexConfig:
     max_age_days: int = 10
-    lock_timeout: int = 10
 
     @classmethod
     def from_dict(cls, data: dict) -> "IndexConfig":
