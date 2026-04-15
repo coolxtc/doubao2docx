@@ -617,6 +617,9 @@ class BaseParser(ABC):
                         flush()
                     for bi in bold_items:
                         items.append(bi)
+                # 嵌套容器 div/span - 递归处理以保留加粗格式
+                elif child.name in ("div", "span"):
+                    self._process_nested_container(child, items, current_text, current_bold)
                 # 其他内容
                 else:
                     sub_text = child.get_text(strip=False)
@@ -627,6 +630,48 @@ class BaseParser(ABC):
         
         if items:
             blocks.append(TextBlock(type="list_item", content="", language=list_type, items=items))
+    
+    def _process_nested_container(self, element: Tag, items: list[InlineContent], current_text: str, current_bold: bool) -> None:
+        """递归处理嵌套容器（div/span）- 提取内部加粗和文本
+        
+        用于处理列表项中的嵌套div/span元素，保留内部strong标签的加粗格式。
+        """
+        def flush():
+            nonlocal current_text, current_bold
+            if current_text.strip():
+                items.append(InlineContent(type="text", content=current_text, bold=current_bold))
+            current_text = ""
+            current_bold = False
+        
+        for child in element.children:
+            if isinstance(child, NavigableString):
+                current_text += str(child)
+            elif isinstance(child, Tag):
+                if self._is_math_element(child):
+                    flush()
+                    latex = self._extract_latex_content(child)
+                    is_display = self._is_display_math(child)
+                    items.append(InlineContent(type="latex", content=latex, is_display=is_display))
+                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
+                    flush()
+                    items.append(InlineContent(type="text", content="\n"))
+                elif child.name == "br":
+                    flush()
+                    items.append(InlineContent(type="text", content="\n"))
+                elif child.name in ("strong", "b"):
+                    bold_items = self._extract_strong_recursive(child)
+                    if current_text.strip():
+                        flush()
+                    for bi in bold_items:
+                        items.append(bi)
+                elif child.name in ("div", "span"):
+                    self._process_nested_container(child, items, current_text, current_bold)
+                else:
+                    sub_text = child.get_text(strip=False)
+                    if sub_text:
+                        current_text += sub_text
+        
+        flush()
     
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理段落元素 - 保留内联元素和公式
