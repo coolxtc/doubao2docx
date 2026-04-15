@@ -105,16 +105,6 @@ class DocNamer:
         """
         return self._get_date_str()
     
-    def get_next_base_index(self) -> int:
-        """获取下一个可用序号（从1开始）
-        
-        用于预分配序号，确保批量导出时按顺序分配。
-        
-        Returns:
-            下一个可用的序号
-        """
-        return self._get_today_max_index() + 1
-    
     def _get_today_records(self) -> dict[str, LinkRecord]:
         """获取今天的记录，不存在则创建"""
         date_str = self._get_date_str()
@@ -131,7 +121,6 @@ class DocNamer:
         if not valid_indices:
             return 0
         return max(valid_indices)
-        return max(r.index for r in records.values())
     
     def _cleanup_old_entries(self) -> None:
         """清理过期数据"""
@@ -155,10 +144,6 @@ class DocNamer:
             title = title.replace(char, "")
         return title.strip()
     
-    def set_next_index(self, index: int) -> None:
-        with self._lock:
-            self._next_index = index
-    
     def get_filename(self, url: str, title: str) -> str:
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
         
@@ -175,25 +160,6 @@ class DocNamer:
                     self._next_index = self._get_today_max_index() + 1
                 index = self._next_index
                 self._next_index += 1
-                records[url] = LinkRecord(index=index, title=clean_title)
-            
-            self._save()
-        
-        return f"{date_str}-{index} {clean_title}"
-    
-    def get_filename_by_order(self, order: int, url: str, title: str) -> str:
-        self.index_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        with self._lock:
-            date_str = self._get_date_str()
-            records = self._get_today_records()
-            clean_title = self._clean_title(title)
-            
-            if url in records and records[url].index > 0:
-                index = records[url].index
-                records[url].title = clean_title
-            else:
-                index = order
                 records[url] = LinkRecord(index=index, title=clean_title)
             
             self._save()
