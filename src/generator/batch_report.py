@@ -142,27 +142,14 @@ def _build_file_link(file_path: str, text: str = None, style: str = "bold blue")
     system = platform.system()
     text = text or file_path
     
-    if system == "Darwin":
-        encoded = quote(file_path)
-        url = f"file://{encoded}"
-    else:
-        url = file_path
+    # 统一使用 file:// URL 格式
+    normalized = file_path.replace("\\", "/")
+    if system == "Windows" and len(normalized) >= 2 and normalized[1] == ":":
+        # Windows: C:/Users -> /C:/Users
+        normalized = "/" + normalized[0] + normalized[2:]
+    url = f"file://{quote(normalized)}"
     
     return f"[{style} link {url}]{text}[/]"
-
-
-def open_folder(folder_path: str) -> bool:
-    try:
-        system = platform.system()
-        if system == "Windows":
-            os.startfile(folder_path)
-        elif system == "Darwin":
-            subprocess.Popen(["open", folder_path])
-        else:
-            subprocess.Popen(["xdg-open", folder_path])
-        return True
-    except Exception:
-        return False
 
 
 def _get_latest_export_folder() -> Path:
