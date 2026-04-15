@@ -303,6 +303,7 @@ async def fetch_and_export_batch(
     output_dir: Path,
     anti_detect_level: str = "medium",
     concurrency: int = 5,
+    custom_index: int | None = None,
 ) -> BatchReport:
     """批量导出多个 URL（TaskManager 由调用方管理）"""
     report = BatchReport()
@@ -326,14 +327,14 @@ async def fetch_and_export_batch(
     
     semaphore = asyncio.Semaphore(concurrency)
     
-    async def bounded_export(task_index: int, url: str, custom_index: int | None):
+    async def bounded_export(task_index: int, url: str, idx: int | None):
         async with semaphore:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, custom_index, task_index, total
+                url, output_dir, anti_detect_level, idx, task_index, total
             )
     
     tasks = [
-        bounded_export(i + 1, url, url_to_index.get(url))
+        bounded_export(i + 1, url, custom_index + i if custom_index is not None else url_to_index.get(url))
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -394,24 +395,20 @@ def main() -> int:
         manager.start()
         
         if total == 1:
-            result = asyncio.run(bounded_export_with_retry(
-                args.urls[0], output_dir, args.level, args.index, 1, 1, _config
-            ))
-            manager.stop()
-            manager.print_all()
-            _task_manager = None
-            report = BatchReport()
-            if result[1]:
-                report.add_success(args.urls[0], result[2])
-            else:
-                report.add_failure(args.urls[0], result[3] or "未知错误")
+            urls = [args.urls[0]]
+            custom_index = args.index
+            concurrency = 1
         else:
-            report = asyncio.run(fetch_and_export_batch(
-                args.urls, output_dir, args.level, args.concurrency
-            ))
-            manager.stop()
-            manager.print_all()
-            _task_manager = None
+            urls = args.urls
+            custom_index = None
+            concurrency = args.concurrency
+        
+        report = asyncio.run(fetch_and_export_batch(
+            urls, output_dir, args.level, concurrency, custom_index
+        ))
+        manager.stop()
+        manager.print_all()
+        _task_manager = None
         
         report.print_summary()
         failure_count = sum(1 for r in report.results if not r.success)
