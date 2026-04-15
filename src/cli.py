@@ -340,6 +340,9 @@ def main() -> int:
     
     args = parser.parse_args()
     
+    # 输出空行，避免日志直接贴在命令行后面
+    print()
+    
     output_dir = Path(__file__).parent.parent / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
     
