@@ -32,11 +32,11 @@ class FetchStep:
     STARTING = "任务开始"
     RECEIVED = "收到任务"
     LOADING_PAGE = "访问页面"
-    PAGE_LOADED = "页面加载完成"
+    PAGE_LOADED = "加载完成"
     SCROLLING = "滚动加载"
-    EXPANDING_CODE = "展开代码块"
+    EXPANDING_CODE = "展开代码"
     EXTRACTING = "提取数据"
-    COMPLETED = "完成"
+    COMPLETED = "爬取完成"
 
 
 # 步骤到索引的映射
@@ -300,12 +300,12 @@ class DoubaoSpider:
         tag = self.tag
         prefix = f"[{tag}]" if tag else ""
         
-        self._report_progress(FetchStep.RECEIVED)
-        
         # 懒启动：如果浏览器还没启动，则启动它
         if not self.browser:
             self._report_progress(FetchStep.STARTING)
             await self.start()
+        
+        self._report_progress(FetchStep.RECEIVED)
 
         # 创建新页面并访问URL
         page = await self.context.new_page()
