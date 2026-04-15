@@ -4,6 +4,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 from ..config import get_config
 
@@ -122,10 +123,14 @@ class DocNamer:
         return self._data[date_str]
     
     def _get_today_max_index(self) -> int:
-        """获取今天最大的序号"""
+        """获取今天最大的有效序号"""
         records = self._get_today_records()
         if not records:
             return 0
+        valid_indices = [r.index for r in records.values() if r.index > 0]
+        if not valid_indices:
+            return 0
+        return max(valid_indices)
         return max(r.index for r in records.values())
     
     def _cleanup_old_entries(self) -> None:
@@ -166,6 +171,8 @@ class DocNamer:
                 index = records[url].index
                 records[url].title = clean_title
             else:
+                if self._next_index == 0:
+                    self._next_index = self._get_today_max_index() + 1
                 index = self._next_index
                 self._next_index += 1
                 records[url] = LinkRecord(index=index, title=clean_title)

@@ -17,7 +17,7 @@ from src.config import GlobalConfig
 from src.scraper import DoubaoSpider
 from src.scraper.crawler import reset_timer
 from src.preprocessor import DoubaoHTMLParser, TextBlock
-from src.generator import DocxBuilder, DocumentConfig, DocNamer
+from src.generator import DocxBuilder, DocumentConfig, DocNamer, LinkRecord
 from src.generator.batch_report import BatchReport
 from src.exceptions import CrawlerError, ParseError, ExportError
 
@@ -172,7 +172,6 @@ async def fetch_and_export_single(
     task_index: int = 0,
     total: int = 1,
     namer: "DocNamer" = None,
-    order: int = 0,
 ) -> tuple[str, bool, str | None, str | None]:
     """单个 URL 导出，返回 (url, success, filename, error)"""
     global _task_manager
@@ -213,10 +212,8 @@ async def fetch_and_export_single(
         
         if namer is None:
             namer = DocNamer(index_file)
-        if order > 0:
-            filename_base = namer.get_filename_by_order(order, url, chat_data.title)
-        else:
-            filename_base = namer.get_filename(url, chat_data.title)
+        
+        filename_base = namer.get_filename(url, chat_data.title)
         
         date_str = namer.get_date_str()
         output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
@@ -265,19 +262,20 @@ async def fetch_and_export_single(
 
 
 async def bounded_export_with_retry(
-    url: str,
+url: str,
     output_dir: Path,
     anti_detect_level: str,
     task_index: int,
     total: int,
     config: GlobalConfig,
+    namer: "DocNamer" = None,
 ) -> tuple[str, bool, str | None, str | None]:
     crawler_cfg = config.crawler
     max_attempts = crawler_cfg.retry_max_attempts
     
     if max_attempts <= 0:
         return await fetch_and_export_single(
-            url, output_dir, anti_detect_level, task_index, total
+            url, output_dir, anti_detect_level, task_index, total, namer
         )
     
     base_delay = crawler_cfg.retry_base_delay_ms / 1000
@@ -288,7 +286,7 @@ async def bounded_export_with_retry(
     for attempt in range(1, max_attempts + 1):
         try:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, task_index, total
+                url, output_dir, anti_detect_level, task_index, total, namer
             )
         except (CrawlerError, ParseError, ExportError) as e:
             last_error = e
@@ -316,18 +314,35 @@ async def fetch_and_export_batch(
     namer = DocNamer(index_file)
     namer._cleanup_old_entries()
     namer._load()
-    namer.set_next_index(namer._get_today_max_index() + 1)
+    
+    used_indices = set()
+    url_to_index = {}
+    
+    for url in urls:
+        records = namer._get_today_records()
+        if url in records and records[url].index > 0:
+            url_to_index[url] = records[url].index
+            used_indices.add(records[url].index)
+        else:
+            idx = namer._get_today_max_index() + 1
+            while idx in used_indices:
+                idx += 1
+            url_to_index[url] = idx
+            used_indices.add(idx)
+            records[url] = LinkRecord(index=idx, title="")
+    
+    namer._save()
     
     semaphore = asyncio.Semaphore(concurrency)
     
-    async def bounded_export(task_index: int, url: str, order: int):
+    async def bounded_export(task_index: int, url: str):
         async with semaphore:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, task_index, total, namer, order
+                url, output_dir, anti_detect_level, task_index, total, namer
             )
     
     tasks = [
-        bounded_export(i + 1, url, i + 1)
+        bounded_export(i + 1, url)
         for i, url in enumerate(urls)
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)

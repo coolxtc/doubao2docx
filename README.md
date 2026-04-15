@@ -267,7 +267,6 @@ crawler:
 
 index:
   max_age_days: 10           # 历史记录保留天数
-  lock_timeout: 10            # 文件锁超时（秒）
 ```
 
 修改后重启工具即可生效。
@@ -296,7 +295,6 @@ set INDEX_MAX_AGE_DAYS=30
 | `crawler.scroll_wait_ms` | 滚动等待(ms) | 1000 | `CRAWLER_SCROLL_WAIT_MS` |
 | `crawler.browser_close_delay` | 浏览器关闭延迟(s) | 0.25 | `CRAWLER_BROWSER_CLOSE_DELAY` |
 | `index.max_age_days` | 过期天数 | 10 | `INDEX_MAX_AGE_DAYS` |
-| `index.lock_timeout` | 文件锁超时(s) | 10 | `INDEX_LOCK_TIMEOUT` |
 | `pandoc.timeout` | Pandoc超时(s) | 15 | `PANDOC_TIMEOUT` |
 | `document_style.title_font_size` | 标题字号 | 18 | `DOCUMENT_STYLE_TITLE_FONT_SIZE` |
 | `document_style.code_font_size` | 代码字号 | 10 | `DOCUMENT_STYLE_CODE_FONT_SIZE` |

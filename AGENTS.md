@@ -36,7 +36,6 @@ python3 -m src.cli <豆包链接>
 | `crawler.timeout` | `CRAWLER_TIMEOUT` | 请求超时(ms) |
 | `crawler.scroll_max_attempts` | `CRAWLER_SCROLL_MAX_ATTEMPTS` | 最大滚动次数 |
 | `crawler.browser_close_delay` | - | 浏览器关闭延迟(s) |
-| `index.lock_timeout` | `INDEX_LOCK_TIMEOUT` | 文件锁超时(s) |
 
 ## CLI 参数
 
@@ -44,7 +43,6 @@ python3 -m src.cli <豆包链接>
 |------|------|------|
 | `urls` | 豆包聊天页面 URL（支持多个） | - |
 | `--level` | 反爬级别：low/medium/high | medium |
-| `--index` | 手动指定序号（仅单URL） | 自动 |
 | `--concurrency` | 批量并发数 | 5 |
 
 ## 项目结构
