@@ -18,7 +18,7 @@ from src.scraper import DoubaoSpider
 from src.scraper.crawler import reset_timer
 from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer, LinkRecord
-from src.generator.batch_report import BatchReport
+from src.generator.batch_report import BatchReport, print_folder_link
 from src.exceptions import CrawlerError, ParseError, ExportError
 
 # 全局配置实例
@@ -172,8 +172,7 @@ async def fetch_and_export_single(
     task_index: int = 0,
     total: int = 1,
     namer: "DocNamer" = None,
-) -> tuple[str, bool, str | None, str | None]:
-    """单个 URL 导出，返回 (url, success, filename, error)"""
+) -> tuple[str, bool, str, str | None]:
     global _task_manager
     
     url_tag = _get_url_tag(url)
@@ -229,7 +228,7 @@ async def fetch_and_export_single(
         if _task_manager:
             _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
         
-        return url, True, f"{filename_base}.docx", None
+        return url, True, f"{filename_base}.docx", str(output_path)
         
     except CrawlerError as e:
         error_msg = str(e)
@@ -313,11 +312,11 @@ async def fetch_and_export_batch(
             error_type = type(result).__name__
             report.add_failure(str(result), f"{error_type}")
         else:
-            url, success, filename, error = result
+            url, success, filename, file_path = result
             if success:
-                report.add_success(url, filename)
+                report.add_success(url, filename, file_path)
             else:
-                report.add_failure(url, error or "未知错误")
+                report.add_failure(url, filename or "未知错误")
     
     return report
 
@@ -377,6 +376,7 @@ def main() -> int:
         _task_manager = None
         
         report.print_summary()
+        print_folder_link()
         failure_count = sum(1 for r in report.results if not r.success)
         return 0 if failure_count == 0 else 1
     finally:

@@ -17,26 +17,26 @@
     report.print_summary()
 """
 
+import os
+import platform
+import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
+
+from rich.console import Console
+from rich.style import Style
+from rich.text import Text
 
 
 @dataclass
 class ExportResult:
-    """单条导出结果 - 记录一次导出操作的结果
-    
-    用于汇总批量导出的各项结果，无论是成功还是失败都有记录。
-    
-    属性说明：
-        url: 被导出的 URL
-        success: 是否导出成功
-        filename: 成功时为文件名，失败时为 None
-        error_message: 失败时为错误原因，成功时为 None
-    """
     url: str
     success: bool
     filename: Optional[str] = None
+    file_path: Optional[str] = None
     error_message: Optional[str] = None
 
 
@@ -57,22 +57,10 @@ class BatchReport:
     results: list[ExportResult] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
 
-    def add_success(self, url: str, filename: str) -> None:
-        """记录一次成功的导出
-        
-        Args:
-            url: 被导出的 URL
-            filename: 生成的文档文件名
-        """
-        self.results.append(ExportResult(url=url, success=True, filename=filename))
+    def add_success(self, url: str, filename: str, file_path: str = None) -> None:
+        self.results.append(ExportResult(url=url, success=True, filename=filename, file_path=file_path))
 
     def add_failure(self, url: str, error: str) -> None:
-        """记录一次失败的导出
-        
-        Args:
-            url: 被导出的 URL
-            error: 错误原因描述
-        """
         self.results.append(ExportResult(url=url, success=False, error_message=error))
 
     def _format_report(self) -> str:
@@ -121,14 +109,88 @@ class BatchReport:
                 lines.append(f"      原因: {r.error_message}")
             lines.append("")
         
-        # 添加报告尾部
         lines.extend(["-" * 50, "=" * 50])
         return "\n".join(lines)
 
     def print_summary(self) -> None:
-        """打印汇总报告
+        console = Console()
+        success_results = [r for r in self.results if r.success]
+        failure_results = [r for r in self.results if not r.success]
         
-        将格式化后的报告内容打印到终端。
-        报告只输出到终端，不保存本地文件。
-        """
-        print("\n" + self._format_report())
+        console.print("")
+        console.print("[bold]成功:[/bold]")
+        
+        for r in success_results:
+            if r.file_path and console.is_terminal:
+                link = _build_file_link(r.file_path, r.filename)
+                console.print(f"  [✓] {link}")
+            else:
+                console.print(f"  [✓] {r.filename}")
+        
+        if failure_results:
+            console.print("[bold]失败:[/bold]")
+            for r in failure_results:
+                console.print(f"  [✗] {r.url}")
+                console.print(f"      {r.error_message}")
+
+
+# 默认导出目录（项目 data/export/ 目录）
+DEFAULT_EXPORT_DIR = Path(__file__).parent.parent.parent / "data" / "export"
+
+
+def _build_file_link(file_path: str, text: str = None, style: str = "bold blue") -> str:
+    system = platform.system()
+    text = text or file_path
+    
+    if system == "Darwin":
+        encoded = quote(file_path)
+        url = f"file://{encoded}"
+    else:
+        url = file_path
+    
+    return f"[{style} link {url}]{text}[/]"
+
+
+def open_folder(folder_path: str) -> bool:
+    try:
+        system = platform.system()
+        if system == "Windows":
+            os.startfile(folder_path)
+        elif system == "Darwin":
+            subprocess.Popen(["open", folder_path])
+        else:
+            subprocess.Popen(["xdg-open", folder_path])
+        return True
+    except Exception:
+        return False
+
+
+def _get_latest_export_folder() -> Path:
+    export_base = DEFAULT_EXPORT_DIR.resolve()
+    
+    if not export_base.exists():
+        return export_base
+    
+    today = datetime.now().strftime("%y%m%d")
+    today_folder = export_base / today
+    if today_folder.exists():
+        return today_folder
+    
+    folders = [f for f in export_base.iterdir() if f.is_dir()]
+    if folders:
+        return max(folders, key=lambda p: p.stat().st_mtime)
+    return export_base
+
+
+def print_folder_link() -> None:
+    console = Console()
+    export_dir = str(_get_latest_export_folder())
+    
+    if console.is_terminal:
+        link = _build_file_link(export_dir, "点击打开文件夹", "bold blue")
+        console.print("")
+        console.print(link)
+        console.print(f"[cyan]{export_dir}[/cyan]")
+    else:
+        console.print("")
+        console.print(f"导出文件夹: {export_dir}")
