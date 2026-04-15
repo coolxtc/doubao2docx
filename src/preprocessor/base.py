@@ -619,7 +619,7 @@ class BaseParser(ABC):
                         items.append(bi)
                 # 嵌套容器 div/span - 递归处理以保留加粗格式
                 elif child.name in ("div", "span"):
-                    self._process_nested_container(child, items, current_text, current_bold)
+                    self._process_nested_container(child, items)
                 # 其他内容
                 else:
                     sub_text = child.get_text(strip=False)
@@ -631,11 +631,14 @@ class BaseParser(ABC):
         if items:
             blocks.append(TextBlock(type="list_item", content="", language=list_type, items=items))
     
-    def _process_nested_container(self, element: Tag, items: list[InlineContent], current_text: str, current_bold: bool) -> None:
+    def _process_nested_container(self, element: Tag, items: list[InlineContent]) -> None:
         """递归处理嵌套容器（div/span）- 提取内部加粗和文本
         
         用于处理列表项中的嵌套div/span元素，保留内部strong标签的加粗格式。
         """
+        current_text = ""
+        current_bold = False
+        
         def flush():
             nonlocal current_text, current_bold
             if current_text.strip():
@@ -665,7 +668,7 @@ class BaseParser(ABC):
                     for bi in bold_items:
                         items.append(bi)
                 elif child.name in ("div", "span"):
-                    self._process_nested_container(child, items, current_text, current_bold)
+                    self._process_nested_container(child, items)
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
