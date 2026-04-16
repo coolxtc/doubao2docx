@@ -95,6 +95,14 @@ def reset_timer() -> None:
 
 
 @dataclass
+class ImageData:
+    """单张图片的数据模型"""
+    url: str
+    prev_text: str  # 图片前的文本（前50字符），用于定位
+    next_text: str  # 图片后的文本（前50字符），用于定位
+
+
+@dataclass
 class ChatMessage:
     """单条聊天消息的数据模型
     
@@ -104,16 +112,21 @@ class ChatMessage:
         role: 消息发送者角色，"user"表示用户发送的消息，"assistant"表示AI回复的消息
         content: 消息的文本内容
         timestamp: 消息发送时间，可选字段，默认为None
-        images: 图片URL列表，可选字段，默认为空列表
+        images: 图片数据列表，可选字段，默认为空列表
     """
     role: str  # "user" 表示用户的消息，"assistant" 表示AI助手的消息
     content: str  # 消息的实际文本内容
     timestamp: Optional[str] = None  # 可选的时间戳
-    images: list[str] = field(default_factory=list)  # 图片URL列表
+    images: list[ImageData] = field(default_factory=list)  # 图片数据列表
 
     def to_dict(self) -> dict:
         """将消息对象转换为字典格式"""
-        return {"role": self.role, "content": self.content, "timestamp": self.timestamp, "images": self.images}
+        return {
+            "role": self.role,
+            "content": self.content,
+            "timestamp": self.timestamp,
+            "images": [{"url": img.url, "prev_text": img.prev_text, "next_text": img.next_text} for img in self.images]
+        }
 
 
 @dataclass
@@ -647,7 +660,46 @@ class DoubaoSpider:
                             
                             if (foundSrc && !seen.has(foundSrc)) {
                                 seen.add(foundSrc);
-                                images.push(foundSrc);
+                                
+                                // 从消息 HTML 内容中提取所有标题作为锚点文本
+                                const anchorTexts = [];
+                                const headingMatches = content.match(/<h[1-6][^>]*>([^<]+)<\\/h[1-6]>/g) || [];
+                                for (const match of headingMatches) {
+                                    const textMatch = match.match(/>([^<]+)</);
+                                    if (textMatch) {
+                                        anchorTexts.push(textMatch[1].trim());
+                                    }
+                                }
+                                
+                                // 找到图片在 HTML 中的位置
+                                const picOuterHTML = pic.outerHTML;
+                                const picPos = content.indexOf(picOuterHTML);
+                                
+                                // 找到图片前后最近的锚点文本
+                                let prevText = '';
+                                let nextText = '';
+                                let prevDist = Infinity;
+                                let nextDist = Infinity;
+                                
+                                for (const anchor of anchorTexts) {
+                                    const anchorPos = content.indexOf(anchor);
+                                    if (anchorPos < 0) continue;
+                                    
+                                    if (anchorPos < picPos && picPos - anchorPos < prevDist) {
+                                        prevDist = picPos - anchorPos;
+                                        prevText = anchor;
+                                    }
+                                    if (anchorPos > picPos && anchorPos - picPos < nextDist) {
+                                        nextDist = anchorPos - picPos;
+                                        nextText = anchor;
+                                    }
+                                }
+                                
+                                // 截取前50字符
+                                prevText = prevText.substring(0, 50);
+                                nextText = nextText.substring(0, 50);
+                                
+                                images.push({ url: foundSrc, prev_text: prevText, next_text: nextText });
                             }
                         }
                         
@@ -661,7 +713,13 @@ class DoubaoSpider:
             """)
             
             for item in result:
-                messages.append(ChatMessage(role=item['role'], content=item['content'], images=item.get('images', [])))
+                image_list = []
+                for img in item.get('images', []):
+                    url = img['url'] if isinstance(img, dict) else img
+                    prev_text = img.get('prev_text', '') if isinstance(img, dict) else ''
+                    next_text = img.get('next_text', '') if isinstance(img, dict) else ''
+                    image_list.append(ImageData(url=url, prev_text=prev_text, next_text=next_text))
+                messages.append(ChatMessage(role=item['role'], content=item['content'], images=image_list))
 
             if not messages:
                 messages = await self._extract_fallback(page)
