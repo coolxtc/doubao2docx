@@ -104,14 +104,16 @@ class ChatMessage:
         role: 消息发送者角色，"user"表示用户发送的消息，"assistant"表示AI回复的消息
         content: 消息的文本内容
         timestamp: 消息发送时间，可选字段，默认为None
+        images: 图片URL列表，可选字段，默认为空列表
     """
     role: str  # "user" 表示用户的消息，"assistant" 表示AI助手的消息
     content: str  # 消息的实际文本内容
     timestamp: Optional[str] = None  # 可选的时间戳
+    images: list[str] = field(default_factory=list)  # 图片URL列表
 
     def to_dict(self) -> dict:
         """将消息对象转换为字典格式"""
-        return {"role": self.role, "content": self.content, "timestamp": self.timestamp}
+        return {"role": self.role, "content": self.content, "timestamp": self.timestamp, "images": self.images}
 
 
 @dataclass
@@ -367,6 +369,49 @@ class DoubaoSpider:
                 break
             last_height = new_height
 
+    async def _scroll_for_lazy_images(self, page: "Page") -> None:
+        """滚动页面触发所有懒加载图片
+        
+        改进版：逐个图片元素滚动，等待加载完成
+        """
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(1000)
+        
+        max_scroll_attempts = 20
+        scroll_count = 0
+        
+        while scroll_count < max_scroll_attempts:
+            scroll_count += 1
+            
+            all_imgs = await page.query_selector_all('picture img, img[class*="image"]')
+            
+            for img in all_imgs:
+                try:
+                    await img.scroll_into_view_if_needed()
+                    await page.wait_for_timeout(300)
+                except:
+                    pass
+            
+            await page.evaluate("window.scrollBy(0, window.innerHeight)")
+            await page.wait_for_timeout(800)
+            
+            new_height = await page.evaluate("document.body.scrollHeight")
+            
+            prev_height = await page.evaluate("""
+                () => {
+                    if (!window._prev_scroll_height) return 0;
+                    return window._prev_scroll_height;
+                }
+            """)
+            
+            if prev_height and new_height == prev_height:
+                break
+            
+            await page.evaluate(f"window._prev_scroll_height = {new_height}")
+        
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(2000)
+
     async def _expand_code_blocks(self, page: "Page") -> None:
         """展开所有'已生成代码'按钮
         
@@ -502,27 +547,23 @@ class DoubaoSpider:
         提取流程：
         1. 提取聊天标题
         2. 再次滚动确保完整加载
-        3. 展开所有代码块
-        4. 等待展开动画完成
-        5. 提取所有消息
-        6. 获取原始HTML
+        3. 滚动触发懒加载图片
+        4. 展开所有代码块
+        5. 等待展开动画完成
+        6. 提取所有消息
+        7. 获取原始HTML
         """
-        # 提取标题
         title = await self._extract_title(page)
         
-        # 再次滚动（确保完整加载）
         await self._scroll_page(page)
+        await self._scroll_for_lazy_images(page)
         
-        # 展开代码块
         await self._expand_code_blocks(page)
         
-        # 等待展开动画完成
         await page.wait_for_timeout(self.config.code_expand_settle_ms)
         
-        # 提取消息列表
         messages = await self._extract_messages(page)
         
-        # 获取原始HTML
         raw_html = await page.content()
 
         return ChatData(url=url, title=title, messages=messages, raw_html=raw_html)
@@ -562,17 +603,46 @@ class DoubaoSpider:
                         const classAttr = block.className || '';
                         const role = classAttr.includes('justify-end') ? 'user' : 'assistant';
                         
-                        // 获取 innerHTML
                         let content = block.innerHTML;
                         
-                        // 如果有隐藏的 data-expanded-code pre，添加到内容中
                         const hiddenPres = block.querySelectorAll('pre[data-expanded-code]');
                         for (const pre of hiddenPres) {
                             content += pre.outerHTML;
                         }
                         
+                        const images = [];
+                        const seen = new Set();
+                        const pictureContainers = block.querySelectorAll('picture');
+                        
+                        for (const pic of pictureContainers) {
+                            const sources = pic.querySelectorAll('source');
+                            const imgElement = pic.querySelector('img');
+                            
+                            let foundSrc = '';
+                            
+                            for (const src of sources) {
+                                const srcset = src.srcset || src.dataset.srcset;
+                                if (srcset && !srcset.startsWith('data:')) {
+                                    foundSrc = srcset;
+                                    break;
+                                }
+                            }
+                            
+                            if (!foundSrc && imgElement) {
+                                const src = imgElement.dataset.original || imgElement.dataset.src || imgElement.src;
+                                if (src && !src.startsWith('data:')) {
+                                    foundSrc = src;
+                                }
+                            }
+                            
+                            if (foundSrc && !seen.has(foundSrc)) {
+                                seen.add(foundSrc);
+                                images.push(foundSrc);
+                            }
+                        }
+                        
                         if (content && content.length > 0) {
-                            results.push({ role, content });
+                            results.push({ role, content, images });
                         }
                     }
                     
@@ -581,7 +651,7 @@ class DoubaoSpider:
             """)
             
             for item in result:
-                messages.append(ChatMessage(role=item['role'], content=item['content']))
+                messages.append(ChatMessage(role=item['role'], content=item['content'], images=item.get('images', [])))
 
             if not messages:
                 messages = await self._extract_fallback(page)
