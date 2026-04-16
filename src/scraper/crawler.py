@@ -620,14 +620,24 @@ class DoubaoSpider:
                             
                             let foundSrc = '';
                             
+                            // 优先从 source srcset 获取（已加载的完整URL）
                             for (const src of sources) {
                                 const srcset = src.srcset || src.dataset.srcset;
                                 if (srcset && !srcset.startsWith('data:')) {
-                                    foundSrc = srcset;
+                                    foundSrc = srcset.split(',')[0].trim().split(' ')[0];
                                     break;
                                 }
                             }
                             
+                            // 其次从 img currentSrc 获取（实际显示的URL，包含鉴权参数）
+                            if (!foundSrc && imgElement) {
+                                const currentSrc = imgElement.currentSrc;
+                                if (currentSrc && !currentSrc.startsWith('data:')) {
+                                    foundSrc = currentSrc;
+                                }
+                            }
+                            
+                            // 最后尝试 img src 属性
                             if (!foundSrc && imgElement) {
                                 const src = imgElement.dataset.original || imgElement.dataset.src || imgElement.src;
                                 if (src && !src.startsWith('data:')) {
