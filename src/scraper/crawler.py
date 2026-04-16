@@ -389,7 +389,7 @@ class DoubaoSpider:
                 try:
                     await img.scroll_into_view_if_needed()
                     await page.wait_for_timeout(300)
-                except:
+                except Exception:
                     pass
             
             await page.evaluate("window.scrollBy(0, window.innerHeight)")
