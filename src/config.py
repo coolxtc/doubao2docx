@@ -374,6 +374,7 @@ class GlobalConfig:
     pandoc: PandocConfig | None = None
     url_fallback_length: int = 20  # URL 截断长度
     enable_progress_bar: bool = True  # 是否启用进度条
+    concurrency: int = 5  # 批量导出并发数
 
     def __post_init__(self):
         """加载配置（YAML + 环境变量）"""
@@ -399,6 +400,10 @@ class GlobalConfig:
 
         self.enable_progress_bar, _ = _env_override(
             "enable_progress_bar", self.enable_progress_bar, "GLOBAL_"
+        )
+
+        self.concurrency, _ = _env_override(
+            "concurrency", self.concurrency, "GLOBAL_"
         )
 
     @classmethod

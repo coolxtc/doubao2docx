@@ -88,12 +88,7 @@ class DoubaoSpider:
         self._report_progress(FetchStep.PAGE_LOADED)
 
         self._report_progress(FetchStep.SCROLLING)
-        await self.page_actions.scroll_to_bottom(page)
-
-        self._report_progress(FetchStep.EXPANDING_CODE)
-        await self.page_actions.scroll_for_lazy_images(page)
-        await self.page_actions.expand_code_blocks(page)
-        await page.wait_for_timeout(self.config.code_expand_settle_ms)
+        await self.page_actions.scroll_all(page)
 
         self._report_progress(FetchStep.EXTRACTING)
         chat_data = await self.extractor.extract_all(page, url)

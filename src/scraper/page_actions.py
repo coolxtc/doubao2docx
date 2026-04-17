@@ -5,12 +5,12 @@
 包括滚动、代码块展开等自动化行为。
 
 核心功能：
-1. scroll_to_bottom: 滚动页面到底部，加载所有历史消息
-2. scroll_for_lazy_images: 滚动触发懒加载图片的加载
-3. expand_code_blocks: 点击"已生成代码"按钮展开代码块
+1. scroll_step_by_step: 通用逐屏滚动方法（按 viewport 逐屏滚动直到页面底部）
+2. scroll_to_bottom: 滚动页面到底部，加载所有历史消息（基于通用方法）
+3. scroll_for_lazy_images: 滚动触发懒加载图片的加载
+4. expand_code_blocks: 点击"已生成代码"按钮展开代码块
 """
 
-import asyncio
 from typing import TYPE_CHECKING
 
 from ..config import CrawlerConfig
@@ -41,47 +41,59 @@ class PageActions:
         """
         self.config = config
 
+    async def scroll_step_by_step(self, page: "Page") -> int:
+        """
+        通用逐屏滚动方法，按 viewport 逐屏滚动直到页面底部
+
+        算法：
+        1. 记录初始页面高度
+        2. 向下滚动一个视口高度
+        3. 等待内容加载
+        4. 检查页面高度是否变化
+        5. 如果高度不变或达到最大次数，停止滚动
+
+        Returns:
+            实际滚动的次数
+        """
+        max_attempts = self.config.scroll_max_attempts
+        scroll_count = 0
+        last_height = 0
+
+        # 初始化：先滚动到顶部确保从起点开始
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(self.config.scroll_wait_ms)
+        last_height = await page.evaluate("document.body.scrollHeight")
+
+        for _ in range(max_attempts):
+            # 向下滚动一个视口高度
+            await page.evaluate("window.scrollBy(0, window.innerHeight)")
+            await page.wait_for_timeout(self.config.scroll_wait_ms)
+
+            scroll_count += 1
+            new_height = await page.evaluate("document.body.scrollHeight")
+
+            # 页面高度不再变化，说明已到底部
+            if new_height == last_height:
+                break
+
+            last_height = new_height
+
+        # 滚动到最底部确保完整加载
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(self.config.scroll_wait_ms)
+
+        return scroll_count
+
     async def scroll_to_bottom(self, page: "Page") -> None:
         """
-        滚动页面到最底部
+        滚动页面到最底部，加载所有历史消息
 
         豆包聊天页面采用无限滚动加载机制，
         需要滚动到页面底部才能加载出完整的历史消息。
 
-        算法：
-        1. 滚动到页面底部
-        2. 等待新内容加载
-        3. 检查页面高度是否变化
-        4. 如果高度不变，说明已加载完成
-        5. 如果高度变化，继续滚动
+        现在基于通用方法 scroll_step_by_step 实现。
         """
-        last_height = 0
-        for _ in range(self.config.scroll_max_attempts):
-            try:
-                # 执行 JavaScript 滚动到页面底部
-                await asyncio.wait_for(
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)"),
-                    timeout=self.config.scroll_timeout / 1000,
-                )
-            except asyncio.TimeoutError:
-                break
-
-            # 等待新内容加载
-            await page.wait_for_timeout(self.config.scroll_wait_ms)
-
-            try:
-                # 获取当前页面高度
-                new_height = await asyncio.wait_for(
-                    page.evaluate("document.body.scrollHeight"),
-                    timeout=self.config.scroll_timeout / 1000,
-                )
-            except asyncio.TimeoutError:
-                break
-
-            # 高度不变，说明已到达底部
-            if new_height == last_height:
-                break
-            last_height = new_height
+        await self.scroll_step_by_step(page)
 
     async def scroll_for_lazy_images(self, page: "Page") -> None:
         """
@@ -95,16 +107,17 @@ class PageActions:
         1. 回到页面顶部
         2. 遍历所有图片元素，滚动使其可见
         3. 继续向下滚动
-        4. 重复直到页面高度不再变化
+4. 重复直到页面高度不再变化
         """
-        # 先回到顶部
-        await page.evaluate("window.scrollTo(0, 0)")
-        await page.wait_for_timeout(1000)
+        base_wait = self.config.scroll_wait_ms
+        max_attempts = self.config.scroll_max_attempts * 2
 
-        max_scroll_attempts = self.config.scroll_max_attempts * 2
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(base_wait)
+
         scroll_count = 0
 
-        while scroll_count < max_scroll_attempts:
+        while scroll_count < max_attempts:
             scroll_count += 1
 
             # 获取所有图片元素
@@ -114,13 +127,13 @@ class PageActions:
             for img in all_imgs:
                 try:
                     await img.scroll_into_view_if_needed()
-                    await page.wait_for_timeout(300)
+                    await page.wait_for_timeout(base_wait)
                 except Exception:
                     pass
 
             # 向下滚动一个视口高度
             await page.evaluate("window.scrollBy(0, window.innerHeight)")
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(base_wait)
 
             new_height = await page.evaluate("document.body.scrollHeight")
 
@@ -140,7 +153,67 @@ class PageActions:
 
         # 滚动到底部
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(self.config.code_expand_settle_ms)
+
+    async def scroll_all(self, page: "Page") -> None:
+        """
+        统一滚动方法：一次逐屏滚动同时处理历史消息加载、图片懒加载、代码块展开
+
+        在逐屏滚动到底的过程中：
+        1. 滚动每个图片到可视区域，触发懒加载
+        2. 检查并点击代码展开按钮
+        3. 检查页面高度变化
+
+        合并了 scroll_to_bottom + scroll_for_lazy_images + expand_code_blocks 的逻辑，
+        减少页面滚动次数。
+        """
+        base_wait = self.config.scroll_wait_ms
+        max_attempts = self.config.scroll_max_attempts * 2
+        settle_wait = self.config.code_expand_settle_ms
+        code_expand_retries = self.config.code_expand_max_retries
+
+        # 初始化：滚动到顶部
+        await page.evaluate("window.scrollTo(0, 0)")
+        await page.wait_for_timeout(base_wait)
+        last_height = await page.evaluate("document.body.scrollHeight")
+
+        scroll_count = 0
+        stable_count = 0  # 页面高度稳定的次数
+
+        while scroll_count < max_attempts:
+            scroll_count += 1
+
+            # 1. 触发当前可见的图片（scroll_for_lazy_images 逻辑）
+            all_imgs = await page.query_selector_all("picture img, img[class*='image']")
+            for img in all_imgs:
+                try:
+                    await img.scroll_into_view_if_needed()
+                    await page.wait_for_timeout(base_wait)
+                except Exception:
+                    pass
+
+            for _ in range(code_expand_retries):
+                await self._click_expand_buttons(page)
+                await page.wait_for_timeout(base_wait)
+                await self._inject_expanded_code(page)
+
+            # 3. 向下滚动一个视口高度
+            await page.evaluate("window.scrollBy(0, window.innerHeight)")
+            await page.wait_for_timeout(base_wait)
+
+            # 4. 检查页面高度是否变化
+            new_height = await page.evaluate("document.body.scrollHeight")
+            if new_height == last_height:
+                stable_count += 1
+                if stable_count >= 2:
+                    break
+            else:
+                stable_count = 0
+            last_height = new_height
+
+        # 滚动到底部
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(settle_wait)
 
     async def _click_expand_buttons(self, page: "Page") -> None:
         """
@@ -174,6 +247,37 @@ class PageActions:
                                 button.dispatchEvent(event);
                             }
                         }
+                    }
+                }
+            }
+        """)
+
+    async def _inject_expanded_code(self, page: "Page") -> None:
+        await page.evaluate("""
+            () => {
+                const containers = document.querySelectorAll('div');
+                for (const container of containers) {
+                    if (container.querySelector('pre[data-expanded-code]')) {
+                        continue;
+                    }
+                    const button = container.querySelector('[class*="button-"]');
+                    if (!button || !button.textContent.includes('已生成代码')) {
+                        continue;
+                    }
+                    let nextSibling = container.nextElementSibling;
+                    for (let i = 0; i < 5 && nextSibling; i++) {
+                        if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
+                            const pre = nextSibling.querySelector('pre');
+                            if (pre) {
+                                const hiddenPre = document.createElement('pre');
+                                hiddenPre.style.display = 'none';
+                                hiddenPre.setAttribute('data-expanded-code', 'true');
+                                hiddenPre.textContent = pre.textContent;
+                                container.appendChild(hiddenPre);
+                            }
+                            break;
+                        }
+                        nextSibling = nextSibling.nextElementSibling;
                     }
                 }
             }

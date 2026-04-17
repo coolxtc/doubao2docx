@@ -457,7 +457,7 @@ def main() -> int:
 
     parser.add_argument("urls", nargs="+", help="豆包聊天页面URL（支持多个）")
     parser.add_argument("--level", choices=["low", "medium", "high"], default="medium", help="反爬级别")
-    parser.add_argument("--concurrency", type=int, default=5, help="并发数（默认: 5）")
+    parser.add_argument("--concurrency", type=int, default=None, help="并发数（默认: 5）")
 
     args = parser.parse_args()
 
@@ -493,7 +493,8 @@ def main() -> int:
             concurrency = 1
         else:
             urls = args.urls
-            concurrency = args.concurrency
+            # 命令行参数 > 配置文件 > 默认值
+            concurrency = args.concurrency if args.concurrency is not None else _config.concurrency
 
         # 执行批量导出
         report = asyncio.run(fetch_and_export_batch(

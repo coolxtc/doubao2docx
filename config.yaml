@@ -25,19 +25,19 @@ crawler:
   api_timeout: 10000
 
   # 最多滚动次数，防止无限滚动
-  scroll_max_attempts: 10
+  scroll_max_attempts: 30
 
   # 滚动后等待时间（毫秒）
   # 程序发送滚动指令后，需要等待网页加载新内容
-  scroll_wait_ms: 1000
+  scroll_wait_ms: 500
 
   # 代码块展开后稳定等待时间（毫秒）
   # 代码块刚展开时可能还在"跳动"或动画中，等待稳定后再读取
-  code_expand_settle_ms: 1000
+  code_expand_settle_ms: 500
 
   # 代码块展开基础等待时间（毫秒）
   # 每次尝试展开代码块时，先等待基础时间让内容加载
-  code_expand_base_ms: 1000
+  code_expand_base_ms: 500
 
   # 代码块展开最大重试次数
   # 尝试展开代码块的最大次数
@@ -87,6 +87,10 @@ global:
   # 启用进度条
   # 使用 tqdm 风格显示批量导出进度
   enable_progress_bar: true
+
+  # 批量导出并发数
+  # 同时进行的浏览器实例数量
+  concurrency: 5
 
 # ------------------------------------------------------------
 # 索引文件配置 - 控制 link_index.json 的行为
