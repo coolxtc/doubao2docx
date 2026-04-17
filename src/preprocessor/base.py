@@ -415,6 +415,9 @@ class BaseParser(ABC):
         # 内联标签（strong, em, span, a, b, i, u, small, del, mark）
         inline_tags = {"strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark"}
         if tag in inline_tags:
+            if self._is_math_element(element):
+                self._process_math_element(element, blocks)
+                return
             self._process_inline_element(element, blocks)
             return
         
@@ -457,7 +460,6 @@ class BaseParser(ABC):
             self._process_code_container(element, blocks)
             return
         
-        # 使用钩子判断是否为段落容器
         if self._is_paragraph_container(element):
             self._process_paragraph(element, blocks)
             return
@@ -477,7 +479,7 @@ class BaseParser(ABC):
         else:
             sub_blocks = self._extract_blocks(element)
             blocks.extend(sub_blocks)
-    
+
     def _process_code_container(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理代码块容器
         
@@ -906,6 +908,18 @@ class BaseParser(ABC):
             content=latex,
             language="display" if is_display else "inline"
         ))
+        
+        if len(blocks) >= 2:
+            prev_block = blocks[-2]
+            if prev_block.type == "paragraph" and prev_block.content.strip() == "$":
+                inline_latex = InlineContent(type="latex", content=latex, is_display=True)
+                if prev_block.items:
+                    prev_block.items.append(inline_latex)
+                else:
+                    prev_block.items = [inline_latex]
+                blocks.pop()
+                blocks.pop()
+                blocks.append(TextBlock(type="paragraph", content="", items=prev_block.items))
     
     # -------------------------------------------------------------------------
     # 辅助方法 - 提供通用功能，供钩子方法或子类使用
