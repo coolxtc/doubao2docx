@@ -79,8 +79,6 @@ class DoubaoSpider:
             self._report_progress(FetchStep.STARTING)
             await self.start()
 
-        self._report_progress(FetchStep.RECEIVED)
-
         page = await self.browser_mgr.new_page()
         self._report_progress(FetchStep.LOADING_PAGE)
 
@@ -90,7 +88,6 @@ class DoubaoSpider:
         self._report_progress(FetchStep.SCROLLING)
         await self.page_actions.scroll_all(page)
 
-        self._report_progress(FetchStep.EXTRACTING)
         chat_data = await self.extractor.extract_all(page, url)
 
         await page.close()

@@ -15,40 +15,33 @@ class FetchStep(str, Enum):
     可以用于进度回调、状态显示等场景。
     """
     STARTING = "任务开始"
-    RECEIVED = "收到任务"
     LOADING_PAGE = "访问页面"
     PAGE_LOADED = "加载完成"
     SCROLLING = "滚动加载"
-    EXPANDING_CODE = "展开代码"
-    EXTRACTING = "提取数据"
     COMPLETED = "爬取完成"
 
 
 # 步骤到索引的映射
 STEP_INDEX = {
     FetchStep.STARTING: 0,
-    FetchStep.RECEIVED: 1,
-    FetchStep.LOADING_PAGE: 2,
-    FetchStep.PAGE_LOADED: 3,
-    FetchStep.SCROLLING: 4,
-    FetchStep.EXPANDING_CODE: 5,
-    FetchStep.EXTRACTING: 6,
-    FetchStep.COMPLETED: 7,
+    FetchStep.LOADING_PAGE: 1,
+    FetchStep.PAGE_LOADED: 2,
+    FetchStep.SCROLLING: 3,
+    FetchStep.COMPLETED: 4,
 }
 
 # 字符串 key 版本（供 cli.py 使用）
 FETCH_STEP_NAMES = {
     "任务开始": 0,
-    "收到任务": 1,
-    "访问页面": 2,
-    "加载完成": 3,
-    "滚动加载": 4,
-    "展开代码": 5,
-    "提取数据": 6,
-    "爬取完成": 7,
-    "解析内容": 8,
-    "生成文档": 9,
+    "访问页面": 1,
+    "加载完成": 2,
+    "滚动加载": 3,
+    "爬取完成": 4,
+    "解析内容": 5,
+    "生成文档": 6,
 }
+
+STEP_COUNT = len(FETCH_STEP_NAMES)
 
 # 任务开始时间（模块级变量）
 _task_start_time = time.time()

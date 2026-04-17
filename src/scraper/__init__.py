@@ -8,7 +8,7 @@ try:
     from .extractor import DataExtractor
     from .models import ChatData, ChatMessage, ImageData
     from .page_actions import PageActions
-    from .steps import FetchStep, STEP_INDEX, FETCH_STEP_NAMES, reset_timer
+    from .steps import FetchStep, STEP_INDEX, FETCH_STEP_NAMES, STEP_COUNT, reset_timer
 
     __all__ = [
         "DoubaoSpider",
@@ -19,6 +19,7 @@ try:
         "FetchStep",
         "STEP_INDEX",
         "FETCH_STEP_NAMES",
+        "STEP_COUNT",
         "reset_timer",
         "BrowserManager",
         "PageActions",

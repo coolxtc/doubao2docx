@@ -28,7 +28,7 @@ from rich.live import Live
 from rich.table import Table
 
 from src.config import GlobalConfig
-from src.scraper import DoubaoSpider, FetchStep, FETCH_STEP_NAMES, reset_timer
+from src.scraper import DoubaoSpider, FetchStep, FETCH_STEP_NAMES, STEP_COUNT, reset_timer
 from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer, LinkRecord
 from src.generator.batch_report import BatchReport, print_folder_link
@@ -70,14 +70,15 @@ class TaskStatus:
     task_index: int  # 任务序号（1-based）
     total: int  # 总任务数
     url_tag: str  # URL 标签（thread ID）
-    step: int = 0  # 当前步骤（0-10）
+    step: int = 0  # 当前步骤（0-6）
     status: str = "等待中"  # 状态文本
     result: str = ""  # 结果或错误信息
     elapsed: float = 0.0  # 已耗时（秒）
 
     def to_line(self) -> str:
         """转换为纯文本行（非交互式终端使用）"""
-        dots = "●" * self.step + "○" * (10 - self.step) if self.step < 10 else "●●●●●●●●●●"
+        total = STEP_COUNT
+        dots = "●" * self.step + "○" * (total - self.step) if self.step < total else "●" * total
         elapsed_str = f"({self.elapsed:.1f}s)" if self.elapsed > 0 else ""
         return f"[{self.task_index}/{self.total}][{self.url_tag}] {dots} [{self.status}] {elapsed_str} {self.result}"
 
@@ -117,7 +118,7 @@ class TaskManager:
 
         Args:
             task_index: 任务序号
-            step: 步骤索引（0-10）
+            step: 步骤索引（0-6）
             status: 状态文本
             result: 结果或错误信息
             elapsed: 已耗时（秒）
@@ -151,15 +152,16 @@ class TaskManager:
         table.add_column("结果", no_wrap=True, max_width=30)
 
         for task in self.tasks:
-            if task.step >= 10:
+            total = STEP_COUNT
+            if task.step >= total:
                 # 完成状态 - 全绿
-                dots = "[green]●●●●●●●●●●[/green]"
+                dots = f"[green]{'●' * total}[/green]"
                 status_style = "green"
                 result_style = "green"
                 elapsed_style = "green"
             elif task.step == 0:
                 # 等待状态 - 全灰
-                dots = "[dim]○○○○○○○○○○[/dim]"
+                dots = f"[dim]{'○' * total}[/dim]"
                 status_style = "dim"
                 result_style = "dim"
                 elapsed_style = "dim"
@@ -167,7 +169,7 @@ class TaskManager:
                 # 进行中状态 - 绿点 + 黄箭头 + 灰点
                 done = task.step
                 current = "→"
-                remaining = 10 - task.step - 1
+                remaining = total - task.step - 1
                 dots = f"[green]{'●' * done}[/green][yellow]{current}[/yellow][dim]{'○' * remaining}[/dim]"
                 status_style = "yellow"
                 result_style = "dim"
