@@ -14,8 +14,7 @@ from rich.live import Live
 from rich.table import Table
 
 from src.config import GlobalConfig
-from src.scraper import DoubaoSpider
-from src.scraper.crawler import reset_timer
+from src.scraper import DoubaoSpider, FetchStep, FETCH_STEP_NAMES, reset_timer
 from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer, LinkRecord
 from src.generator.batch_report import BatchReport, print_folder_link
@@ -26,21 +25,6 @@ _config = GlobalConfig()
 
 # 预编译的正则表达式，用于从 URL 提取 thread ID
 THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
-
-# 步骤名称 (与 FetchStep 对应)
-FETCH_STEP_NAMES = {
-    "任务开始": 0,
-    "收到任务": 1,
-    "访问页面": 2,
-    "加载完成": 3,
-    "滚动加载": 4,
-    "展开代码": 5,
-    "提取数据": 6,
-    "爬取完成": 7,
-    "解析内容": 8,
-    "生成文档": 9,
-}
-
 
 # 全局任务管理器
 _task_manager: "TaskManager | None" = None
@@ -181,10 +165,11 @@ async def fetch_and_export_single(
     total_start = time.time()
     
     def on_progress(step: str) -> None:
-        if _task_manager and step in FETCH_STEP_NAMES:
+        step_value = step.value if isinstance(step, FetchStep) else step
+        if _task_manager and step_value in FETCH_STEP_NAMES:
             elapsed = time.time() - total_start
-            step_idx = FETCH_STEP_NAMES[step]
-            _task_manager.update(task_index, step_idx, step, elapsed=elapsed)
+            step_idx = FETCH_STEP_NAMES[step_value]
+            _task_manager.update(task_index, step_idx, step_value, elapsed=elapsed)
     
     def update_step(name: str) -> None:
         if _task_manager and name in FETCH_STEP_NAMES:
