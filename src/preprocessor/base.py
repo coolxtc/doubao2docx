@@ -566,10 +566,11 @@ class BaseParser(ABC):
                     break
         
         if items:
-            for item in items:
-                if item.content:
+            valid_items = [item for item in items if item.content and item.content.strip()]
+            if valid_items:
+                for item in valid_items:
                     item.content = item.content.replace("\n", " ")
-            blocks.append(TextBlock(type="list_item", content="", language=list_type, items=items, level=level))
+                blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
         
         for child in li.children:
             if isinstance(child, Tag) and child.name in ("ul", "ol"):
