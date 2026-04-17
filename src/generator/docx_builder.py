@@ -104,8 +104,8 @@ class DocxBuilder:
         self.latex_converter = LaTeXConverter()
         self._setup_document()
         
-        # 列表相关的状态跟踪
         self._last_list_type = None
+        self._last_list_level = 0
         self._list_counter = 0
         
         # 从配置读取 pandoc 超时
@@ -178,6 +178,7 @@ class DocxBuilder:
         # 重置列表状态
         self._list_counter = 0
         self._last_list_type = None
+        self._last_list_level = 0
 
         current_role = ""
         for role, block in blocks:
@@ -214,34 +215,39 @@ class DocxBuilder:
             self._add_list(block.content, block.language)
         elif block.type == "list_item":
             list_type = block.language if block.language in ("ul", "ol") else "ul"
+            level = getattr(block, 'level', 0)
+            
             if block.items:
-                # 计算有序列表的起始索引
                 if list_type == "ol":
-                    # 如果上一个block不是ol，重置计数器
-                    if self._last_list_type != "ol":
+                    if self._last_list_type != "ol" or self._last_list_level != level:
                         self._list_counter = 0
                     self._list_counter += 1
                     start_index = self._list_counter
                     self._last_list_type = "ol"
+                    self._last_list_level = level
                 else:
                     start_index = 1
                     self._last_list_type = "ul"
-                self._add_inline_content(block.items, list_type, start_index)
+                    self._last_list_level = level
+                self._add_inline_content(block.items, list_type, start_index, level)
             else:
-                # 纯文本列表项
                 if list_type == "ol":
-                    if self._last_list_type != "ol":
+                    if self._last_list_type != "ol" or self._last_list_level != level:
                         self._list_counter = 0
                     self._list_counter += 1
                     self._last_list_type = "ol"
+                    self._last_list_level = level
                     para = self.document.add_paragraph()
                     run = para.add_run(f"{self._list_counter}. {block.content}")
                     self._set_run_font(run)
                 else:
                     self._last_list_type = "ul"
+                    self._last_list_level = level
                     para = self.document.add_paragraph(block.content, style="List Bullet")
                     for run in para.runs:
                         self._set_run_font(run)
+                if level > 0:
+                    para.paragraph_format.left_indent = Inches(level * 0.5)
         elif block.type == "table":
             self._add_table(block.data)
         elif block.type == "blockquote":
@@ -255,20 +261,10 @@ class DocxBuilder:
             if content:
                 self._add_paragraph(content)
 
-    def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1) -> None:
-        """添加内联内容（文本和公式混合）
-        
-        用于处理一个段落中同时包含文字和公式的情况。
-        
-        Args:
-            items: 内联内容列表
-            list_type: 列表类型，"ol"（有序）或 "ul"（无序）
-            start_index: 有序列表的起始编号
-        """
+    def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
         if not items:
             return
         
-        # 创建段落
         if list_type == "ol":
             para = self.document.add_paragraph()
             run = para.add_run(f"{start_index}. ")
@@ -278,15 +274,18 @@ class DocxBuilder:
         else:
             para = self.document.add_paragraph()
         
-        # 逐个添加内容项
+        if level > 0:
+            para.paragraph_format.left_indent = Inches(level * 0.5)
+        
         for item in items:
             if item.type == "text":
                 run = para.add_run(item.content)
                 self._set_run_font(run)
                 if item.bold:
                     run.font.bold = True
+                if item.italic:
+                    run.font.italic = True
             elif item.type == "latex":
-                # 独立公式（is_display=True）后添加空格使其左对齐
                 self._add_latex_to_paragraph(para, item.content, item.is_display, as_standalone=item.is_display)
 
     def _add_latex(self, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:

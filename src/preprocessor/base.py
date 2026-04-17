@@ -83,50 +83,22 @@ class TableData:
 
 @dataclass
 class InlineContent:
-    """内联内容项（文本或公式）- 用于段落内的细粒度内容
-    
-    一个段落可能同时包含普通文字、加粗文字、公式等。
-    这个类用来表示段落内的这些"小片段"。
-    
-    属性：
-        type: 内容类型，"text" 或 "latex"
-        content: 具体内容
-        is_display: 是否是展示公式（仅对 latex 类型有效）
-        bold: 是否加粗
-    """
-    type: str  # "text" 或 "latex"
+    type: str
     content: str
     is_display: bool = False
     bold: bool = False
+    italic: bool = False
 
 
 @dataclass 
 class TextBlock:
-    """文本块 - 代表文档中的一个内容块
-    
-    这是解析结果的基本单位，每个 TextBlock 代表一种类型的内容。
-    
-    属性：
-        type: 块类型，可选：
-            - "paragraph": 普通段落
-            - "heading": 标题
-            - "code": 代码块
-            - "latex": 数学公式
-            - "table": 表格
-            - "blockquote": 引用
-            - "list_item": 列表项
-        content: 块的文本内容（对于纯文本块）
-        language: 附加信息，如代码块的语言、标题级别等
-        data: 附加数据，如表格数据
-        inline: 是否是内联块
-        items: 内联内容列表（用于包含多种格式的段落）
-    """
     type: str
     content: str
     language: Optional[str] = None
     data: Any = None
     inline: bool = False
     items: list[InlineContent] = field(default_factory=list)
+    level: int = 0
 
 
 @dataclass
@@ -396,12 +368,12 @@ class BaseParser(ABC):
         
         # 无序列表
         if tag == "ul":
-            self._process_list(element, "ul", blocks)
+            self._process_list(element, "ul", blocks, 0)
             return
         
         # 有序列表
         if tag == "ol":
-            self._process_list(element, "ol", blocks)
+            self._process_list(element, "ol", blocks, 0)
             return
         
         # 段落
@@ -533,54 +505,27 @@ class BaseParser(ABC):
         if code_content:
             blocks.append(TextBlock(type="code", content=code_content, language=language))
     
-    def _process_list(self, element: Tag, list_type: str, blocks: list[TextBlock]) -> None:
-        """处理列表元素 - 遍历所有列表项
-        
-        Args:
-            element: ul 或 ol 元素
-            list_type: 列表类型，"ul" 或 "ol"
-            blocks: 累积的内容块列表
-        """
+    def _process_list(self, element: Tag, list_type: str, blocks: list[TextBlock], level: int = 0) -> None:
         list_items = element.find_all("li", recursive=False)
         for i, li in enumerate(list_items):
-            self._process_list_item(li, blocks, list_type, i + 1)
+            self._process_list_item(li, blocks, list_type, i + 1, level)
     
-    def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1) -> None:
-        """处理列表项
-        
-        Args:
-            li: 列表项元素
-            blocks: 累积的内容块列表
-            list_type: 列表类型
-            index: 列表项索引
-        """
+    def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1, level: int = 0) -> None:
+        has_nested_list = li.find(["ul", "ol"], recursive=False)
         has_br = li.find("br") or li.find(class_=lambda x: x and any("line-break" in c for c in x))
-        
-        if has_br:
-            self._process_complex_list_item(li, blocks, list_type)
-            return
-        
         has_strong = li.find("strong") or li.find("b")
         has_math = self._find_math_in_element(li)
+        has_em = li.find("em") or li.find("i")
         
-        # 简单的列表项
-        if not has_strong and not has_math:
-            text = li.get_text(strip=True)
-            if text:
-                blocks.append(TextBlock(type="list_item", content=text, language=list_type))
+        if has_br or has_strong or has_math or has_em or has_nested_list:
+            self._process_complex_list_item(li, blocks, list_type, level)
             return
         
-        # 复杂的列表项（有格式或公式）
-        self._process_complex_list_item(li, blocks, list_type)
+        text = li.get_text(strip=True)
+        if text:
+            blocks.append(TextBlock(type="list_item", content=text, language=list_type, level=level))
     
-    def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str) -> None:
-        """处理复杂的列表项 - 保留内联元素和公式
-        
-        Args:
-            li: 列表项元素
-            blocks: 累积的内容块列表
-            list_type: 列表类型
-        """
+    def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str, level: int = 0) -> None:
         items: list[InlineContent] = []
         current_text = ""
         current_bold = False
@@ -594,42 +539,41 @@ class BaseParser(ABC):
         
         for child in li.children:
             if isinstance(child, NavigableString):
-                current_text += str(child)
+                text = str(child).strip()
+                if text:
+                    current_text += text
             elif isinstance(child, Tag):
-                # 使用钩子判断是否为公式元素
                 if self._is_math_element(child):
                     flush()
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                # 换行 div
-                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
-                    flush()
-                    items.append(InlineContent(type="text", content="\n"))
-                # 换行标签
-                elif child.name == "br":
-                    flush()
-                    items.append(InlineContent(type="text", content="\n"))
-                # 加粗
                 elif child.name in ("strong", "b"):
+                    flush()
                     bold_items = self._extract_strong_recursive(child)
-                    if current_text.strip():
-                        flush()
                     for bi in bold_items:
                         items.append(bi)
-                # 嵌套容器 div/span - 递归处理以保留加粗格式
-                elif child.name in ("div", "span"):
-                    self._process_nested_container(child, items)
-                # 其他内容
-                else:
-                    sub_text = child.get_text(strip=False)
-                    if sub_text:
-                        current_text += sub_text
-        
-        flush()
+                elif child.name in ("em", "i"):
+                    flush()
+                    italic_items = self._extract_italic_recursive(child)
+                    for ii in italic_items:
+                        items.append(ii)
+                elif child.name == "p":
+                    text = child.get_text(strip=True)
+                    if text:
+                        items.append(InlineContent(type="text", content="\n" + text))
+                elif child.name in ("ul", "ol"):
+                    break
         
         if items:
-            blocks.append(TextBlock(type="list_item", content="", language=list_type, items=items))
+            for item in items:
+                if item.content:
+                    item.content = item.content.replace("\n", " ")
+            blocks.append(TextBlock(type="list_item", content="", language=list_type, items=items, level=level))
+        
+        for child in li.children:
+            if isinstance(child, Tag) and child.name in ("ul", "ol"):
+                self._process_list(child, child.name, blocks, level + 1)
     
     def _process_nested_container(self, element: Tag, items: list[InlineContent]) -> None:
         """递归处理嵌套容器（div/span）- 提取内部加粗和文本
@@ -669,12 +613,24 @@ class BaseParser(ABC):
                         items.append(bi)
                 elif child.name in ("div", "span"):
                     self._process_nested_container(child, items)
+                elif child.name in ("ul", "ol"):
+                    pass  
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
                         current_text += sub_text
         
         flush()
+    
+    def _process_element_as_sublist(self, element: Tag, blocks: list[TextBlock], parent_list_type: str, level: int) -> None:
+        if element.name in ("ul", "ol"):
+            self._process_list(element, element.name, blocks, level + 1)
+        elif element.name == "p":
+            text = element.get_text(strip=True)
+            if text:
+                blocks.append(TextBlock(type="list_item", content=text, language=parent_list_type, level=level))
+        elif element.name in ("div", "section"):
+            self._extract_blocks(element)
     
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理段落元素 - 保留内联元素和公式
@@ -785,6 +741,31 @@ class BaseParser(ABC):
                         items.append(InlineContent(type="text", content=text, bold=True))
         return items
     
+    def _extract_italic_recursive(self, element: Tag) -> list[InlineContent]:
+        items = []
+        for child in element.children:
+            if isinstance(child, NavigableString):
+                text = str(child)
+                if text:
+                    items.append(InlineContent(type="text", content=text, italic=True))
+            elif isinstance(child, Tag):
+                if child.name in ("em", "i"):
+                    items.extend(self._extract_italic_recursive(child))
+                elif child.name in ("strong", "b"):
+                    bold_items = self._extract_strong_recursive(child)
+                    for bi in bold_items:
+                        bi.italic = True
+                        items.append(bi)
+                elif self._is_math_element(child):
+                    latex = self._extract_latex_content(child)
+                    is_display = self._is_display_math(child)
+                    items.append(InlineContent(type="latex", content=latex, is_display=is_display))
+                else:
+                    text = child.get_text(strip=False)
+                    if text:
+                        items.append(InlineContent(type="text", content=text, italic=True))
+        return items
+    
     def _extract_inline_text_with_format(self, element: Tag, in_bold: bool = False) -> list[InlineContent]:
         """提取内联元素的文本 - 保留加粗格式
         
@@ -816,9 +797,24 @@ class BaseParser(ABC):
                             current_text = ""
                         items.append(InlineContent(type="text", content=bold_text, bold=True))
                 else:
-                    sub_text = child.get_text(strip=True)
-                    if sub_text:
-                        current_text += sub_text
+                    if child.find("strong") or child.find("b"):
+                        bold_items = self._extract_strong_recursive(child)
+                        if current_text.strip():
+                            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
+                            current_text = ""
+                        for bi in bold_items:
+                            items.append(bi)
+                    elif child.find("em") or child.find("i"):
+                        italic_items = self._extract_italic_recursive(child)
+                        if current_text.strip():
+                            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
+                            current_text = ""
+                        for ii in italic_items:
+                            items.append(ii)
+                    else:
+                        sub_text = child.get_text(strip=False)
+                        if sub_text:
+                            current_text += sub_text
         
         if current_text.strip():
             items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
