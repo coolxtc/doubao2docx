@@ -336,7 +336,6 @@ doubao-export/
 - 自动清理超过 10 天的历史记录
 
 ---
-
 ## 项目结构
 
 ```
@@ -345,26 +344,31 @@ doubao-export/
 │   ├── __init__.py
 │   ├── config.py                # 全局配置
 │   ├── cli.py                   # 命令行入口
+│   ├── exceptions.py            # 自定义异常
 │   ├── scraper/                 # 网页爬取模块
 │   │   ├── __init__.py
-│   │   ├── crawler.py           # 爬虫核心实现
-│   │   └── anti_detect.py       # 反爬处理
+│   │   ├── models.py           # 数据模型
+│   │   ├── browser.py          # 浏览器管理
+│   │   ├── crawler.py          # 爬虫核心
+│   │   ├── steps.py            # 步骤枚举
+│   │   ├── extractor.py         # 数据提取
+│   │   ├── page_actions.py     # 页面交互
+│   │   └── anti_detect.py      # 反爬处理
 │   ├── preprocessor/            # 数据解析模块
 │   │   ├── __init__.py
-│   │   ├── base.py              # 解析器基类（抽象基类 + 平台配置）
-│   │   └── doubao_parser.py     # 豆包 HTML 解析器
+│   │   ├── base.py              # 解析器基类
+│   │   └── doubao_parser.py     # 豆包解析器
 │   └── generator/               # 文档生成模块
 │       ├── __init__.py
-│       ├── docx_builder.py      # Word 文档构建器
-│       ├── latex_converter.py   # LaTeX 公式转换
-│       ├── doc_namer.py         # 文档命名器
-│       └── batch_report.py      # 批量导出报告生成器
+│       ├── docx_builder.py      # Word 构建器
+│       ├── latex_converter.py   # LaTeX 转换
+│       ├── doc_namer.py         # 文档命名
+│       └── batch_report.py      # 批量报告
 ├── data/                        # 数据输出目录
 │   ├── export/                  # 导出的 Word 文档
 │   └── link_index.json          # 链接索引文件
 ├── pyproject.toml               # 项目配置
 ├── requirements.txt             # Python 依赖列表
-├── Makefile                     # 构建脚本
 └── README.md                    # 项目说明文档
 ```
 

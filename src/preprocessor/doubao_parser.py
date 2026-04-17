@@ -1,3 +1,25 @@
+"""
+豆包 HTML 解析器模块
+
+继承自 BaseParser，实现豆包平台特定的钩子方法。
+
+解析器架构说明：
+- BaseParser: 提供通用的解析框架和公共方法
+- DoubaoHTMLParser: 实现豆包平台特有的判断逻辑
+
+钩子方法说明：
+- _get_title_selectors: 标题选择器列表
+- _is_math_element: 判断是否为公式元素
+- _is_display_math: 判断是否为展示公式
+- _is_code_container: 判断是否为代码容器
+- _is_paragraph_container: 判断是否为段落容器
+- _is_code_button: 判断是否为代码展开按钮
+- _extract_latex_content: 提取 LaTeX 内容
+
+这些方法都依赖于 PlatformConfig 中定义的平台特定参数，
+使得解析器可以适应不同的网页结构。
+"""
+
 from typing import List
 
 from bs4 import Tag
@@ -6,39 +28,114 @@ from .base import BaseParser, PlatformConfig, ParsedPage
 
 
 class DoubaoHTMLParser(BaseParser):
-    """豆包 HTML 解析器 - 实现平台特定的钩子方法"""
-    
+    """
+    豆包 HTML 解析器
+
+    实现 BaseParser 中定义的抽象钩子方法，
+    提供豆包平台特定的 HTML 解析逻辑。
+
+    配置说明：
+    - 使用默认的 PlatformConfig 实例
+    - 所有平台特定参数都存储在 config 中
+    """
+
+    # 使用默认平台配置
     config = PlatformConfig()
-    
+
     def parse(self, html: str) -> ParsedPage:
         """解析 HTML 页面"""
         return self._parse_impl(html)
-    
+
     def _get_title_selectors(self) -> List[str]:
-        """获取豆包平台的标题选择器"""
+        """
+        获取豆包平台的标题选择器
+
+        Returns:
+            CSS 选择器列表，如 ["h1", ".chat-title", "[class*='title']"]
+        """
         return self.config.heading_selectors.split(", ")
-    
+
     def _is_math_element(self, element: Tag) -> bool:
-        """判断元素是否为公式元素（通过 latex_attr 属性）"""
+        """
+        判断元素是否为公式元素
+
+        通过检查元素是否包含 latex_attr 属性来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果包含公式
+        """
         return element.has_attr(self.config.latex_attr)
-    
+
     def _is_display_math(self, element: Tag) -> bool:
-        """判断元素是否为展示公式"""
+        """
+        判断元素是否为展示公式
+
+        通过检查元素的 class 是否包含展示公式的标记来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是展示公式
+        """
         class_str = " ".join(element.get("class", []))
         return any(cls in class_str for cls in self.config.math_display_classes)
-    
+
     def _is_code_container(self, element: Tag) -> bool:
-        """判断元素是否为代码容器"""
+        """
+        判断元素是否为代码容器
+
+        通过检查 class 是否包含代码容器标记来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是代码容器
+        """
         return self.config.code_container_class in element.get("class", [])
-    
+
     def _is_paragraph_container(self, element: Tag) -> bool:
-        """判断元素是否为段落容器"""
+        """
+        判断元素是否为段落容器
+
+        通过检查 class 是否以段落前缀开头来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是段落容器
+        """
         return any(cls.startswith(self.config.paragraph_prefix) for cls in element.get("class", []))
-    
+
     def _is_code_button(self, element: Tag) -> bool:
-        """判断元素是否为代码展开按钮"""
+        """
+        判断元素是否为代码展开按钮
+
+        通过检查 class 是否以按钮前缀开头来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是代码按钮
+        """
         return any(cls.startswith(self.config.code_button_pattern) for cls in element.get("class", []))
-    
+
     def _extract_latex_content(self, element: Tag) -> str:
-        """从公式元素中提取 LaTeX 内容"""
+        """
+        从公式元素中提取 LaTeX 内容
+
+        从元素的 latex_attr 属性中获取 LaTeX 源码。
+
+        Args:
+            element: 公式元素
+
+        Returns:
+            LaTeX 公式字符串
+        """
         return element.get(self.config.latex_attr, "")

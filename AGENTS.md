@@ -49,17 +49,29 @@ python3 -m src.cli <豆包链接>
 
 ```
 src/
-├── cli.py           # 入口，TaskManager（Rich Live 进度显示）
-├── config.py        # 配置加载（YAML + 环境变量）
-├── exceptions.py    # 自定义异常
-├── scraper/         # 爬虫（Playwright）
-│   └── crawler.py  # FetchStep 枚举、7步爬虫进度回调
-├── preprocessor/    # 解析（BeautifulSoup）
-│   └── doubao_parser.py
-└── generator/      # 生成（python-docx）
-    ├── docx_builder.py   # 文档构建
-    ├── latex_converter.py # LaTeX 公式转换
-    └── doc_namer.py     # 文件命名 + 序号管理（threading.Lock）
+├── __init__.py           # 包初始化
+├── cli.py                # 入口，TaskManager（Rich Live 进度显示）
+├── config.py             # 配置加载（YAML + 环境变量）
+├── exceptions.py         # 自定义异常（CrawlerError, ParseError, ExportError）
+├── scraper/              # 爬虫模块（Playwright）
+│   ├── __init__.py       # 模块导出
+│   ├── models.py         # 数据模型（ChatData, ChatMessage, ImageData）
+│   ├── browser.py        # 浏览器生命周期管理
+│   ├── crawler.py        # 爬虫核心类（DoubaoSpider）
+│   ├── steps.py          # 步骤枚举和进度工具
+│   ├── extractor.py       # 数据提取器
+│   ├── page_actions.py   # 页面交互（滚动、展开代码）
+│   └── anti_detect.py    # 反爬中间件
+├── preprocessor/         # 解析模块（BeautifulSoup）
+│   ├── __init__.py       # 模块导出
+│   ├── base.py           # 解析器基类（BaseParser, PlatformConfig）
+│   └── doubao_parser.py  # 豆包 HTML 解析器
+└── generator/            # 生成模块（python-docx）
+    ├── __init__.py       # 模块导出
+    ├── docx_builder.py   # Word 文档构建器
+    ├── latex_converter.py # LaTeX 公式转换器
+    ├── doc_namer.py      # 文档命名器 + 序号管理
+    └── batch_report.py    # 批量导出报告
 ```
 
 ## 进度显示（TaskManager）
@@ -68,9 +80,9 @@ src/
 0. 任务开始
 1. 收到任务
 2. 访问页面
-3. 页面加载完成
+3. 加载完成
 4. 滚动加载
-5. 展开代码块
+5. 展开代码
 6. 提取数据
 7. 爬取完成  ← FetchStep.COMPLETED
 8. 解析内容
