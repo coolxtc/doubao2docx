@@ -911,7 +911,7 @@ class BaseParser(ABC):
         
         if len(blocks) >= 2:
             prev_block = blocks[-2]
-            if prev_block.type == "paragraph":
+            if prev_block.type == "paragraph" and not prev_block.items:
                 prev_block.items.append(InlineContent(type="latex", content=latex, is_display=True))
                 blocks.pop()
     
