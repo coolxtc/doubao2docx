@@ -911,15 +911,9 @@ class BaseParser(ABC):
         
         if len(blocks) >= 2:
             prev_block = blocks[-2]
-            if prev_block.type == "paragraph" and prev_block.content.strip() == "$":
-                inline_latex = InlineContent(type="latex", content=latex, is_display=True)
-                if prev_block.items:
-                    prev_block.items.append(inline_latex)
-                else:
-                    prev_block.items = [inline_latex]
+            if prev_block.type == "paragraph":
+                prev_block.items.append(InlineContent(type="latex", content=latex, is_display=True))
                 blocks.pop()
-                blocks.pop()
-                blocks.append(TextBlock(type="paragraph", content="", items=prev_block.items))
     
     # -------------------------------------------------------------------------
     # 辅助方法 - 提供通用功能，供钩子方法或子类使用
