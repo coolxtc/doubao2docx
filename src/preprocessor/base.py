@@ -564,25 +564,24 @@ class BaseParser(ABC):
                     text = child.get_text(strip=True)
                     if text:
                         items.append(InlineContent(type="text", content="\n" + text))
+                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
+                    flush()
+                    items.append(InlineContent(type="text", content="\n"))
+                elif child.name in ("div", "span") and self._is_paragraph_container(child):
+                    self._process_nested_container(child, items)
                 elif child.name in ("ul", "ol"):
                     break
         
         if items:
-            valid_items = [item for item in items if item.content and item.content.strip()]
+            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type == "latex"]
             if valid_items:
-                for item in valid_items:
-                    item.content = item.content.replace("\n", " ")
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
         
         for child in li.children:
             if isinstance(child, Tag) and child.name in ("ul", "ol"):
                 self._process_list(child, child.name, blocks, level + 1)
-    
+
     def _process_nested_container(self, element: Tag, items: list[InlineContent]) -> None:
-        """递归处理嵌套容器（div/span）- 提取内部加粗和文本
-        
-        用于处理列表项中的嵌套div/span元素，保留内部strong标签的加粗格式。
-        """
         current_text = ""
         current_bold = False
         
@@ -617,23 +616,13 @@ class BaseParser(ABC):
                 elif child.name in ("div", "span"):
                     self._process_nested_container(child, items)
                 elif child.name in ("ul", "ol"):
-                    pass  
+                    pass
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
                         current_text += sub_text
-        
+
         flush()
-    
-    def _process_element_as_sublist(self, element: Tag, blocks: list[TextBlock], parent_list_type: str, level: int) -> None:
-        if element.name in ("ul", "ol"):
-            self._process_list(element, element.name, blocks, level + 1)
-        elif element.name == "p":
-            text = element.get_text(strip=True)
-            if text:
-                blocks.append(TextBlock(type="list_item", content=text, language=parent_list_type, level=level))
-        elif element.name in ("div", "section"):
-            self._extract_blocks(element)
     
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理段落元素 - 保留内联元素和公式

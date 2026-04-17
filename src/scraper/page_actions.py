@@ -11,12 +11,13 @@
 4. expand_code_blocks: 点击"已生成代码"按钮展开代码块
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from ..config import CrawlerConfig
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
+    fromCallable = Callable[[int, int], None]
 
 
 class PageActions:
@@ -155,7 +156,11 @@ class PageActions:
         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
         await page.wait_for_timeout(self.config.code_expand_settle_ms)
 
-    async def scroll_all(self, page: "Page") -> None:
+    async def scroll_all(
+        self,
+        page: "Page",
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> None:
         """
         统一滚动方法：一次逐屏滚动同时处理历史消息加载、图片懒加载、代码块展开
 
@@ -166,6 +171,10 @@ class PageActions:
 
         合并了 scroll_to_bottom + scroll_for_lazy_images + expand_code_blocks 的逻辑，
         减少页面滚动次数。
+
+        Args:
+            page: Playwright 页面对象
+            progress_callback: 进度回调函数，签名 (current: int, total: int)，每次滚动后调用
         """
         base_wait = self.config.scroll_wait_ms
         max_attempts = self.config.scroll_max_attempts * 2
@@ -178,10 +187,13 @@ class PageActions:
         last_height = await page.evaluate("document.body.scrollHeight")
 
         scroll_count = 0
-        stable_count = 0  # 页面高度稳定的次数
+        stable_count = 0
 
         while scroll_count < max_attempts:
             scroll_count += 1
+
+            if progress_callback:
+                progress_callback(scroll_count, max_attempts)
 
             # 1. 触发当前可见的图片（scroll_for_lazy_images 逻辑）
             all_imgs = await page.query_selector_all("picture img, img[class*='image']")

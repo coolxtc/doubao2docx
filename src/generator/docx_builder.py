@@ -42,7 +42,7 @@ from xml.etree import ElementTree as etree
 from copy import deepcopy
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml.ns import qn
 from docx.oxml import parse_xml
 
@@ -319,16 +319,24 @@ class DocxBuilder:
             para.paragraph_format.left_indent = Inches(level * 0.5)
 
         # 添加每个内联元素
+        last_run = None
         for item in items:
             if item.type == "text":
-                run = para.add_run(item.content)
-                self._set_run_font(run)
-                if item.bold:
-                    run.font.bold = True
-                if item.italic:
-                    run.font.italic = True
+                parts = item.content.split("\n")
+                for i, part in enumerate(parts):
+                    if i > 0 and last_run:
+                        last_run.add_break(WD_BREAK.LINE)
+                    if part:
+                        run = para.add_run(part)
+                        self._set_run_font(run)
+                        if item.bold:
+                            run.font.bold = True
+                        if item.italic:
+                            run.font.italic = True
+                        last_run = run
             elif item.type == "latex":
                 self._add_latex_to_paragraph(para, item.content, item.is_display, as_standalone=item.is_display)
+                last_run = None
 
     def _add_latex(self, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
         """

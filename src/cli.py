@@ -259,9 +259,14 @@ async def fetch_and_export_single(
     def on_progress(step: str) -> None:
         """爬虫进度回调"""
         step_value = step.value if isinstance(step, FetchStep) else step
-        if _task_manager and step_value in FETCH_STEP_NAMES:
+        if _task_manager:
             elapsed = time.time() - total_start
-            step_idx = FETCH_STEP_NAMES[step_value]
+            if step_value in FETCH_STEP_NAMES:
+                step_idx = FETCH_STEP_NAMES[step_value]
+            elif step_value.startswith("滚动"):
+                step_idx = FETCH_STEP_NAMES["滚动加载"]
+            else:
+                return
             _task_manager.update(task_index, step_idx, step_value, elapsed=elapsed)
 
     def update_step(name: str) -> None:

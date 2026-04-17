@@ -238,10 +238,10 @@ class CrawlerConfig:
     # 统一超时（兼容旧配置）
     timeout: int = 30000
     scroll_max_attempts: int = 10  # 最大滚动次数
-    scroll_wait_ms: int = 1000  # 滚动后等待时间
-    code_expand_settle_ms: int = 2000  # 代码展开后稳定等待时间
-    code_expand_base_ms: int = 2500  # 代码展开基础等待时间
-    code_expand_extra_ms: int = 2000  # 代码展开额外等待时间（递增）
+    scroll_wait_ms: int = 300  # 滚动后等待时间
+    code_expand_settle_ms: int = 300  # 代码展开后稳定等待时间
+    code_expand_base_ms: int = 300  # 代码展开基础等待时间
+    code_expand_extra_ms: int = 300  # 代码展开额外等待时间（递增）
     code_expand_max_retries: int = 6  # 代码展开最大重试次数
     wait_for_selector: str = ".chat-content"  # 等待选择器
     browser_close_delay: float = 0.25  # 浏览器关闭延迟（秒）
