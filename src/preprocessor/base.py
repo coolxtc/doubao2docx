@@ -290,6 +290,76 @@ class BaseParser(ABC):
     # 通用方法 - 不依赖平台特定逻辑
     # -------------------------------------------------------------------------
     
+    def _has_any_class(self, element: Tag, class_names: list[str]) -> bool:
+        """检查元素是否包含指定类名中的任意一个
+        
+        类型安全的类名检查方法，避免 list[Any] 与字符串 in 操作符的类型错误。
+        
+        Args:
+            element: HTML 元素
+            class_names: 要检查的类名列表
+            
+        Returns:
+            True 如果元素包含任意一个指定类名，否则 False
+        """
+        classes = element.get("class") or []
+        return any(c in class_names for c in classes)
+    
+    def _skip_whitespace_siblings(self, prev_sibling) -> Any:
+        """跳过连续的空白文本兄弟节点
+        
+        Args:
+            prev_sibling: 起始的兄弟节点
+            
+        Returns:
+            第一个非空白 NavigableString 或其他类型的节点
+        """
+        while prev_sibling is not None and isinstance(prev_sibling, NavigableString) and not str(prev_sibling).strip():
+            prev_sibling = prev_sibling.previous_sibling
+        return prev_sibling
+    
+    def _handle_line_break(self, prev_sibling: Any, items: list[InlineContent], 
+                           current_text: str, current_bold: bool, current_italic: bool,
+                           parent_bold: bool, parent_italic: bool,
+                           flush_fn: callable | None = None) -> tuple[str, bool, bool]:
+        """处理 div.line-break 换行符
+        
+        检查前兄弟节点决定是否添加换行符。
+        
+        Args:
+            prev_sibling: 换行符的前一个兄弟节点
+            items: 内联内容列表
+            current_text: 当前累积的文本
+            current_bold: 当前加粗状态
+            current_italic: 当前斜体状态
+            parent_bold: 父级加粗状态
+            parent_italic: 父级斜体状态
+            flush_fn: 可选的 flush 回调函数
+            
+        Returns:
+            (current_text, current_bold, current_italic) 状态元组
+        """
+        prev = self._skip_whitespace_siblings(prev_sibling)
+        
+        if isinstance(prev, NavigableString):
+            return "", parent_bold, parent_italic
+        elif isinstance(prev, Tag) and prev.name in ("ul", "ol", "div", "span"):
+            return "", parent_bold, parent_italic
+        else:
+            if flush_fn:
+                flush_fn()
+            else:
+                stripped = current_text.strip()
+                if stripped:
+                    items.append(InlineContent(
+                        type="text", 
+                        content=stripped, 
+                        bold=current_bold,
+                        italic=current_italic
+                    ))
+            items.append(InlineContent(type="text", content="\n"))
+            return "", parent_bold, parent_italic
+    
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """提取标题
         
@@ -528,16 +598,38 @@ class BaseParser(ABC):
             blocks.append(TextBlock(type="list_item", content=text, language=list_type, level=level))
     
     def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str, level: int = 0) -> None:
+        """处理复杂的列表项 - 包含内联样式、公式或嵌套列表
+        
+        解析逻辑：
+        1. 先遍历所有直接子元素，收集 InlineContent
+        2. 嵌套列表不打断主流程，而是标记后统一处理
+        3. 最后递归处理所有嵌套列表
+        
+        Args:
+            li: 列表项元素
+            blocks: 累积的内容块列表
+            list_type: 列表类型（ul/ol）
+            level: 嵌套层级
+        """
         items: list[InlineContent] = []
+        nested_lists: list[tuple[Tag, str]] = []  # 收集嵌套列表，稍后统一处理
         current_text = ""
         current_bold = False
+        current_italic = False
         
         def flush():
-            nonlocal current_text, current_bold
-            if current_text.strip():
-                items.append(InlineContent(type="text", content=current_text, bold=current_bold))
+            nonlocal current_text, current_bold, current_italic
+            stripped = current_text.strip()
+            if stripped:
+                items.append(InlineContent(
+                    type="text", 
+                    content=stripped, 
+                    bold=current_bold,
+                    italic=current_italic
+                ))
             current_text = ""
             current_bold = False
+            current_italic = False
         
         for child in li.children:
             if isinstance(child, NavigableString):
@@ -561,49 +653,85 @@ class BaseParser(ABC):
                     for ii in italic_items:
                         items.append(ii)
                 elif child.name == "p":
-                    text = child.get_text(strip=True)
-                    if text:
-                        items.append(InlineContent(type="text", content="\n" + text))
-                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
+                    # 段落内部可能包含多种内容，递归处理
+                    self._process_nested_container(child, items, current_bold, current_italic)
+                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                    current_text, current_bold, current_italic = self._handle_line_break(
+                        child.previousSibling, items, current_text, current_bold, current_italic, current_bold, current_italic
+                    )
+                elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
                 elif child.name in ("div", "span") and self._is_paragraph_container(child):
-                    self._process_nested_container(child, items)
+                    self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name in ("ul", "ol"):
-                    break
+                    # 收集嵌套列表，稍后统一处理（不再打断主流程）
+                    nested_lists.append((child, child.name))
+                else:
+                    # 其他元素，尝试提取文本
+                    sub_text = child.get_text(strip=False)
+                    if sub_text:
+                        current_text += sub_text
         
+        flush()
+        
+        # 添加列表项到 blocks
         if items:
             valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type == "latex"]
             if valid_items:
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
         
-        for child in li.children:
-            if isinstance(child, Tag) and child.name in ("ul", "ol"):
-                self._process_list(child, child.name, blocks, level + 1)
+        # 统一处理所有嵌套列表
+        for nested_tag, nested_type in nested_lists:
+            self._process_list(nested_tag, nested_type, blocks, level + 1)
 
-    def _process_nested_container(self, element: Tag, items: list[InlineContent]) -> None:
+    def _process_nested_container(self, element: Tag, items: list[InlineContent], 
+                                   parent_bold: bool = False, parent_italic: bool = False) -> None:
+        """递归处理嵌套容器 - 支持样式状态传递
+        
+        关键修复：现在支持 parent_bold 和 parent_italic 参数，
+        确保深层嵌套时样式能够正确继承。
+        
+        Args:
+            element: 要处理的元素
+            items: 累积的内联内容列表
+            parent_bold: 继承自父级的加粗状态
+            parent_italic: 继承自父级的斜体状态
+        """
         current_text = ""
-        current_bold = False
+        current_bold = parent_bold
+        current_italic = parent_italic
         
         def flush():
-            nonlocal current_text, current_bold
-            if current_text.strip():
-                items.append(InlineContent(type="text", content=current_text, bold=current_bold))
+            nonlocal current_text, current_bold, current_italic
+            stripped = current_text.strip()
+            if stripped:
+                items.append(InlineContent(
+                    type="text", 
+                    content=stripped, 
+                    bold=current_bold,
+                    italic=current_italic
+                ))
             current_text = ""
-            current_bold = False
+            current_bold = parent_bold
+            current_italic = parent_italic
         
         for child in element.children:
             if isinstance(child, NavigableString):
-                current_text += str(child)
+                text = str(child).strip()
+                if text:
+                    current_text += text
             elif isinstance(child, Tag):
                 if self._is_math_element(child):
                     flush()
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
-                    flush()
-                    items.append(InlineContent(type="text", content="\n"))
+                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                    current_text, current_bold, current_italic = self._handle_line_break(
+                        child.previousSibling, items, current_text, current_bold, current_italic, 
+                        parent_bold, parent_italic, flush
+                    )
                 elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
@@ -612,11 +740,21 @@ class BaseParser(ABC):
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
+                        bi.italic = current_italic  # 继承父级斜体
                         items.append(bi)
+                elif child.name in ("em", "i"):
+                    italic_items = self._extract_italic_recursive(child)
+                    if current_text.strip():
+                        flush()
+                    for ii in italic_items:
+                        ii.bold = current_bold  # 继承父级加粗
+                        items.append(ii)
                 elif child.name in ("div", "span"):
-                    self._process_nested_container(child, items)
+                    self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name in ("ul", "ol"):
                     pass
+                elif child.name == "p":
+                    self._process_nested_container(child, items, current_bold, current_italic)
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
@@ -625,67 +763,60 @@ class BaseParser(ABC):
         flush()
     
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理段落元素 - 保留内联元素和公式
-        
-        段落可能包含：
-        - 普通文本
-        - 加粗文本（strong, b）
-        - 数学公式
-        - 换行（br, div.line-break）
-        
-        Args:
-            element: 段落元素
-            blocks: 累积的内容块列表
-        """
-        # 使用钩子查找段落中的数学公式元素
         math_elements = self._find_math_in_element(element)
         has_strong = element.find("strong") or element.find("b")
         
-        # 如果没有特殊元素，直接提取纯文本
         if not math_elements and not has_strong:
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="paragraph", content=text))
             return
         
-        # 有特殊元素，需要逐个处理
         items: list[InlineContent] = []
         current_text = ""
         current_bold = False
+        current_italic = False
         
         def flush():
-            nonlocal current_text, current_bold
+            nonlocal current_text, current_bold, current_italic
             if current_text.strip():
-                items.append(InlineContent(type="text", content=current_text, bold=current_bold))
+                items.append(InlineContent(
+                    type="text", 
+                    content=current_text, 
+                    bold=current_bold,
+                    italic=current_italic
+                ))
             current_text = ""
             current_bold = False
+            current_italic = False
         
         for child in element.children:
             if isinstance(child, NavigableString):
                 current_text += str(child)
             elif isinstance(child, Tag):
-                # 使用钩子判断是否为公式元素
                 if self._is_math_element(child):
                     flush()
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                # 加粗
                 elif child.name in ("strong", "b"):
                     bold_items = self._extract_strong_recursive(child)
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
                         items.append(bi)
-                # 换行 div
-                elif child.name == "div" and any(c in child.get("class", []) for c in self.config.line_break_classes):
+                elif child.name in ("em", "i"):
+                    italic_items = self._extract_italic_recursive(child)
+                    if current_text.strip():
+                        flush()
+                    for ii in italic_items:
+                        items.append(ii)
+                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                # 换行标签
                 elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                # 其他标签
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
@@ -693,7 +824,6 @@ class BaseParser(ABC):
         
         flush()
         
-        # 如果公式前有换行，标记为展示公式
         if items:
             for i, item in enumerate(items):
                 if item.type == "latex":

@@ -99,18 +99,14 @@ class DoubaoHTMLParser(BaseParser):
         return self.config.code_container_class in element.get("class", [])
 
     def _is_paragraph_container(self, element: Tag) -> bool:
-        """
-        判断元素是否为段落容器
-
-        通过检查 class 是否以段落前缀开头来判断。
-
-        Args:
-            element: HTML 元素
-
-        Returns:
-            True 如果是段落容器
-        """
-        return any(cls.startswith(self.config.paragraph_prefix) for cls in element.get("class", []))
+        """判断元素是否为段落容器"""
+        classes = element.get("class", [])
+        # 检查是否有任何 class 以段落前缀开头
+        if any(cls.startswith(self.config.paragraph_prefix) for cls in classes):
+            return True
+        # 处理转义引号问题：检查完整 class 字符串中是否包含段落前缀
+        full_class_str = " ".join(classes)
+        return self.config.paragraph_prefix in full_class_str
 
     def _is_code_button(self, element: Tag) -> bool:
         """
