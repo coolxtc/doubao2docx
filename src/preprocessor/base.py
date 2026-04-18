@@ -823,13 +823,15 @@ class BaseParser(ABC):
                         current_text += sub_text
         
         flush()
-        
+
         if items:
             for i, item in enumerate(items):
                 if item.type == "latex":
-                    if i > 0 and items[i-1].type == "text" and items[i-1].content == "\n":
+                    if i > 0 and items[i - 1].type == "text" and items[i - 1].content == "\n":
                         item.is_display = True
-        
+                    if i < len(items) - 1 and items[i + 1].type == "text" and items[i + 1].content == "\n":
+                        item.is_display = True
+
         blocks.append(TextBlock(type="paragraph", content="", items=items))
     
     def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:

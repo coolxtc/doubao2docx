@@ -290,35 +290,10 @@ class DocxBuilder:
                 para.paragraph_format.left_indent = Inches(level * 0.5)
 
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
-        """
-        添加内联内容（文本和公式混合）
-
-        用于处理包含加粗、斜体、公式的复杂段落和列表项。
-
-        Args:
-            items: 内联内容列表
-            list_type: 列表类型（ol/ul），用于列表项
-            start_index: 有序列表的起始序号
-            level: 嵌套层级（用于缩进）
-        """
         if not items:
             return
 
-        # 创建段落
-        if list_type == "ol":
-            para = self.document.add_paragraph()
-            run = para.add_run(f"{start_index}. ")
-            self._set_run_font(run)
-        elif list_type == "ul":
-            para = self.document.add_paragraph(style="List Bullet")
-        else:
-            para = self.document.add_paragraph()
-
-        # 嵌套缩进
-        if level > 0:
-            para.paragraph_format.left_indent = Inches(level * 0.5)
-
-        # 添加每个内联元素
+        para = self._create_inline_paragraph(list_type, start_index, level)
         last_run = None
         for item in items:
             if item.type == "text":
@@ -335,8 +310,25 @@ class DocxBuilder:
                             run.font.italic = True
                         last_run = run
             elif item.type == "latex":
-                self._add_latex_to_paragraph(para, item.content, item.is_display, as_standalone=item.is_display)
+                if item.is_display:
+                    self._add_latex(item.content, is_display=True, as_standalone=True)
+                    para = self._create_inline_paragraph(list_type, start_index, level)
+                else:
+                    self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
                 last_run = None
+
+    def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
+        if list_type == "ol":
+            para = self.document.add_paragraph()
+            run = para.add_run(f"{start_index}. ")
+            self._set_run_font(run)
+        elif list_type == "ul":
+            para = self.document.add_paragraph(style="List Bullet")
+        else:
+            para = self.document.add_paragraph()
+        if level > 0:
+            para.paragraph_format.left_indent = Inches(level * 0.5)
+        return para
 
     def _add_latex(self, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
         """
