@@ -353,8 +353,6 @@ class BaseParser(ABC):
         elif isinstance(prev, Tag) and prev.name in ("ul", "ol"):
             return "", parent_bold, parent_italic
         elif isinstance(prev, Tag) and prev.name in ("div", "span"):
-            if not prev.get_text(strip=True):
-                return "", parent_bold, parent_italic
             return "", parent_bold, parent_italic
         else:
             if flush_fn:
