@@ -6,9 +6,8 @@
 
 核心功能：
 1. scroll_step_by_step: 通用逐屏滚动方法（按 viewport 逐屏滚动直到页面底部）
-2. scroll_to_bottom: 滚动页面到底部，加载所有历史消息（基于通用方法）
-3. scroll_for_lazy_images: 滚动触发懒加载图片的加载
-4. expand_code_blocks: 点击"已生成代码"按钮展开代码块
+2. scroll_for_lazy_images: 滚动触发懒加载图片的加载
+3. scroll_all: 统一滚动方法
 """
 
 from typing import TYPE_CHECKING, Callable
@@ -84,17 +83,6 @@ class PageActions:
         await page.wait_for_timeout(self.config.scroll_wait_ms)
 
         return scroll_count
-
-    async def scroll_to_bottom(self, page: "Page") -> None:
-        """
-        滚动页面到最底部，加载所有历史消息
-
-        豆包聊天页面采用无限滚动加载机制，
-        需要滚动到页面底部才能加载出完整的历史消息。
-
-        现在基于通用方法 scroll_step_by_step 实现。
-        """
-        await self.scroll_step_by_step(page)
 
     async def scroll_for_lazy_images(self, page: "Page") -> None:
         """

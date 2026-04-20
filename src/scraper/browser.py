@@ -2,11 +2,10 @@
 
 import asyncio
 import logging
-import platform
-import warnings
 from typing import TYPE_CHECKING, Optional
 
 from ..config import CrawlerConfig
+from ..utils import is_windows, windows_compat_close
 from .anti_detect import create_anti_detect_middleware
 
 if TYPE_CHECKING:
@@ -50,9 +49,6 @@ class BrowserManager:
         await self.anti_detect.apply(self.context)
 
     async def close(self) -> None:
-        if platform.system() == "Windows":
-            warnings.filterwarnings("ignore", category=ResourceWarning)
-
         try:
             if self.context:
                 await self.context.close()
@@ -71,10 +67,8 @@ class BrowserManager:
         except Exception as e:
             logger.debug(f"停止 Playwright 时出错: {e}")
 
-        if platform.system() == "Windows":
-            import gc
-            gc.collect()
-            await asyncio.sleep(self.config.browser_close_delay)
+        if is_windows():
+            await windows_compat_close(self.config.browser_close_delay)
 
     async def new_page(self):
         """创建新页面"""

@@ -323,24 +323,11 @@ async def fetch_and_export_single(
 
         return url, True, f"{filename_base}.docx", str(output_path)
 
-    except CrawlerError as e:
+    except (CrawlerError, ParseError, ExportError) as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-        print(f"{tag} [✗] 爬取失败: {display_msg}")
-        if _task_manager:
-            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
-        raise
-    except ParseError as e:
-        error_msg = str(e)
-        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-        print(f"{tag} [✗] 解析失败: {display_msg}")
-        if _task_manager:
-            _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
-        raise
-    except ExportError as e:
-        error_msg = str(e)
-        display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-        print(f"{tag} [✗] 导出失败: {display_msg}")
+        error_type = type(e).__name__.replace("Error", "")
+        print(f"{tag} [✗] {error_type}失败: {display_msg}")
         if _task_manager:
             _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
@@ -474,13 +461,10 @@ def main() -> int:
     output_dir = Path(__file__).parent.parent / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    import platform
-    import warnings
-    import gc
+    from src.utils import windows_compat_setup, windows_compat_cleanup
 
     # Windows 平台兼容性处理
-    if platform.system() == "Windows":
-        warnings.filterwarnings("ignore", category=ResourceWarning)
+    windows_compat_setup()
 
     try:
         total = len(args.urls)
@@ -520,8 +504,7 @@ def main() -> int:
         return 0 if failure_count == 0 else 1
     finally:
         # Windows 平台资源清理
-        if platform.system() == "Windows":
-            gc.collect()
+        windows_compat_cleanup()
 
 
 if __name__ == "__main__":
