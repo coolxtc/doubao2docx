@@ -252,6 +252,18 @@ class CrawlerConfig:
     user_agents: list[str] | None = None  # User-Agent 列表
 
     def __post_init__(self):
+        """
+        初始化后处理
+
+        如果未提供 User-Agent 列表，则使用默认的真实浏览器 UA。
+        这些 UA 来自真实的 Chrome、Firefox、Safari 浏览器，
+        用于模拟真实用户访问，降低被反爬机制检测的概率。
+
+        为什么需要多个 UA？
+        - 单一 UA 容易被识别为机器人
+        - 随机切换 UA 可以模拟不同用户的访问
+        - 不同浏览器有不同的 HTTP 头特征
+        """
         # 默认 User-Agent 列表
         if self.user_agents is None:
             self.user_agents = [
@@ -299,7 +311,18 @@ class DocumentStyleConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "DocumentStyleConfig":
-        """从字典创建实例"""
+        """
+        从字典创建实例
+
+        只设置提供的字段，未提供的使用默认值。
+        这允许部分配置更新，不需要提供所有字段。
+
+        Args:
+            data: 配置字典，通常来自 YAML 或环境变量
+
+        Returns:
+            DocumentStyleConfig 实例
+        """
         if data is None:
             return cls()
 
@@ -323,7 +346,17 @@ class IndexConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "IndexConfig":
-        """从字典创建实例"""
+        """
+        从字典创建实例
+
+        只设置提供的字段，未提供的使用默认值。
+
+        Args:
+            data: 配置字典，通常来自 YAML 或环境变量
+
+        Returns:
+            IndexConfig 实例
+        """
         if data is None:
             return cls()
 
@@ -347,7 +380,17 @@ class PandocConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "PandocConfig":
-        """从字典创建实例"""
+        """
+        从字典创建实例
+
+        只设置提供的字段，未提供的使用默认值。
+
+        Args:
+            data: 配置字典，通常来自 YAML 或环境变量
+
+        Returns:
+            PandocConfig 实例
+        """
         if data is None:
             return cls()
 
@@ -377,7 +420,19 @@ class GlobalConfig:
     concurrency: int = 5  # 批量导出并发数
 
     def __post_init__(self):
-        """加载配置（YAML + 环境变量）"""
+        """
+        初始化后处理 - 加载配置
+
+        配置加载顺序（优先级从低到高）：
+        1. 代码中的默认值
+        2. YAML 配置文件 (config.yaml)
+        3. 环境变量（可以覆盖 YAML）
+
+        这样做的好处：
+        - 默认值保证程序可以正常运行
+        - YAML 允许用户自定义配置
+        - 环境变量适合 CI/CD 或容器化部署场景
+        """
         overrides = get_config_overrides()
 
         if self.crawler is None:

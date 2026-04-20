@@ -1,6 +1,7 @@
-"""豆包爬虫核心类
+"""
+豆包爬虫核心类
 
-本模块整合了爬虫的各个功能模块，提供统一的爬虫入口。
+整合爬虫的各个功能模块，提供统一的爬虫入口。
 """
 
 import re
@@ -19,10 +20,9 @@ if TYPE_CHECKING:
 
 
 class DoubaoSpider:
-    """豆包网页爬取器 - 核心爬虫类
-    
-    使用 Playwright 自动化浏览器来爬取豆包聊天记录。
-    支持 async with 语法，使用完毕后自动关闭浏览器。
+    """豆包网页爬取器
+
+    使用 Playwright 自动化浏览器来爬取豆包聊天记录，支持 async with 语法。
     """
 
     DOUBAO_URL_PATTERN = r"https?://(?:www\.)?doubao\.com/thread/[\w-]+"
@@ -43,17 +43,24 @@ class DoubaoSpider:
         self.extractor: Optional[DataExtractor] = None
 
     def _report_progress(self, step: str) -> None:
+        """报告爬虫进度"""
         if self.progress_callback:
             self.progress_callback(step)
 
     async def __aenter__(self):
+        """异步上下文管理器入口"""
         await self.start()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """异步上下文管理器退出"""
         await self.close()
 
     async def start(self) -> None:
+        """初始化爬虫并启动浏览器
+
+        创建浏览器管理器、页面操作器和数据提取器。
+        """
         self.browser_mgr = BrowserManager(
             anti_detect_level=self.anti_detect_level,
             config=self.config,
@@ -69,6 +76,7 @@ class DoubaoSpider:
             self.browser_mgr = None
 
     async def fetch(self, url: str) -> ChatData:
+        """爬取豆包聊天记录"""
         if not self._validate_url(url):
             raise CrawlerError(f"无效的豆包URL: {url}")
 
@@ -101,10 +109,11 @@ class DoubaoSpider:
         return chat_data
 
     def _validate_url(self, url: str) -> bool:
+        """验证 URL 是否为有效的豆包聊天页面地址"""
         return bool(re.match(self.DOUBAO_URL_PATTERN, url))
 
 
 async def fetch_doubao_chat(url: str, **kwargs) -> ChatData:
-    """便捷函数：直接爬取豆包聊天记录"""
+    """直接爬取豆包聊天记录"""
     async with DoubaoSpider(**kwargs) as spider:
         return await spider.fetch(url)

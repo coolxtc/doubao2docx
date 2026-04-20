@@ -1,7 +1,7 @@
 """
 爬虫步骤枚举和进度工具
 
-本模块定义了爬虫的各个步骤阶段，以及相关的进度显示工具函数。
+定义爬虫的各个步骤阶段，以及相关的进度显示工具函数。
 """
 
 import time
@@ -9,11 +9,7 @@ from enum import Enum
 
 
 class FetchStep(str, Enum):
-    """爬虫步骤枚举 - 用于进度跟踪
-    
-    每个枚举值代表爬虫流程中的一个阶段，
-    可以用于进度回调、状态显示等场景。
-    """
+    """爬虫步骤枚举"""
     STARTING = "任务开始"
     LOADING_PAGE = "访问页面"
     PAGE_LOADED = "加载完成"
@@ -48,9 +44,6 @@ _task_start_time = time.time()
 
 
 def reset_timer() -> None:
-    """重置计时器
-    
-    在开始新任务时调用，重置任务开始时间。
-    """
+    """重置计时器"""
     global _task_start_time
     _task_start_time = time.time()

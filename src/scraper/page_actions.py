@@ -1,13 +1,7 @@
 """
 页面交互操作模块
 
-本模块封装了 Playwright 页面对象的各种交互操作，
-包括滚动、代码块展开等自动化行为。
-
-核心功能：
-1. scroll_step_by_step: 通用逐屏滚动方法（按 viewport 逐屏滚动直到页面底部）
-2. scroll_for_lazy_images: 滚动触发懒加载图片的加载
-3. scroll_all: 统一滚动方法
+封装 Playwright 页面对象的各种交互操作，包括滚动、代码块展开等。
 """
 
 from typing import TYPE_CHECKING, Callable
@@ -20,41 +14,17 @@ if TYPE_CHECKING:
 
 
 class PageActions:
-    """
-    页面交互操作类
+    """页面交互操作类
 
-    封装页面滚动、代码块展开等交互操作。
-    所有方法都是异步的，需要在 async 函数中调用。
-
-    工作原理：
-    - 使用 Playwright 的 page.evaluate() 执行 JavaScript
-    - 使用 page.wait_for_timeout() 等待页面渲染
-    - 通过配置控制滚动次数和等待时间
+    封装页面滚动、代码块展开等交互操作，所有方法都是异步的。
     """
 
     def __init__(self, config: CrawlerConfig) -> None:
-        """
-        初始化页面操作器
-
-        Args:
-            config: 爬虫配置，包含超时时间、滚动次数等参数
-        """
+        """初始化页面操作器"""
         self.config = config
 
     async def scroll_step_by_step(self, page: "Page") -> int:
-        """
-        通用逐屏滚动方法，按 viewport 逐屏滚动直到页面底部
-
-        算法：
-        1. 记录初始页面高度
-        2. 向下滚动一个视口高度
-        3. 等待内容加载
-        4. 检查页面高度是否变化
-        5. 如果高度不变或达到最大次数，停止滚动
-
-        Returns:
-            实际滚动的次数
-        """
+        """通用逐屏滚动方法"""
         max_attempts = self.config.scroll_max_attempts
         scroll_count = 0
         last_height = 0
@@ -85,19 +55,7 @@ class PageActions:
         return scroll_count
 
     async def scroll_for_lazy_images(self, page: "Page") -> None:
-        """
-        滚动页面触发所有懒加载图片
-
-        豆包页面中的图片采用懒加载机制，
-        只有滚动到可视区域才会开始加载。
-        此方法确保所有图片都被加载后再提取内容。
-
-        算法：
-        1. 回到页面顶部
-        2. 遍历所有图片元素，滚动使其可见
-        3. 继续向下滚动
-4. 重复直到页面高度不再变化
-        """
+        """滚动触发懒加载图片"""
         base_wait = self.config.scroll_wait_ms
         max_attempts = self.config.scroll_max_attempts * 2
 
@@ -149,21 +107,7 @@ class PageActions:
         page: "Page",
         progress_callback: Callable[[int, int], None] | None = None,
     ) -> None:
-        """
-        统一滚动方法：一次逐屏滚动同时处理历史消息加载、图片懒加载、代码块展开
-
-        在逐屏滚动到底的过程中：
-        1. 滚动每个图片到可视区域，触发懒加载
-        2. 检查并点击代码展开按钮
-        3. 检查页面高度变化
-
-        合并了 scroll_to_bottom + scroll_for_lazy_images + expand_code_blocks 的逻辑，
-        减少页面滚动次数。
-
-        Args:
-            page: Playwright 页面对象
-            progress_callback: 进度回调函数，签名 (current: int, total: int)，每次滚动后调用
-        """
+        """统一滚动方法"""
         base_wait = self.config.scroll_wait_ms
         max_attempts = self.config.scroll_max_attempts * 2
         settle_wait = self.config.code_expand_settle_ms
@@ -216,17 +160,7 @@ class PageActions:
         await page.wait_for_timeout(settle_wait)
 
     async def _click_expand_buttons(self, page: "Page") -> None:
-        """
-        点击代码展开按钮
-
-        豆包页面中，AI 生成的代码默认是折叠的，
-        需要点击"已生成代码"按钮才能展开显示完整代码。
-
-        实现：
-        1. 查找所有包含"已生成代码"文本的容器
-        2. 在容器中查找按钮元素
-        3. 点击按钮触发展开
-        """
+        """点击代码展开按钮"""
         await page.evaluate("""
             () => {
                 const containers = document.querySelectorAll('div');
@@ -253,6 +187,7 @@ class PageActions:
         """)
 
     async def _inject_expanded_code(self, page: "Page") -> None:
+        """将已展开的代码块注入到按钮容器"""
         await page.evaluate("""
             () => {
                 const containers = document.querySelectorAll('div');
@@ -284,21 +219,7 @@ class PageActions:
         """)
 
     async def expand_code_blocks(self, page: "Page") -> None:
-        """
-        展开代码块（带重试机制）
-
-        由于代码块可能是动态加载的，需要多次尝试展开。
-        每次尝试：
-        1. 点击展开按钮
-        2. 等待代码加载
-        3. 将已加载的代码注入到按钮容器中（标记为 data-expanded-code）
-        4. 检查是否成功展开
-
-        退出条件：
-        - 成功注入代码（injected > 0）
-        - 没有找到更多可展开的按钮
-        - 达到最大重试次数
-        """
+        """展开代码块（带重试机制）"""
         max_retries = self.config.code_expand_max_retries
 
         for attempt in range(max_retries):

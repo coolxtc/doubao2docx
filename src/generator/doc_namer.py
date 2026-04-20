@@ -3,10 +3,13 @@
 
 为导出的 Word 文档生成唯一文件名，并维护索引记录。
 
-核心功能：
-1. 文件名生成：日期-序号 标题.docx
-2. 索引维护：记录 URL -> 序号的映射，避免重复
-3. 历史清理：自动删除过期的索引记录
+为什么需要这个模块？
+1. 文件名唯一性：同一天导出的多个文档需要不同的序号
+2. 历史追溯：同一 URL 再次导出时，应使用相同序号（便于查找）
+3. 自动清理：避免索引文件无限膨胀
+
+文件名格式：日期-序号 标题.docx
+示例：260412-1 固定翼飞机设计.docx
 
 索引文件（link_index.json）结构：
 {
@@ -15,6 +18,11 @@
         "https://...": {"index": 2, "title": "标题2"}
     }
 }
+
+索引小科普：
+- 使用日期作为第一层 key，便于按天查找
+- URL 作为第二层 key，确保同一 URL 映射到同一序号
+- 超过 max_age_days 的记录会被清理
 """
 
 import json
@@ -30,14 +38,21 @@ class LinkRecord:
     """
     单条链接记录 - 存储一个已导出文档的信息
 
-    属性说明：
-    - index: 序号（同一天内的唯一标识，从1开始）
-    - title: 文档标题（用于生成文件名）
+    为什么使用 dataclass？
+    - 简单的数据结构，使用 dataclass 可以减少样板代码
+    - 自动实现 __init__、__repr__、to_dict 等方法
     """
     index: int
     title: str
 
     def __init__(self, index: int, title: str = "") -> None:
+        """
+        创建链接记录
+
+        Args:
+            index: 序号，同一天内的唯一标识（从1开始递增）
+            title: 文档标题，用于生成文件名
+        """
         self.index = index
         self.title = title
 
@@ -58,6 +73,11 @@ class DocNamer:
     文件名格式：日期-序号 标题.docx
     示例：260412-1 固定翼飞机设计.docx
 
+    为什么需要这个类？
+    1. 文件名唯一性：同一天导出的多个文档需要不同的序号
+    2. 历史追溯：同一 URL 再次导出时，应使用相同序号（便于查找）
+    3. 自动清理：避免索引文件无限膨胀
+
     设计要点：
     1. 线程安全：使用 threading.Lock 保证并发安全
     2. 历史追溯：同一 URL 始终使用相同序号
@@ -67,6 +87,12 @@ class DocNamer:
     def __init__(self, index_file: Path) -> None:
         """
         初始化文档命名器
+
+        初始化时会：
+        1. 设置索引文件路径
+        2. 加载已有索引数据
+        3. 清理过期记录
+        4. 初始化线程锁
 
         Args:
             index_file: 索引文件路径（link_index.json）
@@ -84,7 +110,11 @@ class DocNamer:
         self._load()  # 加载索引文件
 
     def _load(self) -> None:
-        """从文件加载索引数据"""
+        """
+        从索引文件加载数据
+
+        将 JSON 文件中的字典转换为 LinkRecord 对象。
+        """
         if self.index_file.exists():
             with open(self.index_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
@@ -98,7 +128,11 @@ class DocNamer:
                 }
 
     def _save(self) -> None:
-        """保存索引数据到文件"""
+        """
+        保存索引数据到文件
+
+        将 LinkRecord 对象转换为字典，然后写入 JSON 文件。
+        """
         raw = {
             date: {
                 url: record.to_dict()
@@ -113,10 +147,10 @@ class DocNamer:
         """
         获取日期字符串
 
-        格式：YYMMDD，例如 260412
+        格式：YYMMDD，例如 260412 表示 2026 年 4 月 12 日
 
-        Args:
-            dt: 日期时间，默认当前时间
+        为什么使用 YYMMDD？
+        简短且可排序，适合作为文件名和索引的日期标识。
         """
         if dt is None:
             dt = datetime.now()
@@ -126,18 +160,30 @@ class DocNamer:
         return f"{year}{month}{day}"
 
     def get_date_str(self) -> str:
-        """获取当前日期字符串 - 公共方法"""
+        """
+        获取当前日期字符串
+
+        对外暴露的公共方法。
+        """
         return self._get_date_str()
 
     def _get_today_records(self) -> dict[str, LinkRecord]:
-        """获取今天的记录，不存在则创建空字典"""
+        """
+        获取今天的记录
+
+        如果今天的记录不存在，则创建空字典。
+        """
         date_str = self._get_date_str()
         if date_str not in self._data:
             self._data[date_str] = {}
         return self._data[date_str]
 
     def _get_today_max_index(self) -> int:
-        """获取今天最大的有效序号"""
+        """
+        获取今天最大的有效序号
+
+        用于确定下一个新文档应该使用什么序号。
+        """
         records = self._get_today_records()
         if not records:
             return 0
@@ -147,7 +193,12 @@ class DocNamer:
         return max(valid_indices)
 
     def _cleanup_old_entries(self) -> None:
-        """清理过期的历史数据"""
+        """
+        清理过期的历史数据
+
+        删除超过 max_age_days 天的记录，避免索引文件无限膨胀。
+        清理在初始化时自动执行。
+        """
         today = self._get_date_str()
         cutoff = self._get_date_str(datetime.now() - timedelta(days=self._max_age_days))
 
@@ -163,8 +214,13 @@ class DocNamer:
         """
         清理标题中的非法字符
 
-        Windows 文件名不允许的字符：/ \\ : * ? " < > |
-        这些字符会被移除。
+        为什么需要清理？
+        Windows 文件名不允许某些字符，这些字符会被移除。
+        同时去除首尾空白字符。
+
+        Windows 文件名非法字符小科普：
+        / \ : * ? " < > |
+        这些字符在 Windows 上有特殊含义，不能用于文件名。
         """
         invalid_chars = r'/\\:*?"<>|'
         for char in invalid_chars:
@@ -175,9 +231,12 @@ class DocNamer:
         """
         获取文档文件名
 
-        逻辑：
+        这是核心方法，流程如下：
         1. 如果 URL 已有记录，返回相同序号（保持历史一致性）
         2. 否则分配新序号（递增）
+
+        为什么需要线程锁？
+        批量导出时多个任务可能同时调用此方法，需要保证序号分配不冲突。
 
         Args:
             url: 聊天页面的 URL
