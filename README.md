@@ -106,8 +106,45 @@ python3 --version
   ```bash
   brew install python3
   ```
-- **Windows**：从 [Python 官网](https://www.python.org/downloads/) 下载安装
+- **Windows**：从 [Python 官网](https://www.python.org/downloads/) 下载安装，**安装时勾选 "Add Python to PATH"**
 - **Linux**：大多数发行版已预装，或使用包管理器安装
+
+### Windows 终端使用说明
+
+推荐使用 **CMD** 而非 PowerShell，兼容性更好。
+
+#### CMD（推荐）
+
+```cmd
+:: 切换到项目目录
+cd C:\path\to\doubao-export
+
+:: 设置 UTF-8 编码（解决中文显示问题）
+chcp 65001
+
+:: 使用 Python Launcher 运行（推荐）
+py -3 -m src.cli https://www.doubao.com/thread/xxx
+
+:: 或使用 python3
+python3 -m src.cli https://www.doubao.com/thread/xxx
+```
+
+#### PowerShell
+
+```powershell
+# 设置 UTF-8 编码
+chcp 65001
+
+# 使用 Python Launcher 运行
+py -3 -m src.cli https://www.doubao.com/thread/xxx
+
+# 或使用 python3
+python3 -m src.cli https://www.doubao.com/thread/xxx
+```
+
+**为什么 CMD 更好**：
+- Rich 库的彩色输出在 CMD 中更稳定
+- 控制台 API 兼容性更好
 
 ### 2. 必要软件
 

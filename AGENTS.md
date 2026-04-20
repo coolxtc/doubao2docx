@@ -13,6 +13,22 @@ playwright install chromium
 python3 -m src.cli <豆包链接>
 ```
 
+### Windows 终端
+
+**推荐使用 CMD，兼容性更好。**
+
+```cmd
+:: CMD 中运行
+chcp 65001
+py -3 -m src.cli <豆包链接>
+```
+
+```powershell
+:: PowerShell 中运行
+chcp 65001
+py -3 -m src.cli <豆包链接>
+```
+
 ## 关键命令
 
 | 命令 | 说明 |
@@ -108,11 +124,12 @@ src/
 
 ## 重要约束
 
-1. **必须用 `python3`** 而非 `python`（避免 Python 2 问题）
+1. **必须用 `python3`** 或 `py -3`（Windows 上避免 Python 2 问题）
 2. **同一天同一 URL 不会增加序号**（通过 threading.Lock 保证）
 3. **公式转换失败时使用 Unicode fallback**
 4. **Windows 兼容性已处理**：gc.collect()、browser_close_delay、ResourceWarning 过滤
 5. **批量导出预分配序号**：并发时预分配序号避免冲突
+6. **中文乱码**：Windows PowerShell 需先运行 `chcp 65001`
 
 ## 批量导出机制
 

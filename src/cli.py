@@ -442,10 +442,13 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python -m src.cli https://www.doubao.com/thread/ad8e9da8e8159
-  python -m src.cli url1 url2 url3
-  python -m src.cli https://www.doubao.com/thread/test --level high
-  python -m src.cli https://www.doubao.com/thread/test --concurrency 5
+  python3 -m src.cli https://www.doubao.com/thread/ad8e9da8e8159
+  python3 -m src.cli url1 url2 url3
+  python3 -m src.cli https://www.doubao.com/thread/test --level high
+  python3 -m src.cli https://www.doubao.com/thread/test --concurrency 5
+
+注意: Windows PowerShell 用户可使用 'py -3 -m src.cli' 或 'python3'
+      中文显示异常时，先运行 'chcp 65001' 切换到 UTF-8
         """,
     )
 
