@@ -31,6 +31,8 @@
 | 历史记录 | 自动维护已导出文档的索引，避免重复导出 |
 | 代码块展开 | 自动点击展开隐藏的代码块，确保代码完整导出 |
 | 进度日志 | 实时显示各阶段进度（启动浏览器→爬取→解析→生成），方便追踪 |
+| 批量导出 | 支持并发导出多个聊天记录 |
+| 指数退避 | 代码展开失败时自动重试，采用指数退避策略 |
 
 ### 支持解析的内容类型
 
@@ -40,6 +42,7 @@
 - **标题**：支持多级标题
 - **列表**：支持有序列表和无序列表
 - **引用**：保留引用格式
+- **内联格式**：支持加粗、斜体等文本样式
 
 ---
 
@@ -55,13 +58,29 @@
 
 程序使用一个"自动化浏览器"来访问豆包网页。这个浏览器可以自动滚动页面、加载更多内容、展开折叠的内容，就像您手动操作一样。它会模拟真实用户的访问行为，因此能够获取到完整的聊天记录。
 
+技术细节：
+- 使用 Playwright 库控制 Chromium 浏览器
+- 逐屏滚动触发懒加载内容
+- 自动点击"已生成代码"按钮展开代码块
+- 指数退避重试机制确保代码展开成功
+
 **第二步：内容解析（类似翻译工作）**
 
 从网页获取的是 HTML 格式（网页的"源代码"），需要解析成结构化的数据。程序会识别网页中的各种元素：哪里是标题、哪里是代码、哪里是公式、哪里是表格。这个过程类似于把一篇混排的文章整理成结构化的笔记。
 
+技术细节：
+- 使用 BeautifulSoup 解析 HTML
+- 插件化解析器设计，支持扩展到其他 AI 平台
+- 提取 LaTeX 公式、图片、代码块等特殊内容
+
 **第三步：格式转换（类似排版工作）**
 
 根据解析后的结构，使用 Word 文档库创建对应的内容：标题用标题样式、代码用等宽字体加灰色背景、表格用 Word 表格样式。特别地，数学公式会通过 pandoc 工具转换为 Word 的原生公式格式，可以在 Word 中直接编辑。
+
+技术细节：
+- 使用 python-docx 库创建 Word 文档
+- 通过 pandoc 将 LaTeX 公式转换为 OMML 格式
+- Unicode fallback 机制确保公式始终可显示
 
 **第四步：保存文档**
 
@@ -159,8 +178,8 @@ playwright install chromium
 可以通过以下命令检查环境是否就绪：
 
 ```bash
-python -c "import playwright; print('Playwright OK')"
-python -c "from docx import Document; print('python-docx OK')"
+python3 -c "import playwright; print('Playwright OK')"
+python3 -c "from docx import Document; print('python-docx OK')"
 ```
 
 ---
@@ -172,7 +191,7 @@ python -c "from docx import Document; print('python-docx OK')"
 在终端中运行以下命令：
 
 ```bash
-python -m src.cli <豆包聊天页面URL>
+python3 -m src.cli <豆包聊天页面URL>
 ```
 
 其中 `<豆包聊天页面URL>` 是您在豆包中打开的聊天页面的网址，类似于：
@@ -185,19 +204,19 @@ https://www.doubao.com/thread/ad8e9da8e8159
 
 ```bash
 # 导出单个聊天记录
-python -m src.cli https://www.doubao.com/thread/ad8e9da8e8159
+python3 -m src.cli https://www.doubao.com/thread/ad8e9da8e8159
 
 # 批量导出多个聊天记录（并发数默认5）
-python -m src.cli url1 url2 url3
+python3 -m src.cli url1 url2 url3
 
 # 批量导出并指定并发数
-python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
+python3 -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 
 # 使用高级反爬模式
-python -m src.cli https://www.doubao.com/thread/ad8e9da8e8159 --level high
+python3 -m src.cli https://www.doubao.com/thread/ad8e9da8e8159 --level high
 
 # 手动指定文档序号（仅单URL模式）
-python -m src.cli https://www.doubao.com/thread/test --index 5
+python3 -m src.cli https://www.doubao.com/thread/test --index 5
 ```
 
 ### 批量导出示例
@@ -241,13 +260,13 @@ python -m src.cli https://www.doubao.com/thread/test --index 5
 |------|------|--------|--------|
 | `urls` | 豆包聊天页面URL（支持多个） | - | 必填 |
 | `--level` | 反爬检测级别 | low / medium / high | medium |
-| `--index` | 手动指定文档序号（仅单URL模式） | 数字 | 自动分配 |
 | `--concurrency` | 批量导出并发数 | 数字 | 5 |
 
 #### 反爬级别说明
 
 - **low（低）**：只使用随机 User-Agent，适合网络稳定的情况
 - **medium（中）**：随机 User-Agent + 隐藏自动化特征，默认推荐
+- **high（高）**：同 medium，可扩展更多反检测措施
 
 ---
 
@@ -261,12 +280,27 @@ python -m src.cli https://www.doubao.com/thread/test --index 5
 
 ```yaml
 crawler:
-  timeout: 30000              # 请求超时（毫秒）
-  scroll_max_attempts: 10     # 最大滚动次数
-  scroll_wait_ms: 1000       # 滚动后等待时间
+  page_load_timeout: 30000    # 页面加载超时（毫秒）
+  scroll_timeout: 15000        # 滚动加载超时（毫秒）
+  api_timeout: 10000            # API 请求超时（毫秒）
+  scroll_max_attempts: 30       # 最大滚动次数
+  scroll_wait_ms: 1000          # 滚动后等待时间（毫秒）
+  code_expand_max_retries: 6    # 代码展开最大重试次数
+  browser_close_delay: 0.25     # 浏览器关闭延迟（秒）
 
 index:
-  max_age_days: 10           # 历史记录保留天数
+  max_age_days: 10             # 历史记录保留天数
+
+pandoc:
+  timeout: 15                  # Pandoc 超时（秒）
+
+document_style:
+  title_font_size: 18          # 标题字号
+  code_font_size: 10           # 代码字号
+
+global:
+  url_fallback_length: 20       # URL 截断长度
+  concurrency: 5               # 批量并发数
 ```
 
 修改后重启工具即可生效。
@@ -277,29 +311,91 @@ index:
 
 ```bash
 # Unix/macOS
-export CRAWLER_TIMEOUT=60000
+export CRAWLER_PAGE_LOAD_TIMEOUT=60000
+export CRAWLER_SCROLL_MAX_ATTEMPTS=50
 export INDEX_MAX_AGE_DAYS=30
 export PANDOC_TIMEOUT=20
+export GLOBAL_CONCURRENCY=10
 
 # Windows
-set CRAWLER_TIMEOUT=60000
+set CRAWLER_PAGE_LOAD_TIMEOUT=60000
+set CRAWLER_SCROLL_MAX_ATTEMPTS=50
 set INDEX_MAX_AGE_DAYS=30
 ```
 
 ### 可用配置项
 
-| 配置项 | 说明 | 默认值 | 环境变量 |
-|-------|------|--------|---------|
-| `crawler.timeout` | 请求超时(ms) | 30000 | `CRAWLER_TIMEOUT` |
-| `crawler.scroll_max_attempts` | 最大滚动次数 | 10 | `CRAWLER_SCROLL_MAX_ATTEMPTS` |
-| `crawler.scroll_wait_ms` | 滚动等待(ms) | 1000 | `CRAWLER_SCROLL_WAIT_MS` |
-| `crawler.browser_close_delay` | 浏览器关闭延迟(s) | 0.25 | `CRAWLER_BROWSER_CLOSE_DELAY` |
-| `index.max_age_days` | 过期天数 | 10 | `INDEX_MAX_AGE_DAYS` |
-| `pandoc.timeout` | Pandoc超时(s) | 15 | `PANDOC_TIMEOUT` |
-| `document_style.title_font_size` | 标题字号 | 18 | `DOCUMENT_STYLE_TITLE_FONT_SIZE` |
-| `document_style.code_font_size` | 代码字号 | 10 | `DOCUMENT_STYLE_CODE_FONT_SIZE` |
-| `global.url_fallback_length` | URL截断长度 | 20 | `GLOBAL_URL_FALLBACK_LENGTH` |
-- **high（高）**：同 medium，可扩展更多反检测措施
+#### 爬虫配置（crawler）
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|-------|----------|------|--------|
+| `page_load_timeout` | `CRAWLER_PAGE_LOAD_TIMEOUT` | 页面加载超时(ms) | 30000 |
+| `scroll_timeout` | `CRAWLER_SCROLL_TIMEOUT` | 滚动加载超时(ms) | 15000 |
+| `api_timeout` | `CRAWLER_API_TIMEOUT` | API 请求超时(ms) | 10000 |
+| `scroll_max_attempts` | `CRAWLER_SCROLL_MAX_ATTEMPTS` | 最大滚动次数 | 30 |
+| `scroll_wait_ms` | `CRAWLER_SCROLL_WAIT_MS` | 滚动等待时间(ms) | 1000 |
+| `code_expand_settle_ms` | `CRAWLER_CODE_EXPAND_SETTLE_MS` | 代码展开稳定等待(ms) | 500 |
+| `code_expand_base_ms` | `CRAWLER_CODE_EXPAND_BASE_MS` | 代码展开基础等待(ms) | 500 |
+| `code_expand_extra_ms` | `CRAWLER_CODE_EXPAND_EXTRA_MS` | 代码展开指数退避增量(ms) | 2000 |
+| `code_expand_max_retries` | `CRAWLER_CODE_EXPAND_MAX_RETRIES` | 代码展开最大重试次数 | 6 |
+| `browser_close_delay` | - | 浏览器关闭延迟(秒) | 0.25 |
+| `retry_backoff_factor` | `CRAWLER_RETRY_BACKOFF_FACTOR` | 重试退避因子 | 2.0 |
+
+#### 索引配置（index）
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|-------|----------|------|--------|
+| `max_age_days` | `INDEX_MAX_AGE_DAYS` | 过期数据保留天数 | 10 |
+
+#### Pandoc 配置（pandoc）
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|-------|----------|------|--------|
+| `timeout` | `PANDOC_TIMEOUT` | Pandoc 转换超时(秒) | 15 |
+
+#### 文档样式配置（document_style）
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|-------|----------|------|--------|
+| `title_font_size` | `DOCUMENT_STYLE_TITLE_FONT_SIZE` | 标题字号 | 18 |
+| `code_font_size` | `DOCUMENT_STYLE_CODE_FONT_SIZE` | 代码字号 | 10 |
+
+#### 全局配置（global）
+
+| 配置项 | 环境变量 | 说明 | 默认值 |
+|-------|----------|------|--------|
+| `url_fallback_length` | `GLOBAL_URL_FALLBACK_LENGTH` | URL 截断长度 | 20 |
+| `concurrency` | `GLOBAL_CONCURRENCY` | 批量并发数 | 5 |
+
+---
+
+## 批量导出机制
+
+### 并发控制
+
+- 使用 `asyncio.Semaphore` 限制并发数
+- 单 URL 自动使用串行模式，避免资源浪费
+- 默认并发数为 5，可通过 `--concurrency` 参数或 `GLOBAL_CONCURRENCY` 环境变量调整
+
+### 序号预分配
+
+批量导出时预分配序号，避免并发导致序号冲突：
+
+1. 初始化时扫描 `link_index.json`
+2. 已有 URL 复用原有序号
+3. 新 URL 分配新序号（递增）
+4. 保存序号分配结果后再开始并发导出
+
+### 执行流程
+
+```
+1. DocNamer 初始化并清理过期记录
+2. 预扫描 link_index.json，分配序号
+3. 保存序号分配结果
+4. 并发执行导出任务（使用 Semaphore）
+5. 收集结果生成 BatchReport
+6. 打印汇总报告
+```
 
 ---
 
@@ -336,38 +432,42 @@ doubao-export/
 - 自动清理超过 10 天的历史记录
 
 ---
+
 ## 项目结构
 
 ```
 doubao-export/
 ├── src/                         # 源代码目录
-│   ├── __init__.py
-│   ├── config.py                # 全局配置
-│   ├── cli.py                   # 命令行入口
-│   ├── exceptions.py            # 自定义异常
-│   ├── scraper/                 # 网页爬取模块
-│   │   ├── __init__.py
-│   │   ├── models.py           # 数据模型
-│   │   ├── browser.py          # 浏览器管理
-│   │   ├── crawler.py          # 爬虫核心
-│   │   ├── steps.py            # 步骤枚举
-│   │   ├── extractor.py         # 数据提取
-│   │   ├── page_actions.py     # 页面交互
-│   │   └── anti_detect.py      # 反爬处理
-│   ├── preprocessor/            # 数据解析模块
-│   │   ├── __init__.py
-│   │   ├── base.py              # 解析器基类
+│   ├── __init__.py              # 包初始化
+│   ├── __main__.py              # ❌ 未创建（建议添加）
+│   ├── cli.py                   # 命令行入口，Rich Live 进度显示
+│   ├── config.py                 # 配置加载（YAML + 环境变量）
+│   ├── exceptions.py             # 自定义异常
+│   ├── utils.py                  # 通用工具（Windows 兼容性）
+│   ├── scraper/                  # 网页爬取模块
+│   │   ├── __init__.py          # 模块导出
+│   │   ├── models.py            # 数据模型（ChatData, ChatMessage）
+│   │   ├── browser.py           # 浏览器生命周期管理
+│   │   ├── crawler.py           # 爬虫核心类（DoubaoSpider）
+│   │   ├── steps.py             # 步骤枚举和进度工具
+│   │   ├── extractor.py         # 数据提取器
+│   │   ├── page_actions.py      # 页面交互（滚动、展开代码）
+│   │   └── anti_detect.py       # 反爬处理
+│   ├── preprocessor/             # 数据解析模块
+│   │   ├── __init__.py         # 模块导出
+│   │   ├── base.py             # 解析器基类
 │   │   └── doubao_parser.py     # 豆包解析器
-│   └── generator/               # 文档生成模块
-│       ├── __init__.py
-│       ├── docx_builder.py      # Word 构建器
-│       ├── latex_converter.py   # LaTeX 转换
-│       ├── doc_namer.py         # 文档命名
+│   └── generator/                # 文档生成模块
+│       ├── __init__.py         # 模块导出
+│       ├── docx_builder.py     # Word 构建器
+│       ├── latex_converter.py  # LaTeX 转换
+│       ├── doc_namer.py        # 文档命名 + 序号管理
 │       └── batch_report.py      # 批量报告
 ├── data/                        # 数据输出目录
-│   ├── export/                  # 导出的 Word 文档
-│   └── link_index.json          # 链接索引文件
-├── pyproject.toml               # 项目配置
+│   └── export/                  # 导出的 Word 文档
+├── data/link_index.json         # 链接索引文件
+├── config.yaml                  # 配置文件
+├── pyproject.toml              # 项目配置
 ├── requirements.txt             # Python 依赖列表
 └── README.md                    # 项目说明文档
 ```
@@ -397,6 +497,19 @@ PlatformConfig (平台配置)
 2. 继承 `BaseParser`，实现 `parse()` 方法
 3. 在 `__init__.py` 中导出
 
+### Windows 兼容性
+
+`utils.py` 模块提供 Windows 平台的兼容性处理：
+
+| 函数 | 说明 |
+|------|------|
+| `is_windows()` | 检测当前平台 |
+| `windows_compat_setup()` | 初始化：过滤 ResourceWarning |
+| `windows_compat_cleanup()` | 清理：调用 gc.collect() |
+| `windows_compat_close(delay)` | 关闭浏览器：延迟 + gc |
+
+**原因**：Windows 上 Playwright 关闭浏览器后可能有资源未释放的问题。
+
 ---
 
 ## 常见问题解答
@@ -424,7 +537,7 @@ PlatformConfig (平台配置)
 ### Q5: 导出很慢或卡住
 
 **原因**：网络连接问题或页面加载超时。  
-**解决方法**：检查网络连接，确认豆包网站可以正常访问。也可以尝试增加超时时间（需要修改代码）。
+**解决方法**：检查网络连接，确认豆包网站可以正常访问。也可以尝试增加超时时间（通过环境变量 `CRAWLER_PAGE_LOAD_TIMEOUT`）。
 
 ### Q6: 如何批量导出多个聊天记录？
 
@@ -432,17 +545,22 @@ PlatformConfig (平台配置)
 
 ```bash
 # 批量导出，默认并发数5
-python -m src.cli url1 url2 url3
+python3 -m src.cli url1 url2 url3
 
 # 调整并发数
-python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
+python3 -m src.cli url1 url2 url3 url4 url5 --concurrency 10
 ```
 
-批量导出完成后会在终端直接打印汇总报告，记录成功/失败情况（不保存文件）。
+批量导出完成后会在终端直接打印汇总报告，记录成功/失败情况。
 
 ### Q7: 导出后的文档在哪里？
 
 默认保存在 `data/export/YYYYMMDD/` 目录下（按日期分类）。如果目录不存在，程序会自动创建。
+
+### Q8: 代码块没有完整导出
+
+**原因**：代码块可能是动态加载的，展开需要时间。  
+**解决方法**：程序已内置指数退避重试机制。如果仍然失败，可以增加 `CRAWLER_CODE_EXPAND_MAX_RETRIES` 配置。
 
 ---
 
@@ -456,9 +574,8 @@ python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 | python-docx | >= 1.1.0 | 操作 Word 文档 |
 | beautifulsoup4 | >= 4.12.0 | 解析 HTML 内容 |
 | lxml | >= 5.0.0 | HTML 解析器底层库 |
-
 | pyyaml | >= 6.0 | YAML 配置文件解析库 |
-| pytest | >= 7.4.0 | 测试框架（可选） |
+| rich | >= 13.0 | 终端格式化输出 |
 
 ### 系统依赖
 
@@ -484,9 +601,9 @@ python -m src.cli url1 url2 url3 url4 url5 --concurrency 5
 如果您想进一步开发或定制这个工具，可以考虑：
 
 - 添加更多输出格式（如 PDF、Markdown）
-- 支持批量导出
+- 支持更多 AI 平台（通过扩展 PlatformConfig）
 - 添加图形界面
-- 支持更多 AI 平台
+- 支持导出图片
 
 ---
 
