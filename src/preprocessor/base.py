@@ -325,6 +325,7 @@ class BaseParser(ABC):
         """处理 div.line-break 换行符
         
         检查前兄弟节点决定是否添加换行符。
+        修复：跳过空白的换行 div（如公式前的空 margin 容器）
         
         Args:
             prev_sibling: 换行符的前一个兄弟节点
@@ -341,9 +342,19 @@ class BaseParser(ABC):
         """
         prev = self._skip_whitespace_siblings(prev_sibling)
         
+        # 修复：跳过空白的 md-box-line-break div（豆包页面中常见的空换行容器）
+        if isinstance(prev, Tag):
+            if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes) 
+                and not prev.get_text(strip=True)):
+                return "", parent_bold, parent_italic
+        
         if isinstance(prev, NavigableString):
             return "", parent_bold, parent_italic
-        elif isinstance(prev, Tag) and prev.name in ("ul", "ol", "div", "span"):
+        elif isinstance(prev, Tag) and prev.name in ("ul", "ol"):
+            return "", parent_bold, parent_italic
+        elif isinstance(prev, Tag) and prev.name in ("div", "span"):
+            if not prev.get_text(strip=True):
+                return "", parent_bold, parent_italic
             return "", parent_bold, parent_italic
         else:
             if flush_fn:
@@ -824,14 +835,6 @@ class BaseParser(ABC):
         
         flush()
 
-        if items:
-            for i, item in enumerate(items):
-                if item.type == "latex":
-                    if i > 0 and items[i - 1].type == "text" and items[i - 1].content == "\n":
-                        item.is_display = True
-                    if i < len(items) - 1 and items[i + 1].type == "text" and items[i + 1].content == "\n":
-                        item.is_display = True
-
         blocks.append(TextBlock(type="paragraph", content="", items=items))
     
     def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
@@ -1033,7 +1036,7 @@ class BaseParser(ABC):
         if len(blocks) >= 2:
             prev_block = blocks[-2]
             if prev_block.type == "paragraph" and not prev_block.items:
-                prev_block.items.append(InlineContent(type="latex", content=latex, is_display=True))
+                prev_block.items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 blocks.pop()
     
     # -------------------------------------------------------------------------

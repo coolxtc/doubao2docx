@@ -295,8 +295,13 @@ class DocxBuilder:
 
         para = self._create_inline_paragraph(list_type, start_index, level)
         last_run = None
+        prev_was_latex = False
         for item in items:
             if item.type == "text":
+                if item.content == "\n" and (prev_was_latex or last_run is None):
+                    para.add_run("").add_break(WD_BREAK.LINE)
+                    prev_was_latex = False
+                    continue
                 parts = item.content.split("\n")
                 for i, part in enumerate(parts):
                     if i > 0 and last_run:
@@ -309,6 +314,7 @@ class DocxBuilder:
                         if item.italic:
                             run.font.italic = True
                         last_run = run
+                prev_was_latex = False
             elif item.type == "latex":
                 if item.is_display:
                     self._add_latex(item.content, is_display=True, as_standalone=True)
@@ -316,6 +322,7 @@ class DocxBuilder:
                 else:
                     self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
                 last_run = None
+                prev_was_latex = True
 
     def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
         if list_type == "ol":
@@ -354,6 +361,7 @@ class DocxBuilder:
         if math_element is not None:
             try:
                 p = self.document.add_paragraph()
+                p.add_run(" ")
                 p._element.append(deepcopy(math_element))
                 p.add_run(" ")
                 return
@@ -380,9 +388,9 @@ class DocxBuilder:
         math_element = self._latex_to_omml(latex, is_display)
         if math_element is not None:
             try:
+                para.add_run(" ")
                 para._element.append(deepcopy(math_element))
-                if as_standalone:
-                    para.add_run(" ")
+                para.add_run(" ")
             except Exception as e:
                 raise ExportError(f"添加公式失败: {e}") from e
         else:
