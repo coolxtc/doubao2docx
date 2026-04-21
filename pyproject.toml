@@ -10,6 +10,9 @@ dependencies = [
     "lxml>=5.0.0",
 ]
 
+[project.scripts]
+doubao-export = "src.cli:main"
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"

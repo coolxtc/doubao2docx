@@ -54,13 +54,21 @@ py -3 -m src.cli <豆包链接>
 | `crawler.api_timeout` | `CRAWLER_API_TIMEOUT` | API 请求超时(ms) |
 | `crawler.scroll_max_attempts` | `CRAWLER_SCROLL_MAX_ATTEMPTS` | 最大滚动次数 |
 | `crawler.scroll_wait_ms` | `CRAWLER_SCROLL_WAIT_MS` | 滚动等待(ms) |
+| `crawler.code_expand_settle_ms` | `CRAWLER_CODE_EXPAND_SETTLE_MS` | 代码展开稳定等待(ms) |
+| `crawler.code_expand_base_ms` | `CRAWLER_CODE_EXPAND_BASE_MS` | 代码展开基础等待(ms) |
+| `crawler.code_expand_extra_ms` | `CRAWLER_CODE_EXPAND_EXTRA_MS` | 代码展开额外等待(ms) |
 | `crawler.code_expand_max_retries` | `CRAWLER_CODE_EXPAND_MAX_RETRIES` | 代码展开最大重试次数 |
 | `crawler.browser_close_delay` | - | 浏览器关闭延迟(s) |
+| `crawler.retry_backoff_factor` | `CRAWLER_RETRY_BACKOFF_FACTOR` | 重试退避因子 |
+| `crawler.wait_for_selector` | `CRAWLER_WAIT_FOR_SELECTOR` | 等待选择器 |
 | `index.max_age_days` | `INDEX_MAX_AGE_DAYS` | 过期天数 |
 | `pandoc.timeout` | `PANDOC_TIMEOUT` | Pandoc 超时(s) |
 | `document_style.title_font_size` | `DOCUMENT_STYLE_TITLE_FONT_SIZE` | 标题字号 |
 | `document_style.code_font_size` | `DOCUMENT_STYLE_CODE_FONT_SIZE` | 代码字号 |
+| `document_style.image_width` | - | 独立图片宽度(英寸) |
+| `document_style.inline_image_width` | - | 内联图片宽度(英寸) |
 | `global.url_fallback_length` | `GLOBAL_URL_FALLBACK_LENGTH` | URL 截断长度 |
+| `global.enable_progress_bar` | `GLOBAL_ENABLE_PROGRESS_BAR` | 启用进度条 |
 | `global.concurrency` | `GLOBAL_CONCURRENCY` | 批量并发数 |
 
 ## CLI 参数
@@ -76,7 +84,7 @@ py -3 -m src.cli <豆包链接>
 ```
 src/
 ├── __init__.py           # 包初始化
-├── __main__.py           # ❌ 未创建（建议添加）
+├── __main__.py           # 入口点，支持 python3 -m src 运行
 ├── cli.py                # 入口，TaskManager（Rich Live 进度显示）
 ├── config.py             # 配置加载（YAML + 环境变量）
 ├── exceptions.py         # 自定义异常（CrawlerError, ParseError, ExportError）
@@ -181,25 +189,3 @@ from src.preprocessor import (
 | `windows_compat_close(delay)` | 关闭浏览器：延迟 + gc |
 
 **原因**：Windows 上 Playwright 关闭浏览器后可能有资源未释放的问题。
-
-## 已知问题
-
-| 问题 | 说明 | 状态 |
-|------|------|------|
-| **缺少 `__main__.py`** | 无法使用 `python3 -m src` 运行 | 建议添加 |
-| **pyproject.toml 无 scripts** | 未配置 `[project.scripts]`，无法安装后用命令运行 | 建议添加 |
-
-### 建议修复
-
-1. 创建 `src/__main__.py`：
-```python
-from src.cli import main
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-2. pyproject.toml 添加：
-```toml
-[project.scripts]
-doubao-export = "src.cli:main"
-```
