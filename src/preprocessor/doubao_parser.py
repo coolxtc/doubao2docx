@@ -20,7 +20,7 @@
 使得解析器可以适应不同的网页结构。
 """
 
-from typing import List
+from typing import List, Optional
 
 from bs4 import Tag
 
@@ -135,3 +135,65 @@ class DoubaoHTMLParser(BaseParser):
             LaTeX 公式字符串
         """
         return element.get(self.config.latex_attr, "")
+
+    def _is_image_element(self, element: Tag) -> bool:
+        """
+        判断元素是否为图片元素
+
+        豆包页面中的图片使用 <picture> 标签包裹。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是图片元素
+        """
+        return element.name == "picture"
+
+    def _extract_image_url(self, element: Tag) -> Optional[str]:
+        """
+        从图片元素中提取图片 URL
+
+        URL 获取优先级：
+        1. source.srcset（解析第一个 URL，跳过尺寸描述符）
+        2. img.currentSrc（懒加载图片加载后的地址）
+        3. img.src
+        4. img.dataset.original
+
+        Args:
+            element: picture 元素
+
+        Returns:
+            图片 URL 字符串，如果未找到则返回 None
+        """
+        # 尝试从 source 元素获取 srcset
+        source = element.find("source")
+        if source:
+            srcset = source.get("srcset") or source.get("data-srcset")
+            if srcset:
+                srcset_str = str(srcset)
+                if not srcset_str.startswith("data:"):
+                    # srcset 格式: "url1 1x, url2 2x" 或 "url?params 800w, url2?params 400w"
+                    return srcset_str.split(",")[0].strip().split(" ")[0]
+
+        # 尝试从 img 元素获取
+        img = element.find("img")
+        if img:
+            current_src = img.get("currentSrc")
+            if current_src:
+                current_src_str = str(current_src)
+                if not current_src_str.startswith("data:"):
+                    return current_src_str
+
+            if img.has_attr("data-original"):
+                data_original = str(img.get("data-original", ""))
+                if data_original and not data_original.startswith("data:"):
+                    return data_original
+
+            src = img.get("src")
+            if src:
+                src_str = str(src)
+                if not src_str.startswith("data:"):
+                    return src_str
+
+        return None

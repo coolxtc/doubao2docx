@@ -179,6 +179,8 @@ class DocxBuilder:
             self._add_table(block.data)
         elif block.type == "blockquote":
             self._add_blockquote(block.content)
+        elif block.type == "image":
+            self._add_image(block.content)
         elif block.type == "paragraph" and block.items:
             # 包含内联内容（文本和公式混合）的段落
             self._add_inline_content(block.items)
@@ -421,6 +423,34 @@ class DocxBuilder:
         pPr = para._element.get_or_add_pPr()
         shd = parse_xml(r'<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:val="pro" w:fill="F2F2F2"/>')
         pPr.append(shd)
+
+    def _download_image(self, url: str) -> Optional[bytes]:
+        """下载图片到内存"""
+        import requests
+        try:
+            resp = requests.get(url, timeout=15, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            resp.raise_for_status()
+            return resp.content
+        except Exception:
+            return None
+
+    def _add_image(self, url: str, max_width: Inches = Inches(5.0)) -> None:
+        """添加图片到文档"""
+        image_data = self._download_image(url)
+        if image_data is None:
+            self._add_paragraph("[图片加载失败]")
+            return
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+                f.write(image_data)
+                temp_path = f.name
+            self.document.add_picture(temp_path, width=max_width)
+            os.unlink(temp_path)
+        except Exception:
+            self._add_paragraph(f"[图片: {url}]")
 
     def _add_list(self, content: str, list_type: Optional[str] = None) -> None:
         """添加简单文本列表"""
