@@ -293,9 +293,6 @@ async def fetch_and_export_single(
             for block in parsed.blocks:
                 all_blocks.append((msg.role, block))
 
-            for img in msg.images:
-                all_blocks.append((msg.role, TextBlock(type="image", content=img.url)))
-
         # 创建输出目录
         index_file = output_dir / "link_index.json"
         output_dir.mkdir(parents=True, exist_ok=True)

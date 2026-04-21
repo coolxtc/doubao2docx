@@ -426,8 +426,6 @@ class DocxBuilder:
 
     def _download_image(self, url: str) -> Optional[bytes]:
         """下载图片到内存"""
-        if not url or not url.strip():
-            return None
         import requests
         try:
             resp = requests.get(url, timeout=15, headers={
@@ -445,20 +443,14 @@ class DocxBuilder:
             self._add_paragraph("[图片加载失败]")
             return
 
-        temp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
                 f.write(image_data)
                 temp_path = f.name
             self.document.add_picture(temp_path, width=max_width)
+            os.unlink(temp_path)
         except Exception:
             self._add_paragraph(f"[图片: {url}]")
-        finally:
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
 
     def _add_list(self, content: str, list_type: Optional[str] = None) -> None:
         """添加简单文本列表"""
