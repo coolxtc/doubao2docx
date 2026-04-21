@@ -1,5 +1,7 @@
 """网页爬取模块"""
 
+import warnings
+
 from .anti_detect import AntiDetectMiddleware, create_anti_detect_middleware
 
 try:
@@ -27,5 +29,6 @@ try:
         "AntiDetectMiddleware",
         "create_anti_detect_middleware",
     ]
-except ImportError:
+except ImportError as e:
+    warnings.warn(f"部分爬虫模块导入失败（Playwright 未安装？）: {e}", ImportWarning)
     __all__ = ["AntiDetectMiddleware", "create_anti_detect_middleware"]
