@@ -107,18 +107,13 @@ class DocNamer:
         self._next_index = 0  # 内存中维护的下一个序号
         self._lock = threading.Lock()  # 线程锁，保证并发安全
 
-        self._load()  # 加载索引文件
+        self._load()
 
     def _load(self) -> None:
-        """
-        从索引文件加载数据
-
-        将 JSON 文件中的字典转换为 LinkRecord 对象。
-        """
+        """从索引文件加载数据"""
         if self.index_file.exists():
             with open(self.index_file, "r", encoding="utf-8") as f:
                 raw = json.load(f)
-                # 将字典转换为 LinkRecord 对象
                 self._data = {
                     date: {
                         url: LinkRecord.from_dict(record)
@@ -127,7 +122,7 @@ class DocNamer:
                     for date, records in raw.items()
                 }
 
-    def _save(self) -> None:
+    def save(self) -> None:
         """
         保存索引数据到文件
 
@@ -167,7 +162,7 @@ class DocNamer:
         """
         return self._get_date_str()
 
-    def _get_today_records(self) -> dict[str, LinkRecord]:
+    def get_today_records(self) -> dict[str, LinkRecord]:
         """
         获取今天的记录
 
@@ -178,13 +173,13 @@ class DocNamer:
             self._data[date_str] = {}
         return self._data[date_str]
 
-    def _get_today_max_index(self) -> int:
+    def get_today_max_index(self) -> int:
         """
         获取今天最大的有效序号
 
         用于确定下一个新文档应该使用什么序号。
         """
-        records = self._get_today_records()
+        records = self.get_today_records()
         if not records:
             return 0
         valid_indices = [r.index for r in records.values() if r.index > 0]
@@ -192,12 +187,11 @@ class DocNamer:
             return 0
         return max(valid_indices)
 
-    def _cleanup_old_entries(self) -> None:
+    def cleanup_old_entries(self) -> None:
         """
         清理过期的历史数据
 
         删除超过 max_age_days 天的记录，避免索引文件无限膨胀。
-        清理在初始化时自动执行。
         """
         today = self._get_date_str()
         cutoff = self._get_date_str(datetime.now() - timedelta(days=self._max_age_days))
@@ -219,7 +213,7 @@ class DocNamer:
         同时去除首尾空白字符。
 
         Windows 文件名非法字符小科普：
-        / \ : * ? " < > |
+        / \\ : * ? " < > |
         这些字符在 Windows 上有特殊含义，不能用于文件名。
         """
         invalid_chars = r'/\\:*?"<>|'
@@ -248,24 +242,22 @@ class DocNamer:
         # 确保目录存在
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with self._lock:  # 线程安全
+        with self._lock:
             date_str = self._get_date_str()
-            records = self._get_today_records()
+            records = self.get_today_records()
             clean_title = self._clean_title(title)
 
             # 检查 URL 是否已有记录
             if url in records and records[url].index > 0:
-                # 已有记录，使用相同序号
                 index = records[url].index
-                records[url].title = clean_title  # 更新标题
+                records[url].title = clean_title
             else:
-                # 新 URL，分配新序号
                 if self._next_index == 0:
-                    self._next_index = self._get_today_max_index() + 1
+                    self._next_index = self.get_today_max_index() + 1
                 index = self._next_index
                 self._next_index += 1
                 records[url] = LinkRecord(index=index, title=clean_title)
 
-            self._save()  # 保存索引
+            self.save()
 
         return f"{date_str}-{index} {clean_title}"

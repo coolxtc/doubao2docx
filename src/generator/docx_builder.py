@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from typing import Optional
-from xml.etree import ElementTree as etree
+import xml.etree.ElementTree as etree
 
 import requests
 
@@ -92,9 +92,10 @@ class DocxBuilder:
         self._last_list_level = 0
         self._list_counter = 0
 
-        # 从配置读取 pandoc 超时时间
+        # 缓存配置引用，避免方法内重复调用 get_config()
         from ..config import get_config
-        self._pandoc_timeout = get_config().pandoc.timeout
+        self._config = get_config()
+        self._pandoc_timeout = self._config.pandoc.timeout
 
     def _setup_document(self) -> None:
         """设置文档基础样式（页边距和默认字体）"""
@@ -360,7 +361,7 @@ class DocxBuilder:
                 run = para.add_run(" ")
                 self._set_run_font(run)
 
-    def _latex_to_omml(self, latex: str, is_display: bool = False) -> Optional[etree._Element]:
+    def _latex_to_omml(self, latex: str, is_display: bool = False) -> Optional[etree.Element]:
         """
         使用 pandoc 将 LaTeX 转换为 OMML 元素"""
         deps_ok, _ = self.latex_converter.check_dependencies()
@@ -418,7 +419,7 @@ class DocxBuilder:
 
         return None
 
-    def _extract_math_from_paragraph(self, p_element) -> Optional[etree._Element]:
+    def _extract_math_from_paragraph(self, p_element) -> Optional[etree.Element]:
         """从段落元素中提取数学公式"""
         for child in p_element:
             tag = child.tag
@@ -506,9 +507,7 @@ class DocxBuilder:
         if not url or not url.startswith("http"):
             return None
         try:
-            from ..config import get_config
-            config = get_config()
-            user_agents = config.crawler.user_agents
+            user_agents = self._config.crawler.user_agents
             user_agent = user_agents[0] if user_agents else ""
             resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})
             resp.raise_for_status()

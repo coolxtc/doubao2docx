@@ -136,19 +136,20 @@ def get_config_overrides() -> dict:
     获取所有配置覆盖（YAML + 环境变量）
 
     加载顺序：
-    1. 从 YAML 加载基础配置
+    1. 从 YAML 加载基础配置（如果存在）
     2. 用环境变量覆盖
 
     Returns:
         配置字典
     """
     yaml_config = load_yaml_config()
-
-    if yaml_config:
-        return _apply_env_overrides(yaml_config)
-
-    # 即使没有 YAML 配置，也从环境变量收集覆盖
-    return _collect_env_overrides()
+    result = _apply_env_overrides(yaml_config) if yaml_config else {}
+    env_only = _collect_env_overrides()
+    for section, values in env_only.items():
+        if section not in result:
+            result[section] = {}
+        result[section].update(values)
+    return result
 
 
 def _collect_env_overrides() -> dict:

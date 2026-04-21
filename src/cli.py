@@ -366,29 +366,28 @@ async def fetch_and_export_batch(
     # 初始化文档命名器（共享实例保证序号一致）
     index_file = Path("data/link_index.json")
     namer = DocNamer(index_file)
-    namer._cleanup_old_entries()
-    namer._load()
+    namer.cleanup_old_entries()
 
     # 预分配序号（避免并发导致序号冲突）
     used_indices = set()
     url_to_index = {}
 
     for url in urls:
-        records = namer._get_today_records()
+        records = namer.get_today_records()
         if url in records and records[url].index > 0:
             # URL 已有记录，复用序号
             url_to_index[url] = records[url].index
             used_indices.add(records[url].index)
         else:
             # 新 URL，分配新序号
-            idx = namer._get_today_max_index() + 1
+            idx = namer.get_today_max_index() + 1
             while idx in used_indices:
                 idx += 1
             url_to_index[url] = idx
             used_indices.add(idx)
             records[url] = LinkRecord(index=idx, title="")
 
-    namer._save()
+    namer.save()
 
     # 创建信号量限制并发数
     semaphore = asyncio.Semaphore(concurrency)

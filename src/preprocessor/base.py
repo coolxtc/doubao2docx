@@ -189,17 +189,17 @@ class BaseParser(ABC):
     
     def _has_any_class(self, element: Tag, class_names: list[str]) -> bool:
         """检查元素是否包含指定类名中的任意一个
-        
-        类型安全的类名检查方法，避免 list[Any] 与字符串 in 操作符的类型错误。
-        
+
         Args:
             element: HTML 元素
             class_names: 要检查的类名列表
-            
+
         Returns:
             True 如果元素包含任意一个指定类名，否则 False
         """
         classes = element.get("class") or []
+        if isinstance(classes, str):
+            classes = classes.split()
         return any(c in class_names for c in classes)
     
     def _skip_whitespace_siblings(self, prev_sibling) -> Any:

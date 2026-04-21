@@ -12,6 +12,61 @@ if TYPE_CHECKING:
     from playwright.async_api import Page
     fromCallable = Callable[[int, int], None]
 
+# 内联 JavaScript 代码常量 - 便于维护和调试
+# 点击代码展开按钮
+CLICK_EXPAND_BUTTONS_JS = """
+() => {
+    const containers = document.querySelectorAll('div');
+    for (const container of containers) {
+        if (container.querySelector('pre[data-expanded-code]')) {
+            continue;
+        }
+        if (container.textContent && container.textContent.includes('已生成代码')) {
+            const button = container.querySelector('[class*="button-"]');
+            if (button) {
+                try {
+                    button.click();
+                } catch (e) {
+                    const event = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
+                    button.dispatchEvent(event);
+                }
+            }
+        }
+    }
+}
+"""
+
+# 将已展开的代码块注入到按钮容器
+INJECT_EXPANDED_CODE_JS = """
+() => {
+    const containers = document.querySelectorAll('div');
+    for (const container of containers) {
+        if (container.querySelector('pre[data-expanded-code]')) {
+            continue;
+        }
+        const button = container.querySelector('[class*="button-"]');
+        if (!button || !button.textContent.includes('已生成代码')) {
+            continue;
+        }
+        let nextSibling = container.nextElementSibling;
+        for (let i = 0; i < 5 && nextSibling; i++) {
+            if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
+                const pre = nextSibling.querySelector('pre');
+                if (pre) {
+                    const hiddenPre = document.createElement('pre');
+                    hiddenPre.style.display = 'none';
+                    hiddenPre.setAttribute('data-expanded-code', 'true');
+                    hiddenPre.textContent = pre.textContent;
+                    container.appendChild(hiddenPre);
+                }
+                break;
+            }
+            nextSibling = nextSibling.nextElementSibling;
+        }
+    }
+}
+"""
+
 
 class PageActions:
     """页面交互操作类
@@ -161,62 +216,11 @@ class PageActions:
 
     async def _click_expand_buttons(self, page: "Page") -> None:
         """点击代码展开按钮"""
-        await page.evaluate("""
-            () => {
-                const containers = document.querySelectorAll('div');
-                for (const container of containers) {
-                    // 跳过已经有展开代码的容器
-                    if (container.querySelector('pre[data-expanded-code]')) {
-                        continue;
-                    }
-                    // 查找包含"已生成代码"的容器
-                    if (container.textContent && container.textContent.includes('已生成代码')) {
-                        const button = container.querySelector('[class*="button-"]');
-                        if (button) {
-                            try {
-                                button.click();
-                            } catch (e) {
-                                // 备用：手动触发点击事件
-                                const event = new MouseEvent('click', {bubbles: true, cancelable: true, view: window});
-                                button.dispatchEvent(event);
-                            }
-                        }
-                    }
-                }
-            }
-        """)
+        await page.evaluate(CLICK_EXPAND_BUTTONS_JS)
 
     async def _inject_expanded_code(self, page: "Page") -> None:
         """将已展开的代码块注入到按钮容器"""
-        await page.evaluate("""
-            () => {
-                const containers = document.querySelectorAll('div');
-                for (const container of containers) {
-                    if (container.querySelector('pre[data-expanded-code]')) {
-                        continue;
-                    }
-                    const button = container.querySelector('[class*="button-"]');
-                    if (!button || !button.textContent.includes('已生成代码')) {
-                        continue;
-                    }
-                    let nextSibling = container.nextElementSibling;
-                    for (let i = 0; i < 5 && nextSibling; i++) {
-                        if (nextSibling.classList && nextSibling.classList.contains('custom-code-block-container')) {
-                            const pre = nextSibling.querySelector('pre');
-                            if (pre) {
-                                const hiddenPre = document.createElement('pre');
-                                hiddenPre.style.display = 'none';
-                                hiddenPre.setAttribute('data-expanded-code', 'true');
-                                hiddenPre.textContent = pre.textContent;
-                                container.appendChild(hiddenPre);
-                            }
-                            break;
-                        }
-                        nextSibling = nextSibling.nextElementSibling;
-                    }
-                }
-            }
-        """)
+        await page.evaluate(INJECT_EXPANDED_CODE_JS)
 
     async def expand_code_blocks(self, page: "Page") -> None:
         """展开代码块（带重试机制）"""
