@@ -1,7 +1,7 @@
 """豆包爬虫核心类"""
 
 import re
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..config import CrawlerConfig
 from ..exceptions import CrawlerError
@@ -10,6 +10,9 @@ from .extractor import DataExtractor
 from .models import ChatData
 from .page_actions import PageActions
 from .steps import FetchStep
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 
 class DoubaoSpider:
@@ -23,6 +26,7 @@ class DoubaoSpider:
         config: CrawlerConfig | None = None,
         tag: str = "",
         progress_callback: Callable[[str], None] | None = None,
+        external_page: "Page | None" = None,
     ) -> None:
         self.config: CrawlerConfig = config or CrawlerConfig()
         self.anti_detect_level: str = anti_detect_level
@@ -31,6 +35,8 @@ class DoubaoSpider:
         self.browser_mgr: BrowserManager | None = None
         self.page_actions: PageActions | None = None
         self.extractor: DataExtractor | None = None
+        self._external_page: "Page | None" = external_page
+        self._owns_browser: bool = external_page is None
 
     def _report_progress(self, step: str) -> None:
         """报告爬虫进度"""
@@ -48,6 +54,11 @@ class DoubaoSpider:
 
     async def start(self) -> None:
         """初始化爬虫并启动浏览器"""
+        if self._external_page is not None:
+            self.page_actions = PageActions(self.config)
+            self.extractor = DataExtractor(self.config)
+            return
+
         self.browser_mgr = BrowserManager(
             anti_detect_level=self.anti_detect_level,
             config=self.config,
@@ -58,7 +69,7 @@ class DoubaoSpider:
 
     async def close(self) -> None:
         """关闭爬虫"""
-        if self.browser_mgr:
+        if self._owns_browser and self.browser_mgr:
             await self.browser_mgr.close()
             self.browser_mgr = None
 
@@ -67,14 +78,16 @@ class DoubaoSpider:
         if not self._validate_url(url):
             raise CrawlerError(f"无效的豆包URL: {url}")
 
-        if not self.browser_mgr:
-            self._report_progress(FetchStep.STARTING)
-            await self.start()
+        if self._external_page is not None:
+            page = self._external_page
+        else:
+            if not self.browser_mgr:
+                self._report_progress(FetchStep.STARTING)
+                await self.start()
+            if not self.browser_mgr:
+                raise CrawlerError("浏览器未初始化")
+            page = await self.browser_mgr.new_page()
 
-        if not self.browser_mgr:
-            raise CrawlerError("浏览器未初始化")
-
-        page = await self.browser_mgr.new_page()
         self._report_progress(FetchStep.LOADING_PAGE)
 
         await page.goto(url, timeout=self.config.page_load_timeout, wait_until="networkidle")
@@ -93,7 +106,8 @@ class DoubaoSpider:
         else:
             raise CrawlerError("数据提取器未初始化")
 
-        await page.close()
+        if self._owns_browser:
+            await page.close()
 
         self._report_progress(FetchStep.COMPLETED)
 

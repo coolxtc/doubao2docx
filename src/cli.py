@@ -21,14 +21,14 @@ import sys
 import time
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
 from src.config import GlobalConfig
-from src.scraper import DoubaoSpider, FetchStep, FETCH_STEP_NAMES, STEP_COUNT, reset_timer
+from src.scraper import DoubaoSpider, FetchStep, FETCH_STEP_NAMES, STEP_COUNT, reset_timer, BrowserPool
 from src.preprocessor import DoubaoHTMLParser, TextBlock
 from src.generator import DocxBuilder, DocumentConfig, DocNamer, LinkRecord
 from src.generator.batch_report import BatchReport, print_folder_link
@@ -228,6 +228,7 @@ async def fetch_and_export_single(
     task_index: int = 0,
     total: int = 1,
     namer: Optional["DocNamer"] = None,
+    external_page: Any = None,
 ) -> tuple[str, bool, str, Optional[str]]:
     """
     单个 URL 的导出流程
@@ -278,7 +279,7 @@ async def fetch_and_export_single(
 
     try:
         # 步骤 1-7: 爬取页面
-        async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag, progress_callback=on_progress) as spider:
+        async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag, progress_callback=on_progress, external_page=external_page) as spider:
             chat_data = await spider.fetch(url)
 
         # 步骤 8: 解析 HTML
@@ -358,7 +359,7 @@ async def fetch_and_export_batch(
     """
     批量导出多个 URL
 
-    使用 asyncio.Semaphore 控制并发数，实现批量并发导出。
+    使用 asyncio.Semaphore 控制并发数 + 浏览器池复用，实现批量并发导出。
 
     Args:
         urls: URL 列表
@@ -384,11 +385,9 @@ async def fetch_and_export_batch(
     for url in urls:
         records = namer.get_today_records()
         if url in records and records[url].index > 0:
-            # URL 已有记录，复用序号
             url_to_index[url] = records[url].index
             used_indices.add(records[url].index)
         else:
-            # 新 URL，分配新序号
             idx = namer.get_today_max_index() + 1
             while idx in used_indices:
                 idx += 1
@@ -398,36 +397,46 @@ async def fetch_and_export_batch(
 
     namer.save()
 
-    # 创建信号量限制并发数
-    semaphore = asyncio.Semaphore(concurrency)
+    # 单浏览器多标签页模式
+    pool = BrowserPool(anti_detect_level=anti_detect_level)
+
+    # 初始化浏览器池
+    await pool.initialize()
 
     async def bounded_export(task_index: int, url: str):
-        """带并发限制的导出函数"""
-        async with semaphore:
+        """带浏览器池复用的导出函数"""
+        page = await pool.acquire(concurrency)
+        try:
             return await fetch_and_export_single(
-                url, output_dir, anti_detect_level, task_index, total, namer
+                url, output_dir, anti_detect_level, task_index, total, namer,
+                external_page=page
             )
+        finally:
+            await pool.release(page)
 
-    # 创建所有任务
-    tasks = [
-        bounded_export(i + 1, url)
-        for i, url in enumerate(urls)
-    ]
+    try:
+        # 创建所有任务
+        tasks = [
+            bounded_export(i + 1, url)
+            for i, url in enumerate(urls)
+        ]
 
-    # 并发执行
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+        # 并发执行
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # 收集结果
-    for result in results:
-        if isinstance(result, Exception):
-            error_type = type(result).__name__
-            report.add_failure(str(result), f"{error_type}")
-        elif isinstance(result, tuple) and len(result) == 4:
-            url, success, filename, file_path = result
-            if success:
-                report.add_success(url, filename, file_path if file_path else None)
-            else:
-                report.add_failure(url, filename or "未知错误")
+        # 收集结果
+        for result in results:
+            if isinstance(result, Exception):
+                error_type = type(result).__name__
+                report.add_failure(str(result), f"{error_type}")
+            elif isinstance(result, tuple) and len(result) == 4:
+                url, success, filename, file_path = result
+                if success:
+                    report.add_success(url, filename, file_path if file_path else None)
+                else:
+                    report.add_failure(url, filename or "未知错误")
+    finally:
+        await pool.close()
 
     return report
 

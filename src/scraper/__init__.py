@@ -10,6 +10,7 @@ try:
     from .extractor import DataExtractor
     from .models import ChatData, ChatMessage, ImageData
     from .page_actions import PageActions
+    from .pool import BrowserPool
     from .steps import FetchStep, STEP_INDEX, FETCH_STEP_NAMES, STEP_COUNT, reset_timer  # noqa: F401
 
     __all__ = [
@@ -24,6 +25,7 @@ try:
         "STEP_COUNT",
         "reset_timer",
         "BrowserManager",
+        "BrowserPool",
         "PageActions",
         "DataExtractor",
         "AntiDetectMiddleware",
