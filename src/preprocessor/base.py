@@ -387,12 +387,23 @@ class BaseParser(ABC):
             self._process_paragraph(element, blocks)
             return
 
-        picture_child = element.find("picture", recursive=False)
-        if picture_child and self._is_image_element(picture_child):
-            image_url = self._extract_image_url(picture_child)
-            if image_url:
-                blocks.append(TextBlock(type="image", content=image_url))
-            return
+        for pic in element.find_all("picture", recursive=True):
+            if self._is_image_element(pic):
+                is_inside_special = False
+                parent = pic.parent
+                while parent and parent != element:
+                    parent_classes = parent.get("class", [])
+                    if (self.config.code_container_class in parent_classes or
+                        self._has_any_class(parent, self.config.line_break_classes) or
+                        parent.has_attr(self.config.latex_attr) or
+                        self._is_paragraph_container(parent)):
+                        is_inside_special = True
+                        break
+                    parent = parent.parent
+                if not is_inside_special:
+                    image_url = self._extract_image_url(pic)
+                    if image_url:
+                        blocks.append(TextBlock(type="image", content=image_url))
         
         # 检查是否整个 div 只有一个直接子元素是 p
         p_child = None
