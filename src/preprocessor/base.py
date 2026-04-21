@@ -169,14 +169,6 @@ class BaseParser(ABC):
     def _extract_latex_content(self, element: Tag) -> str:
         """从公式元素中提取 LaTeX 内容"""
         raise NotImplementedError("子类必须实现 _extract_latex_content()")
-
-    @abstractmethod
-    def _is_image_element(self, element: Tag) -> bool:
-        raise NotImplementedError("子类必须实现 _is_image_element()")
-
-    @abstractmethod
-    def _extract_image_url(self, element: Tag) -> str | None:
-        raise NotImplementedError("子类必须实现 _extract_image_url()")
     
     # -------------------------------------------------------------------------
     # 通用方法 - 不依赖平台特定逻辑
@@ -332,13 +324,6 @@ class BaseParser(ABC):
         if tag == "div" or tag == "section":
             self._process_div_or_section(element, blocks)
             return
-
-        if tag == "picture":
-            if self._is_image_element(element):
-                image_url = self._extract_image_url(element)
-                if image_url:
-                    blocks.append(TextBlock(type="image", content=image_url))
-            return
         
         # 内联标签（strong, em, span, a, b, i, u, small, del, mark）
         inline_tags = {"strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark"}
@@ -385,13 +370,6 @@ class BaseParser(ABC):
         
         if self._is_paragraph_container(element):
             self._process_paragraph(element, blocks)
-            return
-
-        picture_child = element.find("picture", recursive=False)
-        if picture_child and self._is_image_element(picture_child):
-            image_url = self._extract_image_url(picture_child)
-            if image_url:
-                blocks.append(TextBlock(type="image", content=image_url))
             return
         
         # 检查是否整个 div 只有一个直接子元素是 p
