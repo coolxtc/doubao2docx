@@ -135,3 +135,54 @@ class DoubaoHTMLParser(BaseParser):
             LaTeX 公式字符串
         """
         return element.get(self.config.latex_attr, "")
+
+    def _is_image_element(self, element: Tag) -> bool:
+        """
+        判断元素是否为图片元素
+
+        通过检查元素的标签名是否为 picture 来判断。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果是 picture 元素
+        """
+        return element.name == "picture"
+
+    def _extract_image_url(self, element: Tag) -> str:
+        """
+        从 picture 元素中提取图片 URL
+
+        优先级：
+        1. source.srcset - 响应式图片资源
+        2. img.currentSrc - 懒加载图片加载后的地址
+        3. img.src - 备用图片地址
+
+        Args:
+            element: picture 元素
+
+        Returns:
+            图片 URL 字符串，如果提取失败则返回空字符串
+        """
+        # 1. 尝试从 source 元素获取 URL
+        source = element.find("source")
+        if source:
+            srcset = source.get("srcset") or source.get("data-srcset")
+            if srcset and not srcset.startswith("data:"):
+                # srcset 格式: "url1 1x, url2 2x"，取第一个
+                return srcset.split(",")[0].strip().split(" ")[0]
+
+        # 2. 尝试从 img.currentSrc 获取（懒加载图片加载后的地址）
+        img = element.find("img")
+        if img:
+            current_src = img.get("currentSrc")
+            if current_src and not current_src.startswith("data:"):
+                return current_src
+
+            # 3. 尝试从 dataset 或 src 获取
+            src = img.get("data-original") or img.get("data-src") or img.get("src")
+            if src and not src.startswith("data:"):
+                return src
+
+        return ""

@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from xml.etree import ElementTree as etree
 
+import requests
+
 from copy import deepcopy
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
@@ -179,6 +181,8 @@ class DocxBuilder:
             self._add_table(block.data)
         elif block.type == "blockquote":
             self._add_blockquote(block.content)
+        elif block.type == "image":
+            self._add_image(block.content)
         elif block.type == "paragraph" and block.items:
             # 包含内联内容（文本和公式混合）的段落
             self._add_inline_content(block.items)
@@ -264,6 +268,19 @@ class DocxBuilder:
                     self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
                 last_run = None
                 prev_was_latex = True
+            elif item.type == "image" and item.image_url:
+                url = item.image_url
+                image_data = self._download_image(url)
+                if image_data:
+                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+                        f.write(image_data)
+                        temp_path = f.name
+                    try:
+                        para.add_run().add_picture(temp_path, width=Inches(4.0))
+                    finally:
+                        os.unlink(temp_path)
+                last_run = None
+                prev_was_latex = False
 
     def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
         """
@@ -477,3 +494,32 @@ class DocxBuilder:
         for run in para.runs:
             self._set_run_font(run)
             run.font.italic = True
+
+    def _download_image(self, url: str) -> Optional[bytes]:
+        """下载图片到内存"""
+        if not url or not url.startswith("http"):
+            return None
+        try:
+            resp = requests.get(url, timeout=15, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            })
+            resp.raise_for_status()
+            return resp.content
+        except Exception:
+            return None
+
+    def _add_image(self, url: str, max_width: Inches = Inches(5.0)) -> None:
+        """添加图片到文档"""
+        image_data = self._download_image(url)
+        if image_data is None:
+            self._add_paragraph("[图片加载失败]")
+            return
+
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                f.write(image_data)
+                temp_path = f.name
+            self.document.add_picture(temp_path, width=max_width)
+            os.unlink(temp_path)
+        except Exception:
+            self._add_paragraph(f"[图片: {url}]")

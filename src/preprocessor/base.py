@@ -32,6 +32,8 @@ class PlatformConfig:
     heading_selectors: str = "h1, .chat-title, [class*='title']"
     paragraph_prefix: str = "paragraph-"
     parser: str = "lxml"
+    picture_container_class: str = "picture"
+    image_wrapper_class: str = "image-wrapper"
 
 
 # =============================================================================
@@ -54,6 +56,7 @@ class InlineContent:
     is_display: bool = False
     bold: bool = False
     italic: bool = False
+    image_url: Optional[str] = None
 
 
 @dataclass 
@@ -169,6 +172,16 @@ class BaseParser(ABC):
     def _extract_latex_content(self, element: Tag) -> str:
         """从公式元素中提取 LaTeX 内容"""
         raise NotImplementedError("子类必须实现 _extract_latex_content()")
+    
+    @abstractmethod
+    def _is_image_element(self, element: Tag) -> bool:
+        """判断元素是否为图片元素"""
+        raise NotImplementedError("子类必须实现 _is_image_element()")
+    
+    @abstractmethod
+    def _extract_image_url(self, element: Tag) -> str:
+        """从图片元素中提取 URL"""
+        raise NotImplementedError("子类必须实现 _extract_image_url()")
     
     # -------------------------------------------------------------------------
     # 通用方法 - 不依赖平台特定逻辑
@@ -320,6 +333,13 @@ class BaseParser(ABC):
                 blocks[-1].content += "\n"
             return
         
+        # picture 图片标签
+        if tag == "picture":
+            url = self._extract_image_url(element)
+            if url:
+                blocks.append(TextBlock(type="image", content=url))
+            return
+        
         # div 或 section 容器
         if tag == "div" or tag == "section":
             self._process_div_or_section(element, blocks)
@@ -328,17 +348,29 @@ class BaseParser(ABC):
         # 内联标签（strong, em, span, a, b, i, u, small, del, mark）
         inline_tags = {"strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark"}
         if tag in inline_tags:
+            
             if self._is_math_element(element):
                 self._process_math_element(element, blocks)
                 return
             self._process_inline_element(element, blocks)
             return
-        
+
         # 使用钩子判断是否为公式元素
         if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
-        
+
+        # 使用钩子判断是否为图片元素
+        if self._is_image_element(element):
+            url = self._extract_image_url(element)
+            if url:
+                blocks.append(TextBlock(type="image", content=url))
+            return
+
+        if self._is_paragraph_container(element):
+            self._process_paragraph(element, blocks)
+            return
+
         # 其他情况：提取文本并追加到上一个段落
         text = element.get_text(strip=True)
         if text:
@@ -346,33 +378,34 @@ class BaseParser(ABC):
                 blocks[-1].content += " " + text
             else:
                 blocks.append(TextBlock(type="paragraph", content=text))
-    
+
     def _process_div_or_section(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理 div 或 section 元素"""
-        # 跳过代码按钮元素
         if self._is_code_button(element):
-            # 检查是否有 expanded pre
             expanded_pre = element.find("pre", attrs={self.config.code_expanded_attr: "true"})
             if expanded_pre:
                 code = expanded_pre.get_text("\n", strip=True)
                 blocks.append(TextBlock(type="code", content=code, language="language-plaintext"))
             return
-        
-        # 使用钩子判断是否为公式元素
+
         if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
-        
-        # 使用钩子判断是否为代码容器
+
         if self._is_code_container(element):
             self._process_code_container(element, blocks)
             return
-        
+
+        if self._is_image_element(element):
+            url = self._extract_image_url(element)
+            if url:
+                blocks.append(TextBlock(type="image", content=url))
+            return
+
         if self._is_paragraph_container(element):
             self._process_paragraph(element, blocks)
             return
-        
-        # 检查是否整个 div 只有一个直接子元素是 p
+
         p_child = None
         for child in element.children:
             if isinstance(child, Tag) and child.name == "p":
@@ -381,10 +414,21 @@ class BaseParser(ABC):
                 else:
                     p_child = None
                     break
-        
+
         if p_child:
             self._process_element(p_child, blocks)
         else:
+            # 检查是否包含图片包装器
+            classes = element.get("class", []) or []
+            class_str = " ".join(classes) if isinstance(classes, list) else str(classes)
+            if self.config.image_wrapper_class in class_str:
+                pics = element.find_all("picture")
+                for pic in pics:
+                    url = self._extract_image_url(pic)
+                    if url:
+                        blocks.append(TextBlock(type="image", content=url))
+                return
+
             sub_blocks = self._extract_blocks(element)
             blocks.extend(sub_blocks)
 
@@ -485,10 +529,21 @@ class BaseParser(ABC):
                 elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                elif child.name in ("div", "span") and self._is_paragraph_container(child):
+                elif child.name in ("div", "span"):
                     self._process_nested_container(child, items, current_bold, current_italic)
+                elif child.name == "picture":
+                    flush()
+                    url = self._extract_image_url(child)
+                    if url:
+                        blocks.append(TextBlock(type="image", content=url))
                 elif child.name in ("ul", "ol"):
-                    # 收集嵌套列表，稍后统一处理（不再打断主流程）
+                    flush()
+                    if items:
+                        valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image")]
+                        if valid_items:
+                            blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
+                    items = []
+                    current_text = ""
                     nested_lists.append((child, child.name))
                 else:
                     # 其他元素，尝试提取文本
@@ -500,7 +555,7 @@ class BaseParser(ABC):
         
         # 添加列表项到 blocks
         if items:
-            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type == "latex"]
+            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image")]
             if valid_items:
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
         
@@ -564,6 +619,11 @@ class BaseParser(ABC):
                         items.append(ii)
                 elif child.name in ("div", "span"):
                     self._process_nested_container(child, items, current_bold, current_italic)
+                elif child.name == "picture":
+                    flush()
+                    url = self._extract_image_url(child)
+                    if url:
+                        items.append(InlineContent(type="image", content="", image_url=url))
                 elif child.name in ("ul", "ol"):
                     pass
                 elif child.name == "p":
@@ -579,8 +639,9 @@ class BaseParser(ABC):
         """处理段落元素 - 区分简单和复杂段落"""
         math_elements = self._find_math_in_element(element)
         has_strong = element.find("strong") or element.find("b")
+        has_picture = element.find("picture")
         
-        if not math_elements and not has_strong:
+        if not math_elements and not has_strong and not has_picture:
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="paragraph", content=text))
@@ -631,6 +692,15 @@ class BaseParser(ABC):
                 elif child.name == "br":
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
+                elif child.name == "picture":
+                    flush()
+                    url = self._extract_image_url(child)
+                    if url:
+                        items.append(InlineContent(type="image", content="", image_url=url))
+                elif child.name in ("div", "span"):
+                    has_pic, text = self._extract_images_recursive(child, items, flush)
+                    if not has_pic and text:
+                        current_text += text
                 else:
                     sub_text = child.get_text(strip=False)
                     if sub_text:
@@ -639,6 +709,20 @@ class BaseParser(ABC):
         flush()
 
         blocks.append(TextBlock(type="paragraph", content="", items=items))
+    
+    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: callable) -> tuple:
+        """递归查找嵌套的 picture 并提取图片，返回 (has_picture, text)"""
+        pics = element.find_all("picture")
+        if pics:
+            for pic in pics:
+                flush_func()
+                url = self._extract_image_url(pic)
+                if url:
+                    items.append(InlineContent(type="image", content="", image_url=url))
+            return True, ""
+        else:
+            sub_text = element.get_text(strip=False)
+            return False, sub_text
     
     def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
         """递归提取 strong/b 内的内容 - 保留嵌套加粗"""
@@ -739,6 +823,13 @@ class BaseParser(ABC):
     
     def _process_inline_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理内联元素（如 strong, em, span 等）"""
+        # 先处理嵌套的 picture 元素
+        pics = element.find_all("picture")
+        for pic in pics:
+            url = self._extract_image_url(pic)
+            if url:
+                blocks.append(TextBlock(type="image", content=url))
+
         math_in_children = self._find_math_in_element(element)
         if math_in_children:
             self._process_element_with_inline_math(element, blocks)
