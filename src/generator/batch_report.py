@@ -31,7 +31,7 @@ class BatchReport:
     results: list[ExportResult] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
 
-    def add_success(self, url: str, filename: str, file_path: str = None) -> None:
+    def add_success(self, url: str, filename: str, file_path: Optional[str] = None) -> None:
         """记录成功的导出"""
         self.results.append(ExportResult(url=url, success=True, filename=filename, file_path=file_path))
 

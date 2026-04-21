@@ -5,12 +5,11 @@ Word 文档构建器模块
 使用 python-docx 库创建文档，通过 pandoc 将 LaTeX 公式转换为 Word 原生格式。
 """
 
-import logging
 import os
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 import xml.etree.ElementTree as etree
 
@@ -23,13 +22,11 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml.ns import qn
 from docx.oxml import parse_xml
 
-from ..preprocessor import TextBlock, TableData, InlineContent
+from ..preprocessor import TextBlock, InlineContent
 from ..preprocessor.base import BaseParser as _BaseParser
 from ..config import DocumentStyleConfig
 from ..exceptions import ExportError
 from .latex_converter import LaTeXConverter
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -50,7 +47,7 @@ class DocumentConfig:
     margin_bottom: float = 1.0
     font_name: str = "微软雅黑"
     font_size: int = 12
-    style_config: DocumentStyleConfig = None
+    style_config: DocumentStyleConfig | None = None
 
     def __post_init__(self):
         if self.style_config is None:
@@ -92,10 +89,13 @@ class DocxBuilder:
         self._last_list_level = 0
         self._list_counter = 0
 
+        self._image_failure_count = 0
+        self._image_failure_urls: list[str] = []
+
         # 缓存配置引用，避免方法内重复调用 get_config()
         from ..config import get_config
         self._config = get_config()
-        self._pandoc_timeout = self._config.pandoc.timeout
+        self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
 
     def _setup_document(self) -> None:
         """设置文档基础样式（页边距和默认字体）"""
@@ -107,8 +107,8 @@ class DocxBuilder:
 
         # 设置默认字体
         style = self.document.styles["Normal"]
-        style.font.name = self.config.font_name
-        style.font.size = Pt(self.config.font_size)
+        style.font.name = self.config.font_name  # pyright: ignore[reportAttributeAccessIssue]
+        style.font.size = Pt(self.config.font_size)  # pyright: ignore[reportAttributeAccessIssue]
 
     def _set_run_font(self, run) -> None:
         """设置字体（包含中文字体支持）"""
@@ -124,7 +124,7 @@ class DocxBuilder:
         heading = self.document.add_heading(title, level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for run in heading.runs:
-            run.font.size = Pt(self.config.style_config.title_font_size)
+            run.font.size = Pt(self.config.style_config.title_font_size if self.config.style_config else 18)
             run.font.bold = True
             run.font.color.rgb = RGBColor(0, 0, 0)
             self._set_run_font(run)
@@ -164,6 +164,9 @@ class DocxBuilder:
 
         self.document.save(output_path)
         return output_path
+
+    def get_image_failures(self) -> tuple[int, list[str]]:
+        return self._image_failure_count, self._image_failure_urls
 
     def _add_text_block(self, block: "TextBlock") -> None:
         """根据块类型分发处理"""
@@ -281,7 +284,7 @@ class DocxBuilder:
                         with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
                             f.write(image_data)
                             temp_path = f.name
-                        max_width = Inches(self.config.style_config.inline_image_width)
+                        max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
                         para.add_run().add_picture(temp_path, width=max_width)
                     finally:
                         if temp_path and os.path.exists(temp_path):
@@ -438,7 +441,7 @@ class DocxBuilder:
         """添加代码块（带灰色背景）"""
         para = self.document.add_paragraph()
         run = para.add_run(code)
-        run.font.size = Pt(self.config.style_config.code_font_size)
+        run.font.size = Pt(self.config.style_config.code_font_size if self.config.style_config else 10)
         self._set_run_font(run)
 
         # 添加灰色背景
@@ -505,21 +508,26 @@ class DocxBuilder:
     def _download_image(self, url: str) -> Optional[bytes]:
         """下载图片到内存"""
         if not url or not url.startswith("http"):
+            self._image_failure_count += 1
+            self._image_failure_urls.append(url or "(空URL)")
             return None
         try:
-            user_agents = self._config.crawler.user_agents
-            user_agent = user_agents[0] if user_agents else ""
+            crawler_config = self._config.crawler
+            user_agents = crawler_config.user_agents if crawler_config else None
+            user_agent = user_agents[0] if user_agents else "Mozilla/5.0"
             resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")
             if not content_type.startswith("image/"):
-                logger.warning(f"图片下载失败，非图片类型: {content_type}, URL: {url[:50]}")
+                self._image_failure_count += 1
+                self._image_failure_urls.append(url)
                 return None
 
             return resp.content
         except requests.RequestException as e:
-            logger.warning(f"图片下载失败: {e}, URL: {url[:50]}")
+            self._image_failure_count += 1
+            self._image_failure_urls.append(url)
             return None
 
     def _add_image(self, url: str, max_width: Optional[Inches] = None) -> None:
@@ -534,10 +542,11 @@ class DocxBuilder:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
                 f.write(image_data)
                 temp_path = f.name
-            width = max_width or Inches(self.config.style_config.image_width)
+            width = max_width or Inches(self.config.style_config.image_width if self.config.style_config else 5.0)
             self.document.add_picture(temp_path, width=width)
         except Exception as e:
-            logger.warning(f"添加图片失败: {e}")
+            self._image_failure_count += 1
+            self._image_failure_urls.append(url)
             self._add_paragraph(f"[图片: {url}]")
         finally:
             if temp_path and os.path.exists(temp_path):

@@ -81,7 +81,8 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             True 如果是展示公式
         """
-        class_str = " ".join(element.get("class", []))
+        classes = element.get("class") or []
+        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
         return any(cls in class_str for cls in self.config.math_display_classes)
 
     def _is_code_container(self, element: Tag) -> bool:
@@ -96,16 +97,19 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             True 如果是代码容器
         """
-        return self.config.code_container_class in element.get("class", [])
+        classes = element.get("class") or []
+        return self.config.code_container_class in classes
 
     def _is_paragraph_container(self, element: Tag) -> bool:
         """判断元素是否为段落容器"""
-        classes = element.get("class", [])
+        classes = element.get("class") or []
+        if isinstance(classes, str):
+            classes = classes.split()
         # 检查是否有任何 class 以段落前缀开头
-        if any(cls.startswith(self.config.paragraph_prefix) for cls in classes):
+        if any(isinstance(cls, str) and cls.startswith(self.config.paragraph_prefix) for cls in classes):
             return True
         # 处理转义引号问题：检查完整 class 字符串中是否包含段落前缀
-        full_class_str = " ".join(classes)
+        full_class_str = " ".join(c for c in classes)
         return self.config.paragraph_prefix in full_class_str
 
     def _is_code_button(self, element: Tag) -> bool:
@@ -120,7 +124,8 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             True 如果是代码按钮
         """
-        return any(cls.startswith(self.config.code_button_pattern) for cls in element.get("class", []))
+        classes = element.get("class") or []
+        return any(isinstance(cls, str) and cls.startswith(self.config.code_button_pattern) for cls in classes)
 
     def _extract_latex_content(self, element: Tag) -> str:
         """
@@ -134,7 +139,7 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             LaTeX 公式字符串
         """
-        return element.get(self.config.latex_attr, "")
+        return str(element.get(self.config.latex_attr, ""))
 
     def _is_image_element(self, element: Tag) -> bool:
         """
@@ -169,7 +174,7 @@ class DoubaoHTMLParser(BaseParser):
         source = element.find("source")
         if source:
             srcset = source.get("srcset") or source.get("data-srcset")
-            if srcset and not srcset.startswith("data:"):
+            if srcset and isinstance(srcset, str) and not srcset.startswith("data:"):
                 # srcset 格式: "url1 1x, url2 2x"，取第一个
                 return srcset.split(",")[0].strip().split(" ")[0]
 
@@ -177,12 +182,12 @@ class DoubaoHTMLParser(BaseParser):
         img = element.find("img")
         if img:
             current_src = img.get("currentSrc")
-            if current_src and not current_src.startswith("data:"):
+            if current_src and isinstance(current_src, str) and not current_src.startswith("data:"):
                 return current_src
 
             # 3. 尝试从 dataset 或 src 获取
-            src = img.get("data-original") or img.get("data-src") or img.get("src")
-            if src and not src.startswith("data:"):
+            src = str(img.get("data-original") or img.get("data-src") or img.get("src") or "")
+            if src and isinstance(src, str) and not src.startswith("data:"):
                 return src
 
         return ""

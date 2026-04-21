@@ -227,8 +227,8 @@ async def fetch_and_export_single(
     anti_detect_level: str = "medium",
     task_index: int = 0,
     total: int = 1,
-    namer: "DocNamer" = None,
-) -> tuple[str, bool, str, str | None]:
+    namer: Optional["DocNamer"] = None,
+) -> tuple[str, bool, str, Optional[str]]:
     """
     单个 URL 的导出流程
 
@@ -315,6 +315,15 @@ async def fetch_and_export_single(
         config = DocumentConfig(title=chat_data.title)
         builder = DocxBuilder(config)
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
+
+        fail_count, fail_urls = builder.get_image_failures()
+        if fail_count > 0:
+            doc_title = chat_data.title[:20] + "..." if len(chat_data.title) > 20 else chat_data.title
+            print(f"{tag} ⚠️ 图片下载失败: {doc_title} ({fail_count}张)")
+            for url in fail_urls[:3]:
+                print(f"    {url[:60]}...")
+            if fail_count > 3:
+                print(f"    ...还有{fail_count - 3}张")
 
         # 步骤 10: 完成
         elapsed = time.time() - total_start
@@ -413,10 +422,10 @@ async def fetch_and_export_batch(
         if isinstance(result, Exception):
             error_type = type(result).__name__
             report.add_failure(str(result), f"{error_type}")
-        else:
+        elif isinstance(result, tuple) and len(result) == 4:
             url, success, filename, file_path = result
             if success:
-                report.add_success(url, filename, file_path)
+                report.add_success(url, filename, file_path if file_path else None)
             else:
                 report.add_failure(url, filename or "未知错误")
 

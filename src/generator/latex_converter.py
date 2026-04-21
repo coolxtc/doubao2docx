@@ -5,13 +5,11 @@ LaTeX 公式转换器模块
 pandoc 不可用时，将 LaTeX 公式转换为 Unicode 字符近似显示。
 """
 
-from typing import Optional
-
 
 class LaTeXConverter:
     """LaTeX 公式 Unicode 转换器"""
 
-    _UNICODE_REPLACEMENTS = {
+    _UNICODE_REPLACEMENTS: dict[str, str] = {
         r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
         r"\pi": "π", r"\theta": "θ", r"\lambda": "λ", r"\sigma": "σ",
         r"\omega": "ω", r"\sum": "∑", r"\int": "∫", r"\infty": "∞",

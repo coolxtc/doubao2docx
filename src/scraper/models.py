@@ -18,19 +18,12 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
 
 @dataclass
 class ImageData:
-    """
-    单张图片的数据模型
-
-    属性说明：
-    - url: 图片的网络地址
-    - prev_text: 图片上方最近的标题文本（用于定位图片在文档中的位置）
-    - next_text: 图片下方最近的标题文本（备用定位信息）
-    """
+    """单张图片的数据模型"""
     url: str
     prev_text: str
     next_text: str
@@ -38,27 +31,14 @@ class ImageData:
 
 @dataclass
 class ChatMessage:
-    """
-    单条聊天消息的数据模型
-
-    属性说明：
-    - role: 消息角色，"user" 表示用户，"assistant" 表示 AI
-    - content: 消息的 HTML 内容（保留格式信息）
-    - timestamp: 消息时间戳（可选）
-    - images: 消息中包含的图片列表
-    """
+    """单条聊天消息的数据模型"""
     role: str
     content: str
-    timestamp: Optional[str] = None
+    timestamp: str | None = None
     images: list[ImageData] = field(default_factory=list)
 
-    def to_dict(self) -> dict:
-        """
-        将消息转换为字典格式，便于序列化和调试
-
-        Returns:
-            包含消息所有字段的字典
-        """
+    def to_dict(self) -> dict[str, Any]:
+        """将消息转换为字典格式"""
         return {
             "role": self.role,
             "content": self.content,
@@ -72,27 +52,14 @@ class ChatMessage:
 
 @dataclass
 class ChatData:
-    """
-    聊天记录数据模型
-
-    属性说明：
-    - url: 聊天页面的原始 URL
-    - title: 聊天记录的标题
-    - messages: 消息列表，按时间顺序排列
-    - raw_html: 页面的原始 HTML（用于调试和备用解析）
-    """
+    """聊天记录数据模型"""
     url: str
     title: str = ""
     messages: list[ChatMessage] = field(default_factory=list)
     raw_html: str = ""
 
-    def to_dict(self) -> dict:
-        """
-        将聊天记录转换为字典格式
-
-        Returns:
-            包含聊天记录所有字段的字典
-        """
+    def to_dict(self) -> dict[str, Any]:
+        """将聊天记录转换为字典格式"""
         return {
             "url": self.url,
             "title": self.title,

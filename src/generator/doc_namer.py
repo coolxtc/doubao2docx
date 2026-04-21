@@ -29,7 +29,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..config import get_config
 
@@ -56,12 +56,12 @@ class LinkRecord:
         self.index = index
         self.title = title
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """转换为字典格式（用于 JSON 序列化）"""
         return {"index": self.index, "title": self.title}
 
     @classmethod
-    def from_dict(cls, data: dict) -> "LinkRecord":
+    def from_dict(cls, data: dict[str, Any]) -> "LinkRecord":
         """从字典创建对象（用于 JSON 反序列化）"""
         return cls(index=data["index"], title=data.get("title", ""))
 
@@ -102,7 +102,7 @@ class DocNamer:
         self._data: dict[str, dict[str, LinkRecord]] = {}
 
         config = get_config()
-        self._max_age_days = config.index.max_age_days  # 过期天数，默认10天
+        self._max_age_days: int = config.index.max_age_days if config.index else 10  # 过期天数，默认10天
 
         self._next_index = 0  # 内存中维护的下一个序号
         self._lock = threading.Lock()  # 线程锁，保证并发安全

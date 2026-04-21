@@ -6,7 +6,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Any, Union
+from typing import Optional, Any, Union, Callable
 
 from bs4 import BeautifulSoup, Tag, NavigableString
 
@@ -211,7 +211,7 @@ class BaseParser(ABC):
     def _handle_line_break(self, prev_sibling: Any, items: list[InlineContent], 
                            current_text: str, current_bold: bool, current_italic: bool,
                            parent_bold: bool, parent_italic: bool,
-                           flush_fn: callable | None = None) -> tuple[str, bool, bool]:
+                           flush_fn: Optional[Callable[..., Any]] = None) -> tuple[str, bool, bool]:
         """处理 div.line-break 换行符"""
         prev = self._skip_whitespace_siblings(prev_sibling)
         
@@ -315,7 +315,7 @@ class BaseParser(ABC):
             lang = ""
             code_elem = element.find("code")
             if code_elem:
-                lang = code_elem.get("class", [])
+                lang = code_elem.get("class") or []
                 lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
             blocks.append(TextBlock(type="code", content=code, language=lang or "text"))
             return
@@ -419,8 +419,8 @@ class BaseParser(ABC):
             self._process_element(p_child, blocks)
         else:
             # 检查是否包含图片包装器
-            classes = element.get("class", []) or []
-            class_str = " ".join(classes) if isinstance(classes, list) else str(classes)
+            classes = element.get("class") or []
+            class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
             if self.config.image_wrapper_class in class_str:
                 pics = element.find_all("picture")
                 for pic in pics:
@@ -447,7 +447,7 @@ class BaseParser(ABC):
                 code_content = code_content[len("plaintext"):].lstrip("\n")
         
         language = "text"
-        classes = element.get("class", [])
+        classes = element.get("class") or []
         if "plaintext" in classes:
             language = "language-plaintext"
         
@@ -463,7 +463,10 @@ class BaseParser(ABC):
     def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1, level: int = 0) -> None:
         """处理单个列表项 - 智能判断简单或复杂类型"""
         has_nested_list = li.find(["ul", "ol"], recursive=False)
-        has_br = li.find("br") or li.find(class_=lambda x: x and any("line-break" in c for c in x))
+        has_br = li.find("br") is not None or any(
+            isinstance(x, str) and "line-break" in x 
+            for x in (li.get("class") or [])
+        )
         has_strong = li.find("strong") or li.find("b")
         has_math = self._find_math_in_element(li)
         has_em = li.find("em") or li.find("i")
@@ -710,7 +713,7 @@ class BaseParser(ABC):
 
         blocks.append(TextBlock(type="paragraph", content="", items=items))
     
-    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: callable) -> tuple:
+    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: Callable[..., Any]) -> tuple[bool, str]:
         """递归查找嵌套的 picture 并提取图片，返回 (has_picture, text)"""
         pics = element.find_all("picture")
         if pics:

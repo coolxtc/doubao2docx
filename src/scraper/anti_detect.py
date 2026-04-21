@@ -1,8 +1,4 @@
-"""
-反爬处理中间件
-
-提供反检测功能，帮助爬虫伪装成真实用户浏览器。
-"""
+"""反爬处理中间件"""
 
 import random
 from typing import TYPE_CHECKING
@@ -12,23 +8,20 @@ if TYPE_CHECKING:
 
 
 class AntiDetectMiddleware:
-    """反爬检测中间件
-
-    通过注入 JavaScript 代码修改浏览器属性，伪装成真实用户。
-    """
+    """反爬检测中间件"""
 
     def __init__(
         self,
         random_user_agent: bool = True,
         disableAutomation: bool = True,
     ) -> None:
-        """初始化反爬中间件"""
         from ..config import get_config
 
-        self.random_user_agent = random_user_agent
-        self.disableAutomation = disableAutomation
-        # 使用全局配置单例
-        self.user_agents = get_config().crawler.user_agents
+        self.random_user_agent: bool = random_user_agent
+        self.disableAutomation: bool = disableAutomation
+        config = get_config()
+        crawler_config = config.crawler
+        self.user_agents: list[str] = crawler_config.user_agents if crawler_config and crawler_config.user_agents else []
 
     async def apply(self, context: "BrowserContext") -> None:
         """应用反爬措施到浏览器上下文"""
@@ -40,8 +33,9 @@ class AntiDetectMiddleware:
 
     async def _set_random_user_agent(self, context: "BrowserContext") -> None:
         """设置随机 User-Agent"""
-        user_agent = random.choice(self.user_agents)
-        await context.set_extra_http_headers({"User-Agent": user_agent})
+        if self.user_agents:
+            user_agent = random.choice(self.user_agents)
+            await context.set_extra_http_headers({"User-Agent": user_agent})
 
     async def _disable_automation(self, context: "BrowserContext") -> None:
         """隐藏 webdriver 自动化标识"""
@@ -52,9 +46,7 @@ class AntiDetectMiddleware:
         """)
 
 
-def create_anti_detect_middleware(
-    level: str = "medium",
-) -> AntiDetectMiddleware:
+def create_anti_detect_middleware(level: str = "medium") -> AntiDetectMiddleware:
     """创建预设的反爬中间件"""
     presets = {
         "low": {"random_user_agent": True, "disableAutomation": False},

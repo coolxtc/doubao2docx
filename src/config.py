@@ -27,11 +27,15 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 # 尝试导入 yaml，失败时使用默认值
+_yaml_load_available: bool = False
+_yaml_module = None
 try:
-    import yaml
-    YAML_AVAILABLE = True
+    import yaml as _yaml_module
+    _yaml_load_available = True
 except ImportError:
-    YAML_AVAILABLE = False
+    pass
+
+YAML_AVAILABLE: bool = _yaml_load_available
 
 
 # ============================================================
@@ -50,22 +54,20 @@ def _get_config_path() -> Path | None:
         配置文件路径，如果不存在则返回 None
     """
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 打包环境
-        base_path = Path(sys._MEIPASS)
+        meipass: str = sys._MEIPASS  # pyright: ignore[reportAttributeAccessIssue]
+        base_path = Path(meipass)
     else:
-        # 开发环境：src/ 的父目录
         base_path = Path(__file__).parent.parent
 
     config_path = base_path / "config.yaml"
     return config_path if config_path.exists() else None
 
 
-def _env_override(key: str, value, prefix: str = "") -> tuple[str, bool]:
+from typing import Any
+
+def _env_override(key: str, value: Any, prefix: str = "") -> tuple[Any, bool]:
     """
     检查环境变量覆盖，返回 (最终值, 是否被覆盖)
-
-    环境变量命名规则：前缀_层级_键名，全部大写
-    例如：CRAWLER_TIMEOUT, INDEX_MAX_AGE_DAYS
 
     Args:
         key: 配置键名
@@ -81,7 +83,6 @@ def _env_override(key: str, value, prefix: str = "") -> tuple[str, bool]:
     if env_value is None:
         return value, False
 
-    # 根据原始值类型转换环境变量
     if isinstance(value, bool):
         return env_value.lower() in ('true', '1', 'yes'), True
     elif isinstance(value, int):
@@ -89,13 +90,12 @@ def _env_override(key: str, value, prefix: str = "") -> tuple[str, bool]:
     elif isinstance(value, float):
         return float(env_value), True
     elif isinstance(value, list):
-        # 列表类型从 YAML 加载，不从环境变量覆盖
         return value, False
     else:
         return env_value, True
 
 
-def _apply_env_overrides(data: dict, prefix: str = "") -> dict:
+def _apply_env_overrides(data: dict[str, Any], prefix: str = "") -> dict[str, Any]:
     """
     递归应用环境变量覆盖到配置字典
 
@@ -115,7 +115,7 @@ def _apply_env_overrides(data: dict, prefix: str = "") -> dict:
     return result
 
 
-def load_yaml_config() -> dict:
+def load_yaml_config() -> dict[str, Any]:
     """
     从 YAML 文件加载配置
 
@@ -124,14 +124,14 @@ def load_yaml_config() -> dict:
     """
     config_path = _get_config_path()
 
-    if config_path is None or not YAML_AVAILABLE:
+    if config_path is None or not _yaml_load_available or _yaml_module is None:
         return {}
 
     with open(config_path, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f) or {}
+        return _yaml_module.safe_load(f) or {}
 
 
-def get_config_overrides() -> dict:
+def get_config_overrides() -> dict[str, Any]:
     """
     获取所有配置覆盖（YAML + 环境变量）
 
@@ -152,7 +152,7 @@ def get_config_overrides() -> dict:
     return result
 
 
-def _collect_env_overrides() -> dict:
+def _collect_env_overrides() -> dict[str, dict[str, Any]]:
     """
     仅从环境变量收集配置覆盖
 
@@ -276,18 +276,8 @@ class CrawlerConfig:
             ]
 
     @classmethod
-    def from_dict(cls, data: dict) -> "CrawlerConfig":
-        """
-        从字典创建实例
-
-        只设置提供的字段，未提供的使用默认值。
-
-        Args:
-            data: 配置字典
-
-        Returns:
-            CrawlerConfig 实例
-        """
+    def from_dict(cls, data: dict[str, Any] | None) -> "CrawlerConfig":
+        """从字典创建实例，只设置提供的字段"""
         if data is None:
             return cls()
 
@@ -313,19 +303,8 @@ class DocumentStyleConfig:
     inline_image_width: float = 4.0  # 内联图片宽度（英寸）
 
     @classmethod
-    def from_dict(cls, data: dict) -> "DocumentStyleConfig":
-        """
-        从字典创建实例
-
-        只设置提供的字段，未提供的使用默认值。
-        这允许部分配置更新，不需要提供所有字段。
-
-        Args:
-            data: 配置字典，通常来自 YAML 或环境变量
-
-        Returns:
-            DocumentStyleConfig 实例
-        """
+    def from_dict(cls, data: dict[str, Any] | None) -> "DocumentStyleConfig":
+        """从字典创建实例，只设置提供的字段"""
         if data is None:
             return cls()
 
@@ -348,18 +327,8 @@ class IndexConfig:
     max_age_days: int = 10  # 历史记录保留天数
 
     @classmethod
-    def from_dict(cls, data: dict) -> "IndexConfig":
-        """
-        从字典创建实例
-
-        只设置提供的字段，未提供的使用默认值。
-
-        Args:
-            data: 配置字典，通常来自 YAML 或环境变量
-
-        Returns:
-            IndexConfig 实例
-        """
+    def from_dict(cls, data: dict[str, Any] | None) -> "IndexConfig":
+        """从字典创建实例，只设置提供的字段"""
         if data is None:
             return cls()
 
@@ -382,18 +351,8 @@ class PandocConfig:
     timeout: int = 15  # Pandoc 超时时间（秒）
 
     @classmethod
-    def from_dict(cls, data: dict) -> "PandocConfig":
-        """
-        从字典创建实例
-
-        只设置提供的字段，未提供的使用默认值。
-
-        Args:
-            data: 配置字典，通常来自 YAML 或环境变量
-
-        Returns:
-            PandocConfig 实例
-        """
+    def from_dict(cls, data: dict[str, Any] | None) -> "PandocConfig":
+        """从字典创建实例，只设置提供的字段"""
         if data is None:
             return cls()
 
