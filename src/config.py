@@ -308,6 +308,8 @@ class DocumentStyleConfig:
     """
     title_font_size: int = 18  # 标题字号
     code_font_size: int = 10  # 代码字号
+    image_width: float = 5.0  # 独立图片宽度（英寸）
+    inline_image_width: float = 4.0  # 内联图片宽度（英寸）
 
     @classmethod
     def from_dict(cls, data: dict) -> "DocumentStyleConfig":

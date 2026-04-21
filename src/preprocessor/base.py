@@ -535,7 +535,7 @@ class BaseParser(ABC):
                     flush()
                     url = self._extract_image_url(child)
                     if url:
-                        blocks.append(TextBlock(type="image", content=url))
+                        items.append(InlineContent(type="image", content="", image_url=url))
                 elif child.name in ("ul", "ol"):
                     flush()
                     if items:

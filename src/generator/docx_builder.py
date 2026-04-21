@@ -5,6 +5,7 @@ Word 文档构建器模块
 使用 python-docx 库创建文档，通过 pandoc 将 LaTeX 公式转换为 Word 原生格式。
 """
 
+import logging
 import os
 import re
 import subprocess
@@ -27,6 +28,8 @@ from ..preprocessor.base import BaseParser as _BaseParser
 from ..config import DocumentStyleConfig
 from ..exceptions import ExportError
 from .latex_converter import LaTeXConverter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -272,13 +275,16 @@ class DocxBuilder:
                 url = item.image_url
                 image_data = self._download_image(url)
                 if image_data:
-                    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
-                        f.write(image_data)
-                        temp_path = f.name
+                    temp_path = None
                     try:
-                        para.add_run().add_picture(temp_path, width=Inches(4.0))
+                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+                            f.write(image_data)
+                            temp_path = f.name
+                        max_width = Inches(self.config.style_config.inline_image_width)
+                        para.add_run().add_picture(temp_path, width=max_width)
                     finally:
-                        os.unlink(temp_path)
+                        if temp_path and os.path.exists(temp_path):
+                            os.unlink(temp_path)
                 last_run = None
                 prev_was_latex = False
 
@@ -500,26 +506,43 @@ class DocxBuilder:
         if not url or not url.startswith("http"):
             return None
         try:
-            resp = requests.get(url, timeout=15, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            })
+            from ..config import get_config
+            config = get_config()
+            user_agents = config.crawler.user_agents
+            user_agent = user_agents[0] if user_agents else ""
+            resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})
             resp.raise_for_status()
+
+            content_type = resp.headers.get("content-type", "")
+            if not content_type.startswith("image/"):
+                logger.warning(f"图片下载失败，非图片类型: {content_type}, URL: {url[:50]}")
+                return None
+
             return resp.content
-        except Exception:
+        except requests.RequestException as e:
+            logger.warning(f"图片下载失败: {e}, URL: {url[:50]}")
             return None
 
-    def _add_image(self, url: str, max_width: Inches = Inches(5.0)) -> None:
+    def _add_image(self, url: str, max_width: Optional[Inches] = None) -> None:
         """添加图片到文档"""
         image_data = self._download_image(url)
         if image_data is None:
             self._add_paragraph("[图片加载失败]")
             return
 
+        temp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
                 f.write(image_data)
                 temp_path = f.name
-            self.document.add_picture(temp_path, width=max_width)
-            os.unlink(temp_path)
-        except Exception:
+            width = max_width or Inches(self.config.style_config.image_width)
+            self.document.add_picture(temp_path, width=width)
+        except Exception as e:
+            logger.warning(f"添加图片失败: {e}")
             self._add_paragraph(f"[图片: {url}]")
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
