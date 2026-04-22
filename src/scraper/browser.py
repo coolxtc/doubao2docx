@@ -3,7 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ..config import CrawlerConfig
+from ..config import CrawlerConfig, get_config
 from ..utils import is_windows, windows_compat_close
 from .anti_detect import AntiDetectMiddleware, create_anti_detect_middleware
 
@@ -21,7 +21,7 @@ class BrowserManager:
         anti_detect_level: str = "medium",
         config: CrawlerConfig | None = None,
     ) -> None:
-        self.config: CrawlerConfig = config or CrawlerConfig()
+        self.config: CrawlerConfig = config or get_config().crawler
         self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(anti_detect_level)
         self.browser: "Browser | None" = None
         self.context: "BrowserContext | None" = None

@@ -1,128 +1,54 @@
 # ============================================================
 # 豆包导出工具配置文件
-# ============================================================
-# 此文件包含所有可调整的配置项，修改后无需改代码
-# 配置优先级：环境变量 > YAML配置 > 默认值
-# 
-# 环境变量命名规则：将层级用下划线连接，大写
-# 例如：CRAWLER_TIMEOUT, CRAWLER_SCROLL_MAX_ATTEMPTS
+# 所有配置为必需值，缺少任意配置将报错
 # ============================================================
 
 # ------------------------------------------------------------
 # 爬虫配置 - 控制网页抓取行为
 # ------------------------------------------------------------
 crawler:
-  # 页面访问超时（毫秒）
-  # 首次加载完整页面的超时时间
-  page_load_timeout: 30000
-
-  # 滚动加载超时（毫秒）
-  # 每次滚动后等待新内容加载的超时时间
-  scroll_timeout: 15000
-
-  # API 请求超时（毫秒）
-  # 网络请求响应等待的超时时间
-  api_timeout: 10000
-
-  # 最多滚动次数，防止无限滚动
-  scroll_max_attempts: 30
-
-  # 滚动后等待时间（毫秒）
-  # 程序发送滚动指令后，需要等待网页加载新内容
-  scroll_wait_ms: 1000
-
-  # 代码块展开后稳定等待时间（毫秒）
-  # 代码块刚展开时可能还在"跳动"或动画中，等待稳定后再读取
-  code_expand_settle_ms: 500
-
-  # 代码块展开基础等待时间（毫秒）
-  # 每次尝试展开代码块时，先等待基础时间让内容加载
-  code_expand_base_ms: 500
-
-  # 代码块展开最大重试次数
-  # 尝试展开代码块的最大次数
-  code_expand_max_retries: 6
-
-  # 代码块展开指数退避增量（毫秒）
-  # 每次重试时额外增加的时间，形成指数退避
-  code_expand_extra_ms: 2000
-
-  # 浏览器关闭前等待时间（秒）
-  # 避免 Windows 资源清理问题
-  browser_close_delay: 0.25
-
-  # 指数退避因子
-  # 每次失败后延迟翻倍：1s → 2s → 4s
-  retry_backoff_factor: 2
-
-  # User-Agent 列表（随机选择）
-  # 模拟真实浏览器访问，降低被识别为爬虫的概率
-  user_agents:
-    # Chrome (macOS)
+  page_load_timeout: 30000        # 页面加载超时（毫秒）
+  scroll_max_attempts: 30         # 最大滚动次数，防止无限滚动
+  scroll_wait_ms: 1000            # 滚动后等待时间（毫秒）
+  code_expand_settle_ms: 500      # 代码块展开后稳定等待（毫秒）
+  code_expand_base_ms: 500        # 代码块展开基础等待（毫秒）
+  code_expand_max_retries: 6      # 代码块展开最大重试次数
+  code_expand_extra_ms: 2000      # 代码块展开指数退避增量（毫秒）
+  browser_close_delay: 0.25       # 浏览器关闭延迟（秒）
+  user_agents:                    # User-Agent 列表（随机选择）
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7319.89 Safari/537.36"
-    # Chrome (Windows)
     - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7319.89 Safari/537.36"
-    # Chrome (macOS Sequoia)
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.5249.91 Safari/537.36"
-    # Safari 26 (macOS Sonoma)
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
-    # Safari 26 (macOS Sequoia)
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0.1 Safari/605.1.15"
-    # Firefox 149 (Windows)
     - "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0"
-    # Firefox 149 (macOS)
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.7; rv:149.0) Gecko/20100101 Firefox/149.0"
-    # Edge (Windows)
     - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7319.89 Safari/537.36 Edg/147.0.7319.89"
 
 # ------------------------------------------------------------
 # 文档样式配置 - 控制输出 Word 文档的格式
 # ------------------------------------------------------------
 document_style:
-  # 标题字体大小（磅）
-  # 中文文档常用"二号"字，约等于18磅
-  title_font_size: 18
-
-  # 代码块字体大小（磅）
-  # 代码通常比较长，用小字号可以显示更多内容
-  code_font_size: 10
-
-  # 独立图片宽度（英寸）
-  # 当图片作为独立块插入时的最大宽度
-  image_width: 5.0
-
-  # 内联图片宽度（英寸）
-  # 当图片嵌入段落中时的最大宽度
-  inline_image_width: 4.0
+  title_font_size: 18             # 标题字体大小（磅）
+  code_font_size: 10              # 代码块字体大小（磅）
+  image_width: 5.0                # 独立图片宽度（英寸）
+  inline_image_width: 4.0         # 内联图片宽度（英寸）
 
 # ------------------------------------------------------------
-# 全局配置 - 杂项配置
+# 全局配置
 # ------------------------------------------------------------
 global:
-  # URL 标签 fallback 截断长度
-  # 当无法从 URL 提取 thread ID 时，截取 URL 前 N 位作为标签
-  url_fallback_length: 20
-
-  # 启用进度条
-  # 使用 tqdm 风格显示批量导出进度
-  enable_progress_bar: true
-
-  # 批量导出并发数
-  # 同时进行的浏览器实例数量
-  concurrency: 3
+  url_fallback_length: 20         # URL 标签 fallback 截断长度
+  concurrency: 3                   # 批量导出并发数
 
 # ------------------------------------------------------------
-# 索引文件配置 - 控制 link_index.json 的行为
+# 索引配置 - 控制 link_index.json 的行为
 # ------------------------------------------------------------
 index:
-  # 过期数据保留天数
-  # 超过此天数的记录会被自动清理
-  max_age_days: 10
+  max_age_days: 10                # 过期数据保留天数
 
 # ------------------------------------------------------------
 # Pandoc 配置 - 控制公式转换
 # ------------------------------------------------------------
 pandoc:
-  # Pandoc 转换超时时间（秒）
-  # LaTeX 公式转换为 Word 文档的超时时间
-  timeout: 15
+  timeout: 15                     # Pandoc 转换超时（秒）

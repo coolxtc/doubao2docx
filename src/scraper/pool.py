@@ -14,7 +14,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..config import CrawlerConfig
+from ..config import CrawlerConfig, get_config
 from .browser import BrowserManager
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ class BrowserPool:
         config: CrawlerConfig | None = None,
     ) -> None:
         self._anti_detect_level: str = anti_detect_level
-        self._config: CrawlerConfig = config or CrawlerConfig()
+        self._config: CrawlerConfig = config or get_config().crawler
         self._manager: BrowserManager | None = None
         self._closed: bool = False
         self._semaphore: asyncio.Semaphore | None = None

@@ -3,7 +3,7 @@
 import re
 from typing import TYPE_CHECKING, Any, Callable
 
-from ..config import CrawlerConfig
+from ..config import CrawlerConfig, get_config
 from ..exceptions import CrawlerError
 from .browser import BrowserManager
 from .extractor import DataExtractor
@@ -28,7 +28,7 @@ class DoubaoSpider:
         progress_callback: Callable[[str], None] | None = None,
         external_page: "Page | None" = None,
     ) -> None:
-        self.config: CrawlerConfig = config or CrawlerConfig()
+        self.config: CrawlerConfig = config or get_config().crawler
         self.anti_detect_level: str = anti_detect_level
         self.tag: str = tag
         self.progress_callback: Callable[[str], None] | None = progress_callback

@@ -24,7 +24,7 @@ from docx.oxml import parse_xml
 
 from ..preprocessor import TextBlock, InlineContent
 from ..preprocessor.base import BaseParser as _BaseParser
-from ..config import DocumentStyleConfig
+from ..config import DocumentStyleConfig, get_config
 from ..exceptions import ExportError
 from .latex_converter import LaTeXConverter
 
@@ -51,7 +51,7 @@ class DocumentConfig:
 
     def __post_init__(self):
         if self.style_config is None:
-            self.style_config = DocumentStyleConfig()
+            self.style_config = get_config().document_style
 
 
 class DocxBuilder:
@@ -79,7 +79,7 @@ class DocxBuilder:
         3. 设置页面边距和默认字体
         4. 初始化列表状态追踪器（用于有序列表序号）
         """
-        self.config = config or DocumentConfig()
+        self.config = config or DocumentConfig(style_config=get_config().document_style)
         self.document = Document()
         self.latex_converter = LaTeXConverter()
         self._setup_document()

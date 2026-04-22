@@ -309,111 +309,42 @@ python3 -m src.cli https://www.doubao.com/thread/test --index 5
 
 ## 配置调整
 
-工具支持通过配置文件或环境变量调整参数，无需修改代码。
+所有配置通过 `config.yaml` 文件管理，缺少必需配置时工具会直接报错。
 
-### 配置文件方式
+### 配置文件
 
 项目根目录的 `config.yaml` 包含所有可调整的配置项：
 
 ```yaml
 crawler:
-  page_load_timeout: 30000    # 页面加载超时（毫秒）
-  scroll_timeout: 15000        # 滚动加载超时（毫秒）
-  api_timeout: 10000            # API 请求超时（毫秒）
-  scroll_max_attempts: 10       # 最大滚动次数
-  scroll_wait_ms: 300           # 滚动后等待时间（毫秒）
-  code_expand_settle_ms: 300   # 代码展开稳定等待（毫秒）
-  code_expand_base_ms: 300     # 代码展开基础等待（毫秒）
-  code_expand_extra_ms: 300    # 代码展开额外等待（毫秒）
-  code_expand_max_retries: 6    # 代码展开最大重试次数
-  browser_close_delay: 0.25    # 浏览器关闭延迟（秒）
-  retry_backoff_factor: 2       # 指数退避因子
-
-index:
-  max_age_days: 10             # 历史记录保留天数
-
-pandoc:
-  timeout: 15                  # Pandoc 超时（秒）
+  page_load_timeout: 30000        # 页面加载超时（毫秒）
+  scroll_max_attempts: 30         # 最大滚动次数
+  scroll_wait_ms: 1000            # 滚动后等待时间（毫秒）
+  code_expand_settle_ms: 500      # 代码展开稳定等待（毫秒）
+  code_expand_base_ms: 500        # 代码展开基础等待（毫秒）
+  code_expand_max_retries: 6      # 代码展开最大重试次数
+  code_expand_extra_ms: 2000      # 代码展开指数退避增量（毫秒）
+  browser_close_delay: 0.25        # 浏览器关闭延迟（秒）
+  user_agents: [...]              # User-Agent 列表
 
 document_style:
-  title_font_size: 18          # 标题字号
-  code_font_size: 10           # 代码字号
-  image_width: 5.0             # 独立图片宽度（英寸）
-  inline_image_width: 4.0      # 内联图片宽度（英寸）
+  title_font_size: 18             # 标题字号
+  code_font_size: 10             # 代码字号
+  image_width: 5.0               # 独立图片宽度（英寸）
+  inline_image_width: 4.0         # 内联图片宽度（英寸）
 
 global:
-  url_fallback_length: 20      # URL 截断长度
-  enable_progress_bar: true    # 启用进度条
-  concurrency: 5               # 批量并发数
+  url_fallback_length: 20        # URL 截断长度
+  concurrency: 3                  # 批量并发数
+
+index:
+  max_age_days: 10               # 历史记录保留天数
+
+pandoc:
+  timeout: 15                    # Pandoc 超时（秒）
 ```
 
-修改后重启工具即可生效。
-
-### 环境变量方式
-
-也可以通过环境变量覆盖配置：
-
-```bash
-# Unix/macOS
-export CRAWLER_PAGE_LOAD_TIMEOUT=60000
-export CRAWLER_SCROLL_MAX_ATTEMPTS=50
-export INDEX_MAX_AGE_DAYS=30
-export PANDOC_TIMEOUT=20
-export GLOBAL_CONCURRENCY=10
-
-# Windows
-set CRAWLER_PAGE_LOAD_TIMEOUT=60000
-set CRAWLER_SCROLL_MAX_ATTEMPTS=50
-set INDEX_MAX_AGE_DAYS=30
-```
-
-### 可用配置项
-
-#### 爬虫配置（crawler）
-
-| 配置项 | 环境变量 | 说明 | 默认值 |
-|-------|----------|------|--------|
-| `page_load_timeout` | `CRAWLER_PAGE_LOAD_TIMEOUT` | 页面加载超时(ms) | 30000 |
-| `scroll_timeout` | `CRAWLER_SCROLL_TIMEOUT` | 滚动加载超时(ms) | 15000 |
-| `api_timeout` | `CRAWLER_API_TIMEOUT` | API 请求超时(ms) | 10000 |
-| `scroll_max_attempts` | `CRAWLER_SCROLL_MAX_ATTEMPTS` | 最大滚动次数 | 10 |
-| `scroll_wait_ms` | `CRAWLER_SCROLL_WAIT_MS` | 滚动等待时间(ms) | 300 |
-| `code_expand_settle_ms` | `CRAWLER_CODE_EXPAND_SETTLE_MS` | 代码展开稳定等待(ms) | 300 |
-| `code_expand_base_ms` | `CRAWLER_CODE_EXPAND_BASE_MS` | 代码展开基础等待(ms) | 300 |
-| `code_expand_extra_ms` | `CRAWLER_CODE_EXPAND_EXTRA_MS` | 代码展开额外等待(ms) | 300 |
-| `code_expand_max_retries` | `CRAWLER_CODE_EXPAND_MAX_RETRIES` | 代码展开最大重试次数 | 6 |
-| `browser_close_delay` | - | 浏览器关闭延迟(秒) | 0.25 |
-| `retry_backoff_factor` | `CRAWLER_RETRY_BACKOFF_FACTOR` | 重试退避因子 | 2.0 |
-| `wait_for_selector` | `CRAWLER_WAIT_FOR_SELECTOR` | 等待选择器 | .chat-content |
-
-#### 索引配置（index）
-
-| 配置项 | 环境变量 | 说明 | 默认值 |
-|-------|----------|------|--------|
-| `max_age_days` | `INDEX_MAX_AGE_DAYS` | 过期数据保留天数 | 10 |
-
-#### Pandoc 配置（pandoc）
-
-| 配置项 | 环境变量 | 说明 | 默认值 |
-|-------|----------|------|--------|
-| `timeout` | `PANDOC_TIMEOUT` | Pandoc 转换超时(秒) | 15 |
-
-#### 文档样式配置（document_style）
-
-| 配置项 | 环境变量 | 说明 | 默认值 |
-|-------|----------|------|--------|
-| `title_font_size` | `DOCUMENT_STYLE_TITLE_FONT_SIZE` | 标题字号 | 18 |
-| `code_font_size` | `DOCUMENT_STYLE_CODE_FONT_SIZE` | 代码字号 | 10 |
-| `image_width` | - | 独立图片宽度(英寸) | 5.0 |
-| `inline_image_width` | - | 内联图片宽度(英寸) | 4.0 |
-
-#### 全局配置（global）
-
-| 配置项 | 环境变量 | 说明 | 默认值 |
-|-------|----------|------|--------|
-| `url_fallback_length` | `GLOBAL_URL_FALLBACK_LENGTH` | URL 截断长度 | 20 |
-| `enable_progress_bar` | `GLOBAL_ENABLE_PROGRESS_BAR` | 启用进度条 | true |
-| `concurrency` | `GLOBAL_CONCURRENCY` | 批量并发数 | 5 |
+修改后重启工具即可生效。缺少必需配置项会导致启动时报错。
 
 ---
 
@@ -423,7 +354,7 @@ set INDEX_MAX_AGE_DAYS=30
 
 - 使用 `asyncio.Semaphore` 限制并发数
 - 单 URL 自动使用串行模式，避免资源浪费
-- 默认并发数为 5，可通过 `--concurrency` 参数或 `GLOBAL_CONCURRENCY` 环境变量调整
+- 并发数通过 `config.yaml` 的 `global.concurrency` 配置
 
 ### 序号预分配
 

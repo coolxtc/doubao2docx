@@ -35,7 +35,7 @@ from src.generator.batch_report import BatchReport, print_folder_link
 from src.exceptions import CrawlerError, ParseError, ExportError
 
 # 全局配置实例
-_config = GlobalConfig()
+_config = GlobalConfig.load()
 
 # 预编译的正则表达式，用于从 URL 提取 thread ID
 THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
@@ -313,7 +313,7 @@ async def fetch_and_export_single(
         # 步骤 9: 生成文档
         update_step("生成文档")
 
-        config = DocumentConfig(title=chat_data.title)
+        config = DocumentConfig(title=chat_data.title, style_config=_config.document_style)
         builder = DocxBuilder(config)
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
 
