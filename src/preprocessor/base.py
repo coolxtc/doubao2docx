@@ -579,13 +579,16 @@ class BaseParser(ABC):
         for idx, child in enumerate(li_elements):
             direct_text = self._get_direct_text(child)
             list_marker = "•" if element.name == "ul" else None
+            has_nested_list = child.find(["ul", "ol"], recursive=False) is not None
 
             if direct_text:
                 if element.name == "ul":
                     items.append(InlineContent(type="text", content=direct_text, bold=bold, italic=italic, list_marker=list_marker, level=level))
                 else:
                     items.append(InlineContent(type="text", content=f"{counter}. {direct_text}", bold=bold, italic=italic, level=level))
-                    counter += 1
+
+            if element.name == "ol" and (direct_text or has_nested_list):
+                counter += 1
 
             nested_items = []
             self._collect_nested_content_in_li(child, nested_items, bold, italic)
