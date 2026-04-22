@@ -313,15 +313,15 @@ async def fetch_and_export_single(
         # 步骤 9: 生成文档
         update_step("生成文档")
 
-        config = DocumentConfig(title=chat_data.title, style_config=_config.document_style)
-        builder = DocxBuilder(config)
-        builder.build_blocks(chat_data.title, all_blocks, str(output_path))
-
         # 检查是否获取到消息内容，避免生成空文档
         if not all_blocks:
             raise CrawlerError(
                 "未能提取到任何消息内容，可能是页面加载失败、需要登录或反爬拦截"
             )
+
+        config = DocumentConfig(title=chat_data.title, style_config=_config.document_style)
+        builder = DocxBuilder(config)
+        builder.build_blocks(chat_data.title, all_blocks, str(output_path))
 
         fail_count, fail_urls = builder.get_image_failures()
         if fail_count > 0:
@@ -411,8 +411,9 @@ async def fetch_and_export_batch(
 
     async def bounded_export(task_index: int, url: str):
         """带浏览器池复用的导出函数"""
-        page = await pool.acquire(concurrency)
+        page = None
         try:
+            page = await pool.acquire(concurrency)
             return await fetch_and_export_single(
                 url, output_dir, anti_detect_level, task_index, total, namer,
                 external_page=page
@@ -420,7 +421,8 @@ async def fetch_and_export_batch(
         except Exception as e:
             return (url, False, str(e), None)
         finally:
-            await pool.release(page)
+            if page is not None:
+                await pool.release(page)
 
     try:
         # 创建所有任务
@@ -434,6 +436,11 @@ async def fetch_and_export_batch(
 
         # 收集结果
         for result in results:
+            # 防御性：处理未预料的异常
+            if isinstance(result, Exception):
+                report.add_failure("未知URL", str(result))
+                continue
+            # 正常结果
             if isinstance(result, tuple) and len(result) == 4:
                 url, success, filename, file_path = result
                 if success:
