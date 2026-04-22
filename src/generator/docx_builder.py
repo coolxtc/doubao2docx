@@ -88,6 +88,7 @@ class DocxBuilder:
         self._last_list_type = None
         self._last_list_level = 0
         self._list_counter = 0
+        self._last_block_type = None
 
         self._image_failure_count = 0
         self._image_failure_urls: list[str] = []
@@ -180,6 +181,10 @@ class DocxBuilder:
             for run in heading.runs:
                 run.font.color.rgb = RGBColor(0, 0, 0)
                 self._set_run_font(run)
+            # 标题意味着新的逻辑分组，重置列表状态，让后续列表从 1 开始编号
+            self._last_list_type = None
+            self._last_list_level = 0
+            self._list_counter = 0
         elif block.type == "list":
             self._add_list(block.content, block.language)
         elif block.type == "list_item":
@@ -207,7 +212,7 @@ class DocxBuilder:
         if block.items:
             # 包含内联内容的列表项（如加粗文本、公式）
             if list_type == "ol":
-                if self._last_list_type != "ol" or self._last_list_level != level:
+                if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
                     self._list_counter = 0
                 self._list_counter += 1
                 start_index = self._list_counter
@@ -221,7 +226,7 @@ class DocxBuilder:
         else:
             # 纯文本列表项
             if list_type == "ol":
-                if self._last_list_type != "ol" or self._last_list_level != level:
+                if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
                     self._list_counter = 0
                 self._list_counter += 1
                 self._last_list_type = "ol"
@@ -235,10 +240,8 @@ class DocxBuilder:
                 para = self.document.add_paragraph(block.content, style="List Bullet")
                 for run in para.runs:
                     self._set_run_font(run)
-
-            # 嵌套列表需要增加缩进
-            if level > 0:
-                para.paragraph_format.left_indent = Inches(level * 0.5)
+        
+        self._last_block_type = block.type
 
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
         """添加内联内容（文本和公式混合的段落）"""
@@ -248,8 +251,28 @@ class DocxBuilder:
         para = self._create_inline_paragraph(list_type, start_index, level)
         last_run = None
         prev_was_latex = False
-        for item in items:
+        for idx, item in enumerate(items):
+            # 有列表标记时，创建新的无序列表段落
+            if item.list_marker and item.type == "text":
+                para = self.document.add_paragraph(style="List Bullet")
+                run = para.add_run(item.content)
+                self._set_run_font(run)
+                if item.bold:
+                    run.font.bold = True
+                if item.italic:
+                    run.font.italic = True
+                if level > 0:
+                    para.paragraph_format.left_indent = Inches(level * 0.5)
+                last_run = None
+                prev_was_latex = False
+                continue
+
             if item.type == "text":
+                # 跳过纯换行符（下一个元素是列表项时会自己创建段落）
+                if item.content == "\n":
+                    next_item = items[idx + 1] if idx + 1 < len(items) else None
+                    if next_item and next_item.list_marker:
+                        continue
                 if item.content == "\n" and (prev_was_latex or last_run is None):
                     para.add_run("").add_break(WD_BREAK.LINE)
                     prev_was_latex = False
@@ -291,6 +314,12 @@ class DocxBuilder:
                             os.unlink(temp_path)
                 last_run = None
                 prev_was_latex = False
+            elif item.type == "table":
+                self._add_table(item.data)
+                para = self.document.add_paragraph()
+            elif item.type == "code":
+                self._add_code_block(item.content)
+                para = self.document.add_paragraph()
 
     def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
         """

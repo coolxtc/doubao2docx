@@ -57,6 +57,8 @@ class InlineContent:
     bold: bool = False
     italic: bool = False
     image_url: Optional[str] = None
+    data: Any = None
+    list_marker: Optional[str] = None  # 列表标记："•" 用于无序列表
 
 
 @dataclass 
@@ -464,17 +466,20 @@ class BaseParser(ABC):
         """处理单个列表项 - 智能判断简单或复杂类型"""
         has_nested_list = li.find(["ul", "ol"], recursive=False)
         has_br = li.find("br") is not None or any(
-            isinstance(x, str) and "line-break" in x 
+            isinstance(x, str) and "line-break" in x
             for x in (li.get("class") or [])
         )
         has_strong = li.find("strong") or li.find("b")
         has_math = self._find_math_in_element(li)
         has_em = li.find("em") or li.find("i")
-        
-        if has_br or has_strong or has_math or has_em or has_nested_list:
+        has_picture = li.find("picture") is not None
+        has_table = li.find("table") is not None
+        has_pre = li.find("pre") is not None
+
+        if has_br or has_strong or has_math or has_em or has_nested_list or has_picture or has_table or has_pre:
             self._process_complex_list_item(li, blocks, list_type, level)
             return
-        
+
         text = li.get_text(strip=True)
         if text:
             blocks.append(TextBlock(type="list_item", content=text, language=list_type, level=level))
@@ -482,7 +487,6 @@ class BaseParser(ABC):
     def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str, level: int = 0) -> None:
         """处理复杂的列表项 - 包含内联样式、公式或嵌套列表"""
         items: list[InlineContent] = []
-        nested_lists: list[tuple[Tag, str]] = []  # 收集嵌套列表，稍后统一处理
         current_text = ""
         current_bold = False
         current_italic = False
@@ -539,15 +543,20 @@ class BaseParser(ABC):
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
+                elif child.name == "table":
+                    flush()
+                    table_data = self._parse_table(child)
+                    if table_data:
+                        items.append(InlineContent(type="table", content="", data=table_data, bold=current_bold, italic=current_italic))
+                elif child.name == "pre":
+                    if not child.get(self.config.code_expanded_attr):
+                        flush()
+                        code_content = child.get_text("\n", strip=True)
+                        items.append(InlineContent(type="code", content=code_content, bold=current_bold, italic=current_italic))
                 elif child.name in ("ul", "ol"):
                     flush()
-                    if items:
-                        valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image")]
-                        if valid_items:
-                            blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
-                    items = []
-                    current_text = ""
-                    nested_lists.append((child, child.name))
+                    items.append(InlineContent(type="text", content="\n", bold=current_bold, italic=current_italic))
+                    self._extract_nested_list_text(child, items, current_bold, current_italic)
                 else:
                     # 其他元素，尝试提取文本
                     sub_text = child.get_text(strip=False)
@@ -558,13 +567,77 @@ class BaseParser(ABC):
         
         # 添加列表项到 blocks
         if items:
-            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image")]
+            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image", "table", "code")]
             if valid_items:
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
-        
-        # 统一处理所有嵌套列表
-        for nested_tag, nested_type in nested_lists:
-            self._process_list(nested_tag, nested_type, blocks, level + 1)
+
+    def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False) -> None:
+        """提取嵌套列表的文本内容作为 InlineContent"""
+        counter = 1
+        li_elements = element.find_all("li", recursive=False)
+        for idx, child in enumerate(li_elements):
+            # 只获取列表项的直接文本（排除嵌套的 ul/ol）
+            direct_text = self._get_direct_text(child)
+
+            # 无序列表项添加列表标记
+            list_marker = "•" if element.name == "ul" else None
+
+            if direct_text:
+                if element.name == "ul":
+                    items.append(InlineContent(type="text", content=direct_text, bold=bold, italic=italic, list_marker=list_marker))
+                else:
+                    items.append(InlineContent(type="text", content=f"{counter}. {direct_text}", bold=bold, italic=italic))
+                    counter += 1
+
+            # 收集并添加深层嵌套的内容块（图片、表格、代码）
+            nested_items = []
+            self._collect_nested_content_in_li(child, nested_items, bold, italic)
+            # 为嵌套内容块添加列表标记
+            for ni in nested_items:
+                ni.list_marker = list_marker
+            items.extend(nested_items)
+
+            # 递归处理更深层的嵌套
+            nested = child.find(["ul", "ol"], recursive=False)
+            if nested:
+                self._extract_nested_list_text(nested, items, bold, italic)
+
+    def _get_direct_text(self, element: Tag) -> str:
+        """获取元素的直接文本（排除嵌套的 ul/ol）"""
+        texts = []
+        for child in element.children:
+            if isinstance(child, str):
+                text = str(child).strip()
+                if text:
+                    texts.append(text)
+            elif hasattr(child, 'name') and child.name in ('ul', 'ol'):
+                continue
+            elif hasattr(child, 'children'):
+                texts.append(self._get_direct_text(child))
+        return ''.join(texts).strip()
+
+    def _collect_nested_content_in_li(self, li: Tag, items: list[InlineContent], bold: bool, italic: bool) -> None:
+        """收集列表项中的深层嵌套内容块（图片、表格、代码）"""
+        for pic in li.find_all("picture"):
+            url = self._extract_image_url(pic)
+            if url:
+                items.append(InlineContent(type="image", content="", image_url=url))
+
+        for table in li.find_all("table", recursive=False):
+            table_data = self._parse_table(table)
+            if table_data:
+                items.append(InlineContent(type="table", content="", data=table_data, bold=bold, italic=italic))
+
+        for pre in li.find_all("pre", recursive=False):
+            if pre.get(self.config.code_expanded_attr):
+                continue
+            code_content = pre.get_text("\n", strip=True)
+            lang = ""
+            code_elem = pre.find("code")
+            if code_elem:
+                lang = code_elem.get("class") or []
+                lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
+            items.append(InlineContent(type="code", content=code_content, bold=bold, italic=italic))
 
     def _process_nested_container(self, element: Tag, items: list[InlineContent], 
                                    parent_bold: bool = False, parent_italic: bool = False) -> None:
@@ -627,6 +700,16 @@ class BaseParser(ABC):
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
+                elif child.name == "table":
+                    flush()
+                    table_data = self._parse_table(child)
+                    if table_data:
+                        items.append(InlineContent(type="table", content="", data=table_data, bold=current_bold, italic=current_italic))
+                elif child.name == "pre":
+                    if not child.get(self.config.code_expanded_attr):
+                        flush()
+                        code_content = child.get_text("\n", strip=True)
+                        items.append(InlineContent(type="code", content=code_content, bold=current_bold, italic=current_italic))
                 elif child.name in ("ul", "ol"):
                     pass
                 elif child.name == "p":
