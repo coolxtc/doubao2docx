@@ -59,6 +59,7 @@ class InlineContent:
     image_url: Optional[str] = None
     data: Any = None
     list_marker: Optional[str] = None  # 列表标记："•" 用于无序列表
+    level: int = 0  # 嵌套层级（0 表示无嵌套或顶层）
 
 
 @dataclass 
@@ -556,7 +557,7 @@ class BaseParser(ABC):
                 elif child.name in ("ul", "ol"):
                     flush()
                     items.append(InlineContent(type="text", content="\n", bold=current_bold, italic=current_italic))
-                    self._extract_nested_list_text(child, items, current_bold, current_italic)
+                    self._extract_nested_list_text(child, items, current_bold, current_italic, level + 1)
                 else:
                     # 其他元素，尝试提取文本
                     sub_text = child.get_text(strip=False)
@@ -571,36 +572,31 @@ class BaseParser(ABC):
             if valid_items:
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
 
-    def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False) -> None:
+    def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False, level: int = 1) -> None:
         """提取嵌套列表的文本内容作为 InlineContent"""
         counter = 1
         li_elements = element.find_all("li", recursive=False)
         for idx, child in enumerate(li_elements):
-            # 只获取列表项的直接文本（排除嵌套的 ul/ol）
             direct_text = self._get_direct_text(child)
-
-            # 无序列表项添加列表标记
             list_marker = "•" if element.name == "ul" else None
 
             if direct_text:
                 if element.name == "ul":
-                    items.append(InlineContent(type="text", content=direct_text, bold=bold, italic=italic, list_marker=list_marker))
+                    items.append(InlineContent(type="text", content=direct_text, bold=bold, italic=italic, list_marker=list_marker, level=level))
                 else:
-                    items.append(InlineContent(type="text", content=f"{counter}. {direct_text}", bold=bold, italic=italic))
+                    items.append(InlineContent(type="text", content=f"{counter}. {direct_text}", bold=bold, italic=italic, level=level))
                     counter += 1
 
-            # 收集并添加深层嵌套的内容块（图片、表格、代码）
             nested_items = []
             self._collect_nested_content_in_li(child, nested_items, bold, italic)
-            # 为嵌套内容块添加列表标记
             for ni in nested_items:
                 ni.list_marker = list_marker
+                ni.level = level
             items.extend(nested_items)
 
-            # 递归处理更深层的嵌套
             nested = child.find(["ul", "ol"], recursive=False)
             if nested:
-                self._extract_nested_list_text(nested, items, bold, italic)
+                self._extract_nested_list_text(nested, items, bold, italic, level + 1)
 
     def _get_direct_text(self, element: Tag) -> str:
         """获取元素的直接文本（排除嵌套的 ul/ol）"""

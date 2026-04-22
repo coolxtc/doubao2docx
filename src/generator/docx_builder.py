@@ -261,8 +261,9 @@ class DocxBuilder:
                     run.font.bold = True
                 if item.italic:
                     run.font.italic = True
-                if level > 0:
-                    para.paragraph_format.left_indent = Inches(level * 0.5)
+                item_level = item.level if hasattr(item, 'level') else level
+                if item_level > 0:
+                    para.paragraph_format.left_indent = Inches(item_level * 0.5)
                 last_run = None
                 prev_was_latex = False
                 continue
