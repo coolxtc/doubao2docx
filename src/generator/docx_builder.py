@@ -309,10 +309,18 @@ class DocxBuilder:
                             f.write(image_data)
                             temp_path = f.name
                         max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
+                        # 创建新段落放置图片，确保独立成段
+                        para = self.document.add_paragraph()
                         para.add_run().add_picture(temp_path, width=max_width)
+                    except Exception:
+                        self._image_failure_count += 1
+                        self._image_failure_urls.append(url)
                     finally:
                         if temp_path and os.path.exists(temp_path):
                             os.unlink(temp_path)
+                else:
+                    self._image_failure_count += 1
+                    self._image_failure_urls.append(url or "(空URL)")
                 last_run = None
                 prev_was_latex = False
             elif item.type == "table":
@@ -561,7 +569,7 @@ class DocxBuilder:
             return None
 
     def _add_image(self, url: str, max_width: Optional[Inches] = None) -> None:
-        """添加图片到文档"""
+        """添加图片（独立成段，不与前文同行）"""
         image_data = self._download_image(url)
         if image_data is None:
             self._add_paragraph("[图片加载失败]")
@@ -573,7 +581,9 @@ class DocxBuilder:
                 f.write(image_data)
                 temp_path = f.name
             width = max_width or Inches(self.config.style_config.image_width if self.config.style_config else 5.0)
-            self.document.add_picture(temp_path, width=width)
+            # 先创建段落再添加图片，确保图片不与前文同行
+            para = self.document.add_paragraph()
+            para.add_run().add_picture(temp_path, width=width)
         except Exception as e:
             self._image_failure_count += 1
             self._image_failure_urls.append(url)
