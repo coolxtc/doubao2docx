@@ -317,6 +317,12 @@ async def fetch_and_export_single(
         builder = DocxBuilder(config)
         builder.build_blocks(chat_data.title, all_blocks, str(output_path))
 
+        # 检查是否获取到消息内容，避免生成空文档
+        if not all_blocks:
+            raise CrawlerError(
+                "未能提取到任何消息内容，可能是页面加载失败、需要登录或反爬拦截"
+            )
+
         fail_count, fail_urls = builder.get_image_failures()
         if fail_count > 0:
             doc_title = chat_data.title[:20] + "..." if len(chat_data.title) > 20 else chat_data.title
@@ -411,6 +417,8 @@ async def fetch_and_export_batch(
                 url, output_dir, anti_detect_level, task_index, total, namer,
                 external_page=page
             )
+        except Exception as e:
+            return (url, False, str(e), None)
         finally:
             await pool.release(page)
 
@@ -426,10 +434,7 @@ async def fetch_and_export_batch(
 
         # 收集结果
         for result in results:
-            if isinstance(result, Exception):
-                error_type = type(result).__name__
-                report.add_failure(str(result), f"{error_type}")
-            elif isinstance(result, tuple) and len(result) == 4:
+            if isinstance(result, tuple) and len(result) == 4:
                 url, success, filename, file_path = result
                 if success:
                     report.add_success(url, filename, file_path if file_path else None)

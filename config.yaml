@@ -39,7 +39,7 @@ document_style:
 # ------------------------------------------------------------
 global:
   url_fallback_length: 20         # URL 标签 fallback 截断长度
-  concurrency: 3                   # 批量导出并发数
+  concurrency: 5                   # 批量导出并发数
 
 # ------------------------------------------------------------
 # 索引配置 - 控制 link_index.json 的行为
