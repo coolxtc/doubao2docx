@@ -14,17 +14,6 @@ SCROLL_IMAGES_JS = """
 }
 """
 
-SCROLL_CODE_BUTTONS_JS = """
-() => {
-    document.querySelectorAll('div').forEach((div) => {
-        if (div.textContent && div.textContent.includes('已生成代码')) {
-            const btn = div.querySelector('[class*="button-"]');
-            if (btn) div.scrollIntoView({ behavior: 'instant', block: 'center' });
-        }
-    });
-}
-"""
-
 CLICK_EXPAND_BUTTONS_JS = """
 () => {
     document.querySelectorAll('div').forEach((div) => {
@@ -75,7 +64,6 @@ class PageActions:
 
         # 1. 回顶部
         await page.evaluate(SCROLL_TO_TOP_JS)
-        await page.wait_for_timeout(base_wait)
 
         # 2. 触发懒加载图片
         imgs = await page.query_selector_all("picture img, img[class*='image']")
@@ -85,16 +73,11 @@ class PageActions:
 
         # 3. 回顶部
         await page.evaluate(SCROLL_TO_TOP_JS)
-        await page.wait_for_timeout(base_wait)
 
-        # 4. 滚动代码按钮
-        await page.evaluate(SCROLL_CODE_BUTTONS_JS)
-        await page.wait_for_timeout(base_wait)
-
-        # 5. 展开代码
+        # 4. 展开代码
         await page.evaluate(CLICK_EXPAND_BUTTONS_JS)
         await page.evaluate(INJECT_EXPANDED_CODE_JS)
         await page.wait_for_timeout(base_wait)
 
-        # 6. 滚动到底部
+        # 5. 滚动到底部
         await page.evaluate(SCROLL_TO_BOTTOM_JS)
