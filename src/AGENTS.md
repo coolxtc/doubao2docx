@@ -36,3 +36,9 @@ utils.py        → Windows 兼容性
 ## 注释风格
 
 面向 Python 新手：详细解释"为什么这样做"。
+
+## ANTI-PATTERNS (THIS PROJECT)
+
+- **禁止删除测试使测试通过**
+- **禁止 `as any` 绕过类型检查**
+- **禁止空 catch 块**：`except: pass`

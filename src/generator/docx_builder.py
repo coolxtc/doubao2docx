@@ -80,18 +80,19 @@ class DocxBuilder:
         4. 初始化列表状态追踪器（用于有序列表序号）
         """
         self.config = config or DocumentConfig(style_config=get_config().document_style)
-        self.document = Document()
-        self.latex_converter = LaTeXConverter()
+        self.document = Document()  # python-docx 文档对象
+        self.latex_converter = LaTeXConverter()  # LaTeX 公式转换器
         self._setup_document()
 
-        # 列表状态追踪（用于有序列表序号）
-        self._last_list_type = None
-        self._last_list_level = 0
-        self._list_counter = 0
-        self._last_block_type = None
+        # 列表状态追踪（用于有序列表序号连续性）
+        self._last_list_type: str | None = None  # 上一个列表类型（"ul" 或 "ol"）
+        self._last_list_level: int = 0  # 上一个列表的嵌套层级
+        self._list_counter: int = 0  # 当前有序列表的序号
+        self._last_block_type: str | None = None  # 上一个内容块类型
 
-        self._image_failure_count = 0
-        self._image_failure_urls: list[str] = []
+        # 图片下载失败追踪
+        self._image_failure_count: int = 0  # 失败图片数量
+        self._image_failure_urls: list[str] = []  # 失败图片 URL 列表
 
         # 缓存配置引用，避免方法内重复调用 get_config()
         from ..config import get_config
