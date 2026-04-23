@@ -76,7 +76,7 @@ class AntiDetectMiddleware:
         隐藏 webdriver 自动化标识
         
         通过注入 JavaScript 将 navigator.webdriver 设为 undefined，
-        避免被检测为自动化工具。
+        同时模拟真实浏览器特征，避免被检测为自动化工具。
         
         Args:
             context: Playwright 浏览器上下文
@@ -85,6 +85,35 @@ class AntiDetectMiddleware:
             Object.defineProperty(navigator, 'webdriver', {
                 get: () => undefined
             });
+            
+            // 模拟真实 languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['zh-CN', 'zh', 'en-US', 'en']
+            });
+            
+            // 模拟 plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5].map(() => ({
+                    name: Math.random().toString(36).substring(7),
+                    description: '',
+                    filename: ''
+                }))
+            });
+            
+            // 删除自动化特征
+            delete window.cdc_adoQpoasnfaoPgfQlAShMmHhkk;
+            delete window.__webdriver_evaluate;
+            delete window.domAutomation;
+            delete window.domAutomationActivated;
+            delete window.domAutomationController;
+            
+            // 模拟 permissions 查询
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (query) => (
+                query === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(query)
+            );
         """)
 
 

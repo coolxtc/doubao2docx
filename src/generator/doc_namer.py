@@ -258,6 +258,4 @@ class DocNamer:
                 self._next_index += 1
                 records[url] = LinkRecord(index=index, title=clean_title)
 
-            self.save()
-
         return f"{date_str}-{index} {clean_title}"

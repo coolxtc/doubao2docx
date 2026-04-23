@@ -61,7 +61,7 @@ class BrowserManager:
         执行步骤：
         1. 启动 Playwright
         2. 启动 Chromium 浏览器（无头模式）
-        3. 创建隔离的浏览器上下文
+        3. 创建隔离的浏览器上下文，模拟真实浏览器环境
         4. 应用反爬措施
         """
         from playwright.async_api import async_playwright
@@ -70,7 +70,11 @@ class BrowserManager:
         chromium = self.playwright.chromium
         self.browser = await chromium.launch(headless=True)
         if self.browser:
-            self.context = await self.browser.new_context()
+            self.context = await self.browser.new_context(
+                locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                viewport={"width": 1920, "height": 1080},
+            )
         else:
             raise RuntimeError("无法启动 Chromium 浏览器")
         await self.anti_detect.apply(self.context)
