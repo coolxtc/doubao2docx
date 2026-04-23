@@ -91,7 +91,6 @@ class DoubaoSpider:
         self._report_progress(FetchStep.LOADING_PAGE)
 
         await page.goto(url, timeout=self.config.page_load_timeout, wait_until="networkidle")
-        self._report_progress(FetchStep.PAGE_LOADED)
 
         if self.page_actions:
             await self.page_actions.scroll_all(page, self._report_progress)

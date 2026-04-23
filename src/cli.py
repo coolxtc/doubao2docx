@@ -146,10 +146,10 @@ class TaskManager:
         """
         table = Table(show_header=True, show_lines=False, box=None, pad_edge=False)
         table.add_column("序号", width=4)
-        table.add_column("进度", width=10)
+        table.add_column("进度", width=6)
         table.add_column("状态", width=8)
         table.add_column("耗时", width=5)
-        table.add_column("结果", no_wrap=True, max_width=30)
+        table.add_column("结果", no_wrap=True, max_width=40)
 
         for task in self.tasks:
             total = STEP_COUNT

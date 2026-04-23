@@ -12,7 +12,6 @@ class FetchStep(str, Enum):
     """爬虫步骤枚举"""
     STARTING = "任务开始"
     LOADING_PAGE = "加载网页"
-    PAGE_LOADED = "加载完成"
     LOADING_IMAGES = "加载图片"
     EXPANDING_CODE = "展开代码"
 
@@ -21,20 +20,18 @@ class FetchStep(str, Enum):
 STEP_INDEX = {
     FetchStep.STARTING: 0,
     FetchStep.LOADING_PAGE: 1,
-    FetchStep.PAGE_LOADED: 2,
-    FetchStep.LOADING_IMAGES: 3,
-    FetchStep.EXPANDING_CODE: 4,
+    FetchStep.LOADING_IMAGES: 2,
+    FetchStep.EXPANDING_CODE: 3,
 }
 
 # 字符串 key 版本（供 cli.py 使用）
 FETCH_STEP_NAMES = {
     "任务开始": 0,
     "加载网页": 1,
-    "加载完成": 2,
-    "加载图片": 3,
-    "展开代码": 4,
-    "解析内容": 5,
-    "生成文档": 6,
+    "加载图片": 2,
+    "展开代码": 3,
+    "解析内容": 4,
+    "生成文档": 5,
 }
 
 STEP_COUNT = len(FETCH_STEP_NAMES)
