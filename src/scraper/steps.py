@@ -11,10 +11,10 @@ from enum import Enum
 class FetchStep(str, Enum):
     """爬虫步骤枚举"""
     STARTING = "任务开始"
-    LOADING_PAGE = "访问页面"
+    LOADING_PAGE = "加载网页"
     PAGE_LOADED = "加载完成"
-    SCROLLING = "滚动加载"
-    COMPLETED = "爬取完成"
+    LOADING_IMAGES = "加载图片"
+    EXPANDING_CODE = "展开代码"
 
 
 # 步骤到索引的映射
@@ -22,17 +22,17 @@ STEP_INDEX = {
     FetchStep.STARTING: 0,
     FetchStep.LOADING_PAGE: 1,
     FetchStep.PAGE_LOADED: 2,
-    FetchStep.SCROLLING: 3,
-    FetchStep.COMPLETED: 4,
+    FetchStep.LOADING_IMAGES: 3,
+    FetchStep.EXPANDING_CODE: 4,
 }
 
 # 字符串 key 版本（供 cli.py 使用）
 FETCH_STEP_NAMES = {
     "任务开始": 0,
-    "访问页面": 1,
+    "加载网页": 1,
     "加载完成": 2,
-    "滚动加载": 3,
-    "爬取完成": 4,
+    "加载图片": 3,
+    "展开代码": 4,
     "解析内容": 5,
     "生成文档": 6,
 }

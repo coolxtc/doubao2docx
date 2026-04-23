@@ -93,10 +93,8 @@ class DoubaoSpider:
         await page.goto(url, timeout=self.config.page_load_timeout, wait_until="networkidle")
         self._report_progress(FetchStep.PAGE_LOADED)
 
-        self._report_progress(FetchStep.SCROLLING)
-
         if self.page_actions:
-            await self.page_actions.scroll_all(page)
+            await self.page_actions.scroll_all(page, self._report_progress)
 
         if self.extractor:
             chat_data = await self.extractor.extract_all(page, url)
@@ -105,8 +103,6 @@ class DoubaoSpider:
 
         if self._owns_browser:
             await page.close()
-
-        self._report_progress(FetchStep.COMPLETED)
 
         return chat_data
 

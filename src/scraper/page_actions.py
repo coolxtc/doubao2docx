@@ -1,6 +1,6 @@
 """页面交互操作模块"""
 
-from typing import Any
+from typing import Any, Callable
 
 from ..config import CrawlerConfig
 
@@ -59,25 +59,24 @@ class PageActions:
     def __init__(self, config: CrawlerConfig) -> None:
         self.config: CrawlerConfig = config
 
-    async def scroll_all(self, page: Any) -> None:
+    async def scroll_all(self, page: Any, progress_callback: Callable[[str], None] | None = None) -> None:
         base_wait = self.config.scroll_wait_ms
 
-        # 1. 回顶部
         await page.evaluate(SCROLL_TO_TOP_JS)
 
-        # 2. 触发懒加载图片
+        if progress_callback:
+            progress_callback("加载图片")
         imgs = await page.query_selector_all("picture img, img[class*='image']")
         for img in imgs:
             await img.scroll_into_view_if_needed()
         await page.wait_for_timeout(base_wait)
 
-        # 3. 回顶部
         await page.evaluate(SCROLL_TO_TOP_JS)
 
-        # 4. 展开代码
+        if progress_callback:
+            progress_callback("展开代码")
         await page.evaluate(CLICK_EXPAND_BUTTONS_JS)
         await page.evaluate(INJECT_EXPANDED_CODE_JS)
         await page.wait_for_timeout(base_wait)
 
-        # 5. 滚动到底部
         await page.evaluate(SCROLL_TO_BOTTOM_JS)
