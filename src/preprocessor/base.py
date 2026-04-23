@@ -218,7 +218,20 @@ class BaseParser(ABC):
         """处理 div.line-break 换行符"""
         prev = self._skip_whitespace_siblings(prev_sibling)
         
-        # 修复：跳过空白的 md-box-line-break div（豆包页面中常见的空换行容器）
+        # 先 flush 当前文本
+        if flush_fn:
+            flush_fn()
+        else:
+            stripped = current_text.strip()
+            if stripped:
+                items.append(InlineContent(
+                    type="text", 
+                    content=stripped, 
+                    bold=current_bold,
+                    italic=current_italic
+                ))
+        
+        # 跳过空白的 md-box-line-break div（豆包页面中常见的空换行容器）
         if isinstance(prev, Tag):
             if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes) 
                 and not prev.get_text(strip=True)):
@@ -231,17 +244,6 @@ class BaseParser(ABC):
         elif isinstance(prev, Tag) and prev.name in ("div", "span"):
             return "", parent_bold, parent_italic
         else:
-            if flush_fn:
-                flush_fn()
-            else:
-                stripped = current_text.strip()
-                if stripped:
-                    items.append(InlineContent(
-                        type="text", 
-                        content=stripped, 
-                        bold=current_bold,
-                        italic=current_italic
-                    ))
             items.append(InlineContent(type="text", content="\n"))
             return "", parent_bold, parent_italic
     
@@ -466,9 +468,13 @@ class BaseParser(ABC):
     def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1, level: int = 0) -> None:
         """处理单个列表项 - 智能判断简单或复杂类型"""
         has_nested_list = li.find(["ul", "ol"], recursive=False)
+        # 检查是否有换行 div（递归查找子元素）
         has_br = li.find("br") is not None or any(
             isinstance(x, str) and "line-break" in x
             for x in (li.get("class") or [])
+        ) or any(
+            isinstance(child, Tag) and child.name == "div" and self._has_any_class(child, self.config.line_break_classes)
+            for child in li.children
         )
         has_strong = li.find("strong") or li.find("b")
         has_math = self._find_math_in_element(li)

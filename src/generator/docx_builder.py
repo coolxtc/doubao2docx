@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from typing import Optional
-import xml.etree.ElementTree as etree
+from lxml import etree
 
 import requests
 
@@ -441,6 +441,7 @@ class DocxBuilder:
                 for para in doc.paragraphs:
                     math_el = self._extract_math_from_paragraph(para._element)
                     if math_el is not None:
+                        self._set_math_chinese_font(math_el, self.config.font_name)
                         return math_el
             if result.stderr:
                 print(f"pandoc警告: {result.stderr[:200]}")
@@ -469,6 +470,33 @@ class DocxBuilder:
             if "oMathPara" in tag:
                 return child
         return None
+
+    def _set_math_chinese_font(self, math_element: etree.Element, font_name: str) -> None:
+        W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+        M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+        def qn_m(tag: str) -> str:
+            return "{%s}%s" % (M_NS, tag)
+
+        def qn_w(tag: str) -> str:
+            return "{%s}%s" % (W_NS, tag)
+
+        def is_chinese(text: str) -> bool:
+            return any('\u4e00' <= c <= '\u9fff' for c in text)
+
+        for m_r in math_element.iter(qn_m("r")):
+            m_t = m_r.find(qn_m("t"))
+            if m_t is not None and m_t.text and is_chinese(m_t.text):
+                w_rPr = m_r.find(qn_w("rPr"))
+                if w_rPr is None:
+                    from docx.oxml import parse_xml
+                    w_rPr = parse_xml(
+                        f'<w:rPr xmlns:w="{W_NS}">'
+                        f'<w:rFonts w:hint="eastAsia" w:ascii="{font_name}" w:hAnsi="{font_name}" w:eastAsia="{font_name}" w:cs="{font_name}"/>'
+                        f"<w:b w:val='0'/><w:i w:val='0'/>"
+                        f"</w:rPr>"
+                    )
+                    m_r.append(w_rPr)
 
     def _compensate_text_latex(self, latex: str) -> str:
         """补偿 \\text{} 中的空格丢失问题"""
