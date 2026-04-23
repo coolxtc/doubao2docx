@@ -235,9 +235,11 @@ class BaseParser(ABC):
         if isinstance(prev, Tag):
             if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes) 
                 and not prev.get_text(strip=True)):
+                items.append(InlineContent(type="text", content="\n"))
                 return "", parent_bold, parent_italic
         
         if isinstance(prev, NavigableString):
+            items.append(InlineContent(type="text", content="\n"))
             return "", parent_bold, parent_italic
         elif isinstance(prev, Tag) and prev.name in ("ul", "ol"):
             return "", parent_bold, parent_italic
