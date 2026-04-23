@@ -8,12 +8,7 @@
 # ------------------------------------------------------------
 crawler:
   page_load_timeout: 30000        # 页面加载超时（毫秒）
-  scroll_max_attempts: 30         # 最大滚动次数，防止无限滚动
-  scroll_wait_ms: 1000            # 滚动后等待时间（毫秒）
-  code_expand_settle_ms: 500      # 代码块展开后稳定等待（毫秒）
-  code_expand_base_ms: 500        # 代码块展开基础等待（毫秒）
-  code_expand_max_retries: 6      # 代码块展开最大重试次数
-  code_expand_extra_ms: 2000      # 代码块展开指数退避增量（毫秒）
+  scroll_wait_ms: 500            # 滚动后等待时间（毫秒）
   browser_close_delay: 0.25       # 浏览器关闭延迟（秒）
   user_agents:                    # User-Agent 列表（随机选择）
     - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.7319.89 Safari/537.36"

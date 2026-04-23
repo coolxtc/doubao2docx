@@ -20,12 +20,7 @@ YAML_AVAILABLE: bool = yaml is not None
 class CrawlerData(TypedDict):
     page_load_timeout: int
     timeout: int
-    scroll_max_attempts: int
     scroll_wait_ms: int
-    code_expand_settle_ms: int
-    code_expand_base_ms: int
-    code_expand_extra_ms: int
-    code_expand_max_retries: int
     browser_close_delay: float
     user_agents: list[str]
 
@@ -98,12 +93,7 @@ def _require_keys(data: _ConfigDict, keys: list[str], section: str) -> None:
 class CrawlerConfig:
     page_load_timeout: int
     timeout: int
-    scroll_max_attempts: int
     scroll_wait_ms: int
-    code_expand_settle_ms: int
-    code_expand_base_ms: int
-    code_expand_extra_ms: int
-    code_expand_max_retries: int
     browser_close_delay: float
     user_agents: list[str]
 
@@ -142,9 +132,7 @@ class GlobalConfig:
 
         crawler_data: _ConfigDict = dict(data["crawler"])
         _require_keys(crawler_data, [
-            "page_load_timeout", "scroll_max_attempts", "scroll_wait_ms",
-            "code_expand_settle_ms", "code_expand_base_ms", "code_expand_extra_ms",
-            "code_expand_max_retries", "browser_close_delay", "user_agents"
+            "page_load_timeout", "scroll_wait_ms", "browser_close_delay", "user_agents"
         ], "crawler")
         crawler_data.setdefault("timeout", crawler_data["page_load_timeout"])
         crawler = CrawlerConfig(**crawler_data)

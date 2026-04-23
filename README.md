@@ -32,7 +32,6 @@
 | 代码块展开 | 自动点击展开隐藏的代码块，确保代码完整导出 |
 | 进度日志 | 实时显示各阶段进度（启动浏览器→爬取→解析→生成），方便追踪 |
 | 批量导出 | 支持并发导出多个聊天记录 |
-| 指数退避 | 代码展开失败时自动重试，采用指数退避策略 |
 
 ### 支持解析的内容类型
 
@@ -60,9 +59,8 @@
 
 技术细节：
 - 使用 Playwright 库控制 Chromium 浏览器
-- 逐屏滚动触发懒加载内容
+- 6 步固定流程：回顶部 → 触发懒加载图片 → 回顶部 → 滚动代码按钮 → 展开代码 → 滚动到底部
 - 自动点击"已生成代码"按钮展开代码块
-- 指数退避重试机制确保代码展开成功
 
 **第二步：内容解析（类似翻译工作）**
 
@@ -318,12 +316,7 @@ python3 -m src.cli https://www.doubao.com/thread/test --index 5
 ```yaml
 crawler:
   page_load_timeout: 30000        # 页面加载超时（毫秒）
-  scroll_max_attempts: 30         # 最大滚动次数
-  scroll_wait_ms: 1000            # 滚动后等待时间（毫秒）
-  code_expand_settle_ms: 500      # 代码展开稳定等待（毫秒）
-  code_expand_base_ms: 500        # 代码展开基础等待（毫秒）
-  code_expand_max_retries: 6      # 代码展开最大重试次数
-  code_expand_extra_ms: 2000      # 代码展开指数退避增量（毫秒）
+  scroll_wait_ms: 500             # 滚动后等待时间（毫秒）
   browser_close_delay: 0.25        # 浏览器关闭延迟（秒）
   user_agents: [...]              # User-Agent 列表
 
@@ -539,7 +532,7 @@ python3 -m src.cli url1 url2 url3 url4 url5 --concurrency 10
 ### Q8: 代码块没有完整导出
 
 **原因**：代码块可能是动态加载的，展开需要时间。  
-**解决方法**：程序已内置指数退避重试机制。如果仍然失败，可以增加 `CRAWLER_CODE_EXPAND_MAX_RETRIES` 配置。
+**解决方法**：确保页面正常加载，可以尝试增加 `scroll_wait_ms` 配置值。
 
 ---
 

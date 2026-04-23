@@ -95,11 +95,8 @@ class DoubaoSpider:
 
         self._report_progress(FetchStep.SCROLLING)
 
-        def on_scroll_progress(current: int, total: int) -> None:
-            self._report_progress(f"滚动{current}次")
-
         if self.page_actions:
-            await self.page_actions.scroll_all(page, progress_callback=on_scroll_progress)
+            await self.page_actions.scroll_all(page)
 
         if self.extractor:
             chat_data = await self.extractor.extract_all(page, url)
