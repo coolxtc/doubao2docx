@@ -21,7 +21,7 @@ from ..exceptions import ParseError
 class PlatformConfig:
     """平台配置数据类 - 集中管理各平台的差异配置"""
     name: str = "doubao"
-    latex_attr: str = "data-custom-copy-text"
+    latex_attr: str = "copy-text"
     math_display_classes: list[str] = field(default_factory=lambda: ["math-block", "katex--display"])
     line_break_classes: list[str] = field(default_factory=lambda: ["md-box-line-break", "line-break"])
     code_container_class: str = "custom-code-block-container"
