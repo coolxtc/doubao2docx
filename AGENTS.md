@@ -9,7 +9,7 @@
 ## 运行命令
 
 ```bash
-pip install -r requirements.txt && playwright install chromium
+pip install -e . && playwright install chromium
 python3 -m src.cli <豆包链接>        # 主入口
 pip install -e . && doubao-export <url> # 安装后
 ```

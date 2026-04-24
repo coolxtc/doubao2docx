@@ -186,17 +186,10 @@ cd doubao-export
 在项目根目录下执行：
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-这会安装以下依赖包：
-
-- **playwright**：自动化浏览器，用于抓取网页
-- **python-docx**：Word 文档操作库
-- **beautifulsoup4**：HTML 解析库
-- **lxml**：XML/HTML 解析器
-- **rich**：终端格式化输出
-- **pyyaml**：YAML 配置文件解析库
+依赖已在 pyproject.toml 中定义，安装时自动包含。
 
 ### 第三步：安装 Playwright 浏览器
 
@@ -440,7 +433,6 @@ doubao-export/
 ├── data/link_index.json         # 链接索引文件
 ├── config.yaml                  # 配置文件
 ├── pyproject.toml              # 项目配置
-├── requirements.txt             # Python 依赖列表
 └── README.md                    # 项目说明文档
 ```
 
