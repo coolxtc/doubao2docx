@@ -26,23 +26,16 @@ from bs4 import Tag
 
 import re
 
+from ..config import get_config
 from .base import BaseParser, PlatformConfig, ParsedPage
 
 
 class DoubaoHTMLParser(BaseParser):
-    """
-    豆包 HTML 解析器
+    config: PlatformConfig
 
-    实现 BaseParser 中定义的抽象钩子方法，
-    提供豆包平台特定的 HTML 解析逻辑。
-
-    配置说明：
-    - 使用默认的 PlatformConfig 实例
-    - 所有平台特定参数都存储在 config 中
-    """
-
-    # 使用默认平台配置
-    config = PlatformConfig()
+    def __init__(self) -> None:
+        cfg = get_config()
+        self.config = PlatformConfig(latex_attr=cfg.parser.latex_attr)
 
     def parse(self, html: str) -> ParsedPage:
         """解析 HTML 页面"""

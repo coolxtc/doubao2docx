@@ -52,12 +52,11 @@ class IndexData(TypedDict):
 
 
 class PandocData(TypedDict):
-    """
-    Pandoc 配置数据类型
-    
-    定义公式转换工具的配置。
-    """
-    timeout: int                # Pandoc 超时时间（秒）
+    timeout: int
+
+
+class ParserData(TypedDict):
+    latex_attr: str
 
 
 class GlobalData(TypedDict):
@@ -76,11 +75,12 @@ class ConfigData(TypedDict):
     
     包含所有配置节的总类型定义。
     """
-    crawler: CrawlerData        # 爬虫配置
-    document_style: DocumentStyleData  # 文档样式配置
-    index: IndexData            # 索引配置
-    pandoc: PandocData          # Pandoc 配置
-    global_: GlobalData         # 全局配置（YAML 中为 global，Python 关键字需加下划线）
+    crawler: CrawlerData
+    document_style: DocumentStyleData
+    index: IndexData
+    pandoc: PandocData
+    parser: ParserData
+    global_: GlobalData
 
 
 def _get_config_path() -> Path:
@@ -164,7 +164,12 @@ class PandocConfig:
     
     存储公式转换工具配置。
     """
-    timeout: int                # Pandoc 超时时间（秒）
+    timeout: int
+
+
+@dataclass
+class ParserConfig:
+    latex_attr: str
 
 
 @dataclass
@@ -173,6 +178,7 @@ class GlobalConfig:
     document_style: DocumentStyleConfig
     index: IndexConfig
     pandoc: PandocConfig
+    parser: ParserConfig
     url_fallback_length: int
     concurrency: int
 
@@ -202,6 +208,10 @@ class GlobalConfig:
         _require_keys(pandoc_data, ["timeout"], "pandoc")
         pandoc = PandocConfig(**pandoc_data)
 
+        parser_data: _ConfigDict = dict(data["parser"])
+        _require_keys(parser_data, ["latex_attr"], "parser")
+        parser = ParserConfig(**parser_data)
+
         global_data: _ConfigDict = dict(data.get("global", {}))
         _require_keys(global_data, ["url_fallback_length", "concurrency"], "global")
 
@@ -210,6 +220,7 @@ class GlobalConfig:
             document_style=document_style,
             index=index,
             pandoc=pandoc,
+            parser=parser,
             url_fallback_length=global_data["url_fallback_length"],
             concurrency=global_data["concurrency"],
         )
