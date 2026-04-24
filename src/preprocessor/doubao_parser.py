@@ -24,6 +24,8 @@ from typing import List
 
 from bs4 import Tag
 
+import re
+
 from .base import BaseParser, PlatformConfig, ParsedPage
 
 
@@ -139,7 +141,8 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             LaTeX 公式字符串
         """
-        return str(element.get(self.config.latex_attr, ""))
+        latex = str(element.get(self.config.latex_attr, ""))
+        return re.sub(r'\\tag\{[^}]*\}', '', latex)
 
     def _is_image_element(self, element: Tag) -> bool:
         """
