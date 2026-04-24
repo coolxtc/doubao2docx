@@ -164,6 +164,8 @@ class DocxBuilder:
 
             self._add_text_block(block)
 
+        self._add_paragraph("(豆包AI生成)")
+
         self.document.save(output_path)
         return output_path
 
