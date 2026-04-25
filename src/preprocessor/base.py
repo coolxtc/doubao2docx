@@ -6,9 +6,10 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Any, Union, Callable
+from typing import Any, Callable, Optional, Union
 
-from bs4 import BeautifulSoup, Tag, NavigableString
+from bs4 import BeautifulSoup, Tag
+from bs4.element import NavigableString, PageElement
 
 from ..exceptions import ParseError
 from ..config import get_config
@@ -207,13 +208,13 @@ class BaseParser(ABC):
             classes = classes.split()
         return any(c in class_names for c in classes)
     
-    def _skip_whitespace_siblings(self, prev_sibling) -> Any:
+    def _skip_whitespace_siblings(self, prev_sibling: PageElement | None) -> PageElement | None:
         """跳过连续的空白文本兄弟节点"""
         while prev_sibling is not None and isinstance(prev_sibling, NavigableString) and not str(prev_sibling).strip():
             prev_sibling = prev_sibling.previous_sibling
         return prev_sibling
     
-    def _handle_line_break(self, prev_sibling: Any, items: list[InlineContent], 
+    def _handle_line_break(self, prev_sibling: PageElement | None, items: list[InlineContent], 
                            current_text: str, current_bold: bool, current_italic: bool,
                            parent_bold: bool, parent_italic: bool,
                            flush_fn: Optional[Callable[..., Any]] = None) -> tuple[str, bool, bool]:
@@ -619,9 +620,9 @@ class BaseParser(ABC):
                 text = str(child).strip()
                 if text:
                     texts.append(text)
-            elif hasattr(child, 'name') and child.name in ('ul', 'ol'):
+            elif isinstance(child, Tag) and child.name in ('ul', 'ol'):
                 continue
-            elif hasattr(child, 'children'):
+            elif isinstance(child, Tag):
                 texts.append(self._get_direct_text(child))
         return ''.join(texts).strip()
 

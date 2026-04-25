@@ -193,7 +193,6 @@ class DocNamer:
 
         删除超过 max_age_days 天的记录，避免索引文件无限膨胀。
         """
-        today = self._get_date_str()
         cutoff = self._get_date_str(datetime.now() - timedelta(days=self._max_age_days))
 
         # 删除 cutoff 日期之前的所有记录

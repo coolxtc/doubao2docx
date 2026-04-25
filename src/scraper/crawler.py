@@ -190,18 +190,3 @@ class DoubaoSpider:
             bool: URL 是否符合豆包聊天页面格式
         """
         return bool(re.match(self.DOUBAO_URL_PATTERN, url))
-
-
-async def fetch_doubao_chat(url: str, **kwargs: Any) -> ChatData:
-    """
-    直接爬取豆包聊天记录的便捷函数
-    
-    Args:
-        url: 豆包聊天页面URL
-        **kwargs: 传递给 DoubaoSpider 的其他参数
-    
-    Returns:
-        ChatData: 提取的聊天数据
-    """
-    async with DoubaoSpider(**kwargs) as spider:
-        return await spider.fetch(url)

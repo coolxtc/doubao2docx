@@ -5,7 +5,10 @@
 用于滚动页面、触发懒加载、展开代码块等操作。
 """
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 from ..config import CrawlerConfig
 
@@ -84,7 +87,7 @@ class PageActions:
         """
         self.config: CrawlerConfig = config
 
-    async def scroll_all(self, page: Any, progress_callback: Callable[[str], None] | None = None) -> None:
+    async def scroll_all(self, page: "Page", progress_callback: Callable[[str], None] | None = None) -> None:
         """
         执行完整的页面交互流程
         

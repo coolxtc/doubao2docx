@@ -11,16 +11,16 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from typing import Optional
-from lxml import etree
 
 import requests
 
 from copy import deepcopy
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from lxml.etree import _Element as Element
 from docx.oxml.ns import qn
 from docx.oxml import parse_xml
+from docx.shared import Pt, Inches, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 
 from ..preprocessor import TextBlock, InlineContent
 from ..preprocessor.base import BaseParser as _BaseParser
@@ -94,8 +94,6 @@ class DocxBuilder:
         self._image_failure_count: int = 0  # 失败图片数量
         self._image_failure_urls: list[str] = []  # 失败图片 URL 列表
 
-        # 缓存配置引用，避免方法内重复调用 get_config()
-        from ..config import get_config
         self._config = get_config()
         self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
 
@@ -407,7 +405,7 @@ class DocxBuilder:
                 run = para.add_run(" ")
                 self._set_run_font(run)
 
-    def _latex_to_omml(self, latex: str, is_display: bool = False) -> Optional[etree.Element]:
+    def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
         """
         使用 pandoc 将 LaTeX 转换为 OMML 元素"""
         deps_ok, _ = self.latex_converter.check_dependencies()
@@ -454,19 +452,19 @@ class DocxBuilder:
             raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
             # 清理临时文件
-            import sys
+            import logging
+            logger = logging.getLogger(__name__)
             for path in [tmp_tex_path, tmp_docx_path]:
                 if path:
                     try:
                         if os.path.exists(path):
                             os.unlink(path)
-                    except OSError:
-                        # Windows 上文件可能被占用，静默忽略
-                        pass
+                    except OSError as e:
+                        logger.debug(f"临时文件清理失败: {e}")
 
         return None
 
-    def _extract_math_from_paragraph(self, p_element) -> Optional[etree.Element]:
+    def _extract_math_from_paragraph(self, p_element) -> Element | None:
         """从段落元素中提取数学公式"""
         for child in p_element:
             tag = child.tag
@@ -476,7 +474,7 @@ class DocxBuilder:
                 return child
         return None
 
-    def _set_math_chinese_font(self, math_element: etree.Element, font_name: str) -> None:
+    def _set_math_chinese_font(self, math_element: Element, font_name: str) -> None:
         W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 

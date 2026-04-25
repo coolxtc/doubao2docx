@@ -1,6 +1,10 @@
 """数据提取功能模块"""
 
-from typing import Any
+import logging
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 from ..config import CrawlerConfig
 from .models import ChatData, ChatMessage, ImageData
@@ -11,8 +15,9 @@ class DataExtractor:
 
     def __init__(self, config: CrawlerConfig) -> None:
         self.config: CrawlerConfig = config
+        self.logger = logging.getLogger(__name__)
 
-    async def extract_title(self, page: Any) -> str:
+    async def extract_title(self, page: "Page") -> str:
         """提取聊天标题"""
         try:
             title_element = await page.query_selector("h1, .chat-title, [class*='title']")
@@ -22,7 +27,7 @@ class DataExtractor:
             pass
         return "未命名对话"
 
-    async def extract_messages(self, page: Any) -> list[ChatMessage]:
+    async def extract_messages(self, page: "Page") -> list[ChatMessage]:
         """提取聊天消息列表"""
         messages: list[ChatMessage] = []
 
@@ -141,12 +146,13 @@ class DataExtractor:
             if not messages:
                 messages = await self._extract_fallback(page)
 
-        except Exception:
+        except Exception as e:
+            self.logger.warning(f"消息提取失败，使用备用方法: {e}")
             messages = await self._extract_fallback(page)
 
         return messages
 
-    async def _extract_fallback(self, page: Any) -> list[ChatMessage]:
+    async def _extract_fallback(self, page: "Page") -> list[ChatMessage]:
         """备用消息提取方法"""
         messages: list[ChatMessage] = []
         try:
@@ -162,7 +168,7 @@ class DataExtractor:
             pass
         return messages
 
-    async def extract_all(self, page: Any, url: str) -> ChatData:
+    async def extract_all(self, page: "Page", url: str) -> ChatData:
         """提取完整的聊天数据"""
         title = await self.extract_title(page)
         messages = await self.extract_messages(page)

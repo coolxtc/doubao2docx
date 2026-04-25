@@ -20,19 +20,17 @@ import warnings
 
 from .anti_detect import AntiDetectMiddleware, create_anti_detect_middleware
 
-# 尝试导入 Playwright 相关模块，失败时给出友好提示
 try:
     from .browser import BrowserManager
-    from .crawler import DoubaoSpider, fetch_doubao_chat
+    from .crawler import DoubaoSpider
     from .extractor import DataExtractor
     from .models import ChatData, ChatMessage, ImageData
     from .page_actions import PageActions
     from .pool import BrowserPool
-    from .steps import FetchStep, STEP_INDEX, FETCH_STEP_NAMES, STEP_COUNT, reset_timer  # noqa: F401
+    from .steps import FetchStep, STEP_INDEX, FETCH_STEP_NAMES, STEP_COUNT, reset_timer
 
     __all__ = [
         "DoubaoSpider",
-        "fetch_doubao_chat",
         "ChatMessage",
         "ChatData",
         "ImageData",
@@ -49,6 +47,5 @@ try:
         "create_anti_detect_middleware",
     ]
 except ImportError as e:
-    # Playwright 未安装时发出警告，但仍允许导入反爬模块
     warnings.warn(f"部分爬虫模块导入失败（Playwright 未安装？）: {e}", ImportWarning)
     __all__ = ["AntiDetectMiddleware", "create_anti_detect_middleware"]

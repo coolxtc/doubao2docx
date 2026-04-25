@@ -21,7 +21,10 @@ import sys
 import time
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 from rich.console import Console
 from rich.live import Live
@@ -228,7 +231,7 @@ async def fetch_and_export_single(
     task_index: int = 0,
     total: int = 1,
     namer: Optional["DocNamer"] = None,
-    external_page: Any = None,
+    external_page: "Page | None" = None,
 ) -> tuple[str, bool, str, Optional[str], int, str]:
     """
     单个 URL 的导出流程

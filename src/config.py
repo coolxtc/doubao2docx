@@ -93,7 +93,6 @@ def _get_config_path() -> Path:
 
 
 def _load_yaml() -> ConfigData:
-    """加载 YAML 配置，不存在或解析失败则报错"""
     if yaml is None:
         raise RuntimeError("需要 pyyaml 库来读取配置，请运行: pip install pyyaml")
 
@@ -102,7 +101,16 @@ def _load_yaml() -> ConfigData:
         data = yaml.safe_load(f)
         if data is None:
             raise ValueError(f"配置文件为空: {config_path}")
-        return data  # type: ignore[return-value]
+
+    _validate_config(data)
+    return data  # type: ignore[return-value]
+
+
+def _validate_config(data: _ConfigDict) -> None:
+    required_sections = ["crawler", "document_style", "index", "pandoc", "parser", "global"]
+    missing = [s for s in required_sections if s not in data]
+    if missing:
+        raise KeyError(f"配置缺少必需节: {', '.join(missing)}")
 
 
 # 配置字典类型别名，用于类型注解
