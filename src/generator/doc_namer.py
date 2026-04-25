@@ -221,37 +221,20 @@ class DocNamer:
             title = title.replace(char, "")
         return title.strip()
 
-    def get_filename(self, url: str, title: str) -> str:
-        """
-        获取文档文件名
-
-        这是核心方法，流程如下：
-        1. 如果 URL 已有记录，返回相同序号（保持历史一致性）
-        2. 否则分配新序号（递增）
-
-        为什么需要线程锁？
-        批量导出时多个任务可能同时调用此方法，需要保证序号分配不冲突。
-
-        Args:
-            url: 聊天页面的 URL
-            title: 文档标题
-
-        Returns:
-            文件名，格式：日期-序号 标题
-        """
-        # 确保目录存在
+    def get_filename(self, url: str, title: str, update_title: bool = True) -> str:
+        """获取文档文件名，预分配模式传入 update_title=False"""
         self.index_file.parent.mkdir(parents=True, exist_ok=True)
 
-        with self._lock:
-            date_str = self._get_date_str()
-            records = self.get_today_records()
-            clean_title = self._clean_title(title)
+        date_str = self._get_date_str()
+        records = self.get_today_records()
+        clean_title = self._clean_title(title)
 
-            # 检查 URL 是否已有记录
-            if url in records and records[url].index > 0:
-                index = records[url].index
+        if url in records and records[url].index > 0:
+            index = records[url].index
+            if update_title:
                 records[url].title = clean_title
-            else:
+        else:
+            with self._lock:
                 if self._next_index == 0:
                     self._next_index = self.get_today_max_index() + 1
                 index = self._next_index
@@ -259,3 +242,9 @@ class DocNamer:
                 records[url] = LinkRecord(index=index, title=clean_title)
 
         return f"{date_str}-{index} {clean_title}"
+
+    def update_title(self, url: str, title: str) -> None:
+        records = self.get_today_records()
+        with self._lock:
+            if url in records:
+                records[url].title = self._clean_title(title)

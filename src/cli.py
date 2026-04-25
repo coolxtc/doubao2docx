@@ -229,7 +229,7 @@ async def fetch_and_export_single(
     total: int = 1,
     namer: Optional["DocNamer"] = None,
     external_page: Any = None,
-) -> tuple[str, bool, str, Optional[str], int]:
+) -> tuple[str, bool, str, Optional[str], int, str]:
     """
     单个 URL 的导出流程
 
@@ -299,8 +299,8 @@ async def fetch_and_export_single(
         if namer is None:
             namer = DocNamer(index_file)
 
-        # 生成文件名
-        filename_base = namer.get_filename(url, chat_data.title)
+        # 生成文件名（预分配模式不更新 title）
+        filename_base = namer.get_filename(url, chat_data.title, update_title=False)
 
         # 构建输出路径
         date_str = namer.get_date_str()
@@ -318,7 +318,12 @@ async def fetch_and_export_single(
 
         config = DocumentConfig(title=chat_data.title, style_config=_config.document_style)
         builder = DocxBuilder(config)
-        builder.build_blocks(chat_data.title, all_blocks, str(output_path))
+        _ = await asyncio.to_thread(
+            builder.build_blocks,
+            chat_data.title,
+            all_blocks,
+            str(output_path),
+        )
 
         fail_count, fail_urls = builder.get_image_failures()
         if fail_count > 0:
@@ -334,7 +339,7 @@ async def fetch_and_export_single(
         if _task_manager:
             _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
 
-        return url, True, f"{filename_base}.docx", str(output_path), total_fallback
+        return url, True, f"{filename_base}.docx", str(output_path), total_fallback, chat_data.title
 
     except (CrawlerError, ParseError, ExportError) as e:
         error_msg = str(e)
@@ -416,7 +421,7 @@ async def fetch_and_export_batch(
                 external_page=page
             )
         except Exception as e:
-            return (url, False, str(e), None, 0)
+            return (url, False, str(e), None, 0, "")
         finally:
             if page is not None:
                 await pool.release(page)
@@ -431,20 +436,30 @@ async def fetch_and_export_batch(
         # 并发执行
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
+        # 记录需要更新 title 的映射
+        url_title_map: dict[str, str] = {}
+
         # 收集结果
         for result in results:
             # 防御性：处理未预料的异常
             if isinstance(result, Exception):
                 report.add_failure("未知URL", str(result))
                 continue
-            # 正常结果 (5元组: url, success, filename, file_path, fallback_count)
-            if isinstance(result, tuple) and len(result) == 5:
-                url, success, filename, file_path, fallback_count = result
+            # 正常结果 (6元组: url, success, filename, file_path, fallback_count, title)
+            if isinstance(result, tuple) and len(result) == 6:
+                url, success, filename, file_path, fallback_count, chat_title = result
                 report.latex_fallback_count += fallback_count
                 if success:
                     report.add_success(url, filename, file_path if file_path else None)
+                    # 记录 title 用于后续统一更新
+                    url_title_map[url] = chat_title
                 else:
                     report.add_failure(url, filename or "未知错误")
+
+        # 统一更新 title 并保存
+        for url, title in url_title_map.items():
+            namer.update_title(url, title)
+        namer.save()
     finally:
         await pool.close()
 
