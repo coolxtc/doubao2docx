@@ -107,8 +107,10 @@ class DocxBuilder:
 
         # 设置默认字体
         style = self.document.styles["Normal"]
-        style.font.name = self.config.font_name  # pyright: ignore[reportAttributeAccessIssue]
-        style.font.size = Pt(self.config.font_size)  # pyright: ignore[reportAttributeAccessIssue]
+        font = getattr(style, 'font', None)
+        if font:
+            font.name = self.config.font_name
+            font.size = Pt(self.config.font_size)
 
     def _set_run_font(self, run) -> None:
         """设置字体（包含中文字体支持）"""

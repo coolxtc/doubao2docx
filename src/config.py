@@ -7,7 +7,7 @@
 import sys
 from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 try:
     import yaml
@@ -81,8 +81,9 @@ class ConfigData(TypedDict):
 
 def _get_config_path() -> Path:
     """获取配置文件路径，不存在则报错"""
-    if hasattr(sys, '_MEIPASS'):
-        base_path = Path(sys._MEIPASS)  # pyright: ignore[reportAttributeAccessIssue]
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        base_path = Path(meipass)
     else:
         base_path = Path(__file__).parent.parent
 
@@ -103,7 +104,7 @@ def _load_yaml() -> ConfigData:
             raise ValueError(f"配置文件为空: {config_path}")
 
     _validate_config(data)
-    return data  # type: ignore[return-value]
+    return cast(ConfigData, data)
 
 
 def _validate_config(data: _ConfigDict) -> None:
