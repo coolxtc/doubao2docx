@@ -168,6 +168,19 @@ winget install pandoc.pandoc
 
 ---
 
+## 运行命令
+
+```bash
+# 安装依赖 + 浏览器
+pip install -e . && playwright install chromium
+
+# 运行导出
+python3 -m src.cli <豆包链接>        # 主入口
+pip install -e . && doubao-export <url> # 安装后
+```
+
+---
+
 ## 安装步骤
 
 ### 第一步：获取项目代码
@@ -181,7 +194,7 @@ cd doubao-export
 
 或者直接使用已有的项目文件夹。
 
-### 第二步：安装 Python 依赖
+### 第二步：安装依赖
 
 在项目根目录下执行：
 
@@ -403,35 +416,34 @@ doubao-export/
 ```
 doubao-export/
 ├── src/                         # 源代码目录
-│   ├── __init__.py              # 包初始化
+│   ├── __init__.py              # 包初始化，版本信息
 │   ├── __main__.py              # 入口点，支持 python3 -m src 运行
+│   ├── __version__.py           # 版本号（从 __init__.py 导入）
 │   ├── cli.py                   # 命令行入口，Rich Live 进度显示
-│   ├── config.py                # 配置加载（YAML + 环境变量）
-│   ├── exceptions.py            # 自定义异常
+│   ├── config.py                # 配置加载（YAML → dataclass）
+│   ├── exceptions.py            # 自定义异常（CrawlerError / ParseError / ExportError）
 │   ├── utils.py                 # 通用工具（Windows 兼容性）
-│   ├── scraper/                 # 网页爬取模块
-│   │   ├── __init__.py         # 模块导出
-│   │   ├── models.py            # 数据模型（ChatData, ChatMessage）
+│   ├── scraper/                 # Playwright 爬虫层
 │   │   ├── browser.py          # 浏览器生命周期管理
 │   │   ├── crawler.py          # 爬虫核心类（DoubaoSpider）
-│   │   ├── steps.py            # 步骤枚举和进度工具
+│   │   ├── pool.py             # 浏览器池（单浏览器多标签页）
 │   │   ├── extractor.py        # 数据提取器
-│   │   ├── page_actions.py     # 页面交互（滚动、展开代码）
-│   │   └── anti_detect.py      # 反爬处理
-│   ├── preprocessor/           # 数据解析模块
-│   │   ├── __init__.py         # 模块导出
+│   │   ├── page_actions.py    # 页面交互（滚动、展开代码）
+│   │   ├── anti_detect.py      # 反爬中间件
+│   │   ├── steps.py            # 步骤枚举和进度工具
+│   │   └── models.py           # 数据模型
+│   ├── preprocessor/           # HTML 解析层
 │   │   ├── base.py             # 解析器基类
 │   │   └── doubao_parser.py    # 豆包解析器
-│   └── generator/              # 文档生成模块
-│       ├── __init__.py         # 模块导出
+│   └── generator/              # Word 文档生成层
 │       ├── docx_builder.py     # Word 构建器
-│       ├── latex_converter.py  # LaTeX 转换
+│       ├── latex_converter.py  # LaTeX 公式转换
 │       ├── doc_namer.py        # 文档命名 + 序号管理
-│       └── batch_report.py     # 批量报告
+│       └── batch_report.py     # 批量导出报告
 ├── data/                        # 数据输出目录
 │   └── export/                  # 导出的 Word 文档
 ├── data/link_index.json         # 链接索引文件
-├── config.yaml                  # 配置文件
+├── config.yaml                  # 配置文件（必填，无默认值）
 ├── pyproject.toml              # 项目配置
 └── README.md                    # 项目说明文档
 ```
@@ -439,6 +451,33 @@ doubao-export/
 ---
 
 ## 架构说明
+
+### 模块分层
+
+```
+cli.py          → 入口层：命令行解析 + TaskManager + asyncio 调度
+    ↓
+config.py       → 配置层：YAML → dataclass 配置对象
+    ↓
+scraper/        → Playwright 浏览器自动化
+preprocessor/   → HTML → 结构化 TextBlock[]
+generator/      → TextBlock[] → Word 文档
+    ↑
+exceptions.py  → 异常定义
+utils.py        → Windows 兼容性
+```
+
+### 关键类
+
+| 类 | 模块 | 用途 |
+|------|------|------|
+| `GlobalConfig` | `config.py` | 配置单例（`GlobalConfig.load()`） |
+| `TaskManager` | `cli.py` | Rich Live 进度显示 |
+| `DoubaoSpider` | `scraper/crawler.py` | 爬虫核心（异步上下文管理器） |
+| `BrowserPool` | `scraper/pool.py` | 浏览器池（单浏览器多标签页） |
+| `DoubaoHTMLParser` | `preprocessor/doubao_parser.py` | HTML 解析器 |
+| `DocxBuilder` | `generator/docx_builder.py` | Word 文档构建器 |
+| `DocNamer` | `generator/doc_namer.py` | 文件名+序号管理 |
 
 ### 解析器架构
 
