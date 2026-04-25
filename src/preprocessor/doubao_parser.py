@@ -36,10 +36,14 @@ class DoubaoHTMLParser(BaseParser):
     def __init__(self) -> None:
         cfg = get_config()
         self.config = PlatformConfig(latex_attr=cfg.parser.latex_attr)
+        self._latex_fallback_count: int = 0
 
     def parse(self, html: str) -> ParsedPage:
         """解析 HTML 页面"""
-        return self._parse_impl(html)
+        self._latex_fallback_count = 0
+        page = self._parse_impl(html)
+        page.latex_fallback_count = self._latex_fallback_count
+        return page
 
     def _get_title_selectors(self) -> List[str]:
         """
@@ -159,8 +163,8 @@ class DoubaoHTMLParser(BaseParser):
         从公式元素中提取 LaTeX 内容
 
         策略：
-        1. 从 latex_attr 属性获取 LaTeX 源码（精确）
-        2. 无属性时回推渲染内容
+        1. latex_attr 属性（精确，默认 copy-text）
+        2. 扫描所有属性，搜索 LaTeX 格式（适配属性名变化）
 
         Args:
             element: 公式元素
@@ -168,11 +172,23 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             LaTeX 公式字符串
         """
-        # 策略1：copy-text 属性（精确）
+        # 策略1：latex_attr 属性（精确）
         if element.has_attr(self.config.latex_attr):
             latex = str(element.get(self.config.latex_attr, ""))
             return re.sub(r'\\tag\{[^}]*\}', '', latex)
-        # 策略2：回推渲染内容
+
+        # 策略2：扫描所有属性，搜索 LaTeX 格式
+        # 适配属性名变化（如 copy-text → data-latex）
+        for attr_name, attr_value in element.attrs.items():
+            if not isinstance(attr_value, str):
+                continue
+            # 搜索 LaTeX 分隔符
+            match = re.search(r'(\\\(.+?\\\)|\\\[.+?\\\]|\$\$.+?\$\$)', attr_value)
+            if match:
+                self._latex_fallback_count += 1
+                latex = match.group(1)
+                return re.sub(r'\\tag\{[^}]*\}', '', latex)
+
         return element.get_text(strip=True)
 
     def _is_image_element(self, element: Tag) -> bool:

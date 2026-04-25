@@ -229,7 +229,7 @@ async def fetch_and_export_single(
     total: int = 1,
     namer: Optional["DocNamer"] = None,
     external_page: Any = None,
-) -> tuple[str, bool, str, Optional[str]]:
+) -> tuple[str, bool, str, Optional[str], int]:
     """
     单个 URL 的导出流程
 
@@ -248,7 +248,7 @@ async def fetch_and_export_single(
         namer: 文档命名器（共享实例用于批量操作）
 
     Returns:
-        (url, success, filename, file_path) 元组
+        (url, success, filename, file_path, latex_fallback_count) 元组
     """
     global _task_manager
 
@@ -282,10 +282,12 @@ async def fetch_and_export_single(
 
         parser = DoubaoHTMLParser()
         all_blocks: list[tuple[str, TextBlock]] = []
+        total_fallback: int = 0
 
         # 将消息按角色分类
         for msg in chat_data.messages:
             parsed = parser.parse(msg.content)
+            total_fallback += parsed.latex_fallback_count
             for block in parsed.blocks:
                 all_blocks.append((msg.role, block))
 
@@ -332,7 +334,7 @@ async def fetch_and_export_single(
         if _task_manager:
             _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
 
-        return url, True, f"{filename_base}.docx", str(output_path)
+        return url, True, f"{filename_base}.docx", str(output_path), total_fallback
 
     except (CrawlerError, ParseError, ExportError) as e:
         error_msg = str(e)
@@ -414,7 +416,7 @@ async def fetch_and_export_batch(
                 external_page=page
             )
         except Exception as e:
-            return (url, False, str(e), None)
+            return (url, False, str(e), None, 0)
         finally:
             if page is not None:
                 await pool.release(page)
@@ -435,9 +437,10 @@ async def fetch_and_export_batch(
             if isinstance(result, Exception):
                 report.add_failure("未知URL", str(result))
                 continue
-            # 正常结果
-            if isinstance(result, tuple) and len(result) == 4:
-                url, success, filename, file_path = result
+            # 正常结果 (5元组: url, success, filename, file_path, fallback_count)
+            if isinstance(result, tuple) and len(result) == 5:
+                url, success, filename, file_path, fallback_count = result
+                report.latex_fallback_count += fallback_count
                 if success:
                     report.add_success(url, filename, file_path if file_path else None)
                 else:

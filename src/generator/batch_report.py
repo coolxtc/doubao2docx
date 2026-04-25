@@ -31,6 +31,7 @@ class BatchReport:
     """收集和管理多次导出结果，提供汇总报告"""
     results: list[ExportResult] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
+    latex_fallback_count: int = 0  # 公式识别回退计数
 
     def add_success(self, url: str, filename: str, file_path: Optional[str] = None) -> None:
         """记录成功的导出"""
@@ -99,6 +100,11 @@ class BatchReport:
             for r in failure_results:
                 console.print(f"  [✗] {r.url}")
                 console.print(f"      {r.error_message}")
+
+        # 公式识别回退警告
+        if self.latex_fallback_count > 0:
+            console.print("")
+            console.print(f"[yellow]⚠ [警告] 豆包页面更新，公式识别策略已回退（{self.latex_fallback_count}个公式），请重点检查文档中的公式[/yellow]")
 
         console.print("")
         console.print(f"[bold]本次任务共耗时: {elapsed_seconds:.1f} 秒[/bold]")

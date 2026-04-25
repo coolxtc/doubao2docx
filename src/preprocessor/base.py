@@ -78,6 +78,8 @@ class ParsedPage:
     """解析后的页面 - 包含整个文档的解析结果"""
     title: str = ""
     blocks: list[TextBlock] = field(default_factory=list)
+    # 公式识别回退计数：当 copy-text 属性缺失时触发策略2
+    latex_fallback_count: int = 0
 
 
 # =============================================================================
