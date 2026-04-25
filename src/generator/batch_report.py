@@ -6,6 +6,7 @@
 """
 
 import platform
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -81,6 +82,8 @@ class BatchReport:
         success_results = [r for r in self.results if r.success]
         failure_results = [r for r in self.results if not r.success]
 
+        elapsed_seconds = time.time() - self.start_time.timestamp()
+
         console.print("")
         console.print("[bold]成功:[/bold]")
 
@@ -96,6 +99,9 @@ class BatchReport:
             for r in failure_results:
                 console.print(f"  [✗] {r.url}")
                 console.print(f"      {r.error_message}")
+
+        console.print("")
+        console.print(f"[bold]本次任务共耗时: {elapsed_seconds:.1f} 秒[/bold]")
 
 
 # 默认导出目录（项目 data/export/ 目录）
