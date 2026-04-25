@@ -1,4 +1,25 @@
-"""数据提取功能模块"""
+"""
+数据提取功能模块
+
+负责从 Playwright 页面中提取聊天数据。
+使用 JavaScript 在浏览器内执行提取逻辑，获取结构化的聊天信息。
+
+为什么需要这个模块？
+1. 性能：直接在浏览器中提取数据，避免数据传输开销
+2. 准确性：可以访问 DOM 的完整状态，包括懒加载内容
+3. 可靠性：复杂的 CSS 选择器在浏览器中可以正确执行
+
+提取流程：
+1. extract_title(): 提取聊天标题
+2. extract_messages(): 提取消息列表（角色、内容、图片）
+3. extract_all(): 组装完整的 ChatData
+
+技术细节：
+- 使用 page.evaluate() 在浏览器内执行 JavaScript
+- 通过 querySelectorAll 获取消息块
+- 解析 class 属性判断用户/助手角色
+- 从 picture 元素提取懒加载图片
+"""
 
 import logging
 from typing import TYPE_CHECKING, Any
