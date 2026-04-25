@@ -1059,8 +1059,14 @@ class BaseParser(ABC):
     def _strip_latex_delimiters(latex: str) -> str:
         """去除 LaTeX 公式的边界符"""
         latex = latex.strip()
+        # 块级公式分隔符
+        if latex.startswith("\\[") and latex.endswith("\\]"):
+            return latex[2:-2]
+        if latex.startswith("$$") and latex.endswith("$$"):
+            return latex[2:-2]
+        # 行内公式分隔符
         if latex.startswith("\\(") and latex.endswith("\\)"):
             return latex[2:-2]
-        elif latex.startswith("$") and latex.endswith("$"):
+        if latex.startswith("$") and latex.endswith("$"):
             return latex[1:-1]
         return latex

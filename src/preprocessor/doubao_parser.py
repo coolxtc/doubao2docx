@@ -54,7 +54,10 @@ class DoubaoHTMLParser(BaseParser):
         """
         判断元素是否为公式元素
 
-        通过检查元素是否包含 latex_attr 属性来判断。
+        多策略检测，按优先级依次尝试：
+        1. copy-text 属性（原有，快速优先）
+        2. math-inline/math-display 类名（兜底识别）
+        3. KaTeX 结构（.katex, .katex-html）
 
         Args:
             element: HTML 元素
@@ -62,7 +65,36 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             True 如果包含公式
         """
-        return element.has_attr(self.config.latex_attr)
+        # 策略 1：copy-text 属性（原有，快速）
+        if element.has_attr(self.config.latex_attr):
+            return True
+        # 策略 2：math-inline/math-display 类名 + KaTeX 结构
+        if self._has_math_class(element):
+            return True
+        return False
+
+    def _has_math_class(self, element: Tag) -> bool:
+        """
+        检查元素是否包含数学公式相关的 CSS 类名
+
+        只检查 math-inline/math-display/math-block 类名。
+        不检查 katex，因为那是渲染结果不是公式容器。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果包含数学类名
+        """
+        classes = element.get("class") or []
+        class_str = " ".join(classes) if isinstance(classes, list) else str(classes)
+
+        # 只检查数学类名
+        math_classes = ["math-inline", "math-display", "math-block"]
+        if any(cls in class_str for cls in math_classes):
+            return True
+
+        return False
 
     def _is_display_math(self, element: Tag) -> bool:
         """
@@ -126,7 +158,9 @@ class DoubaoHTMLParser(BaseParser):
         """
         从公式元素中提取 LaTeX 内容
 
-        从元素的 latex_attr 属性中获取 LaTeX 源码。
+        策略：
+        1. 从 latex_attr 属性获取 LaTeX 源码（精确）
+        2. 无属性时回推渲染内容
 
         Args:
             element: 公式元素
@@ -134,8 +168,12 @@ class DoubaoHTMLParser(BaseParser):
         Returns:
             LaTeX 公式字符串
         """
-        latex = str(element.get(self.config.latex_attr, ""))
-        return re.sub(r'\\tag\{[^}]*\}', '', latex)
+        # 策略1：copy-text 属性（精确）
+        if element.has_attr(self.config.latex_attr):
+            latex = str(element.get(self.config.latex_attr, ""))
+            return re.sub(r'\\tag\{[^}]*\}', '', latex)
+        # 策略2：回推渲染内容
+        return element.get_text(strip=True)
 
     def _is_image_element(self, element: Tag) -> bool:
         """
