@@ -31,15 +31,11 @@ class CrawlerData(TypedDict):
 
 
 class DocumentStyleData(TypedDict):
-    """
-    文档样式配置数据类型
-    
-    定义 Word 文档的样式配置项。
-    """
     title_font_size: int        # 标题字号
     code_font_size: int         # 代码字号
     image_width: float          # 独立图片宽度（英寸）
     inline_image_width: float    # 内联图片宽度（英寸）
+    footer_mark: str            # 文档末尾标注
 
 
 class IndexData(TypedDict):
@@ -136,15 +132,11 @@ class CrawlerConfig:
 
 @dataclass
 class DocumentStyleConfig:
-    """
-    文档样式配置数据类
-    
-    存储 Word 文档样式配置。
-    """
     title_font_size: int        # 标题字号
     code_font_size: int         # 代码字号
     image_width: float         # 独立图片宽度（英寸）
     inline_image_width: float   # 内联图片宽度（英寸）
+    footer_mark: str        # 文档末尾标注
 
 
 @dataclass
@@ -196,7 +188,7 @@ class GlobalConfig:
 
         doc_style_data: _ConfigDict = dict(data["document_style"])
         _require_keys(doc_style_data, [
-            "title_font_size", "code_font_size", "image_width", "inline_image_width"
+            "title_font_size", "code_font_size", "image_width", "inline_image_width", "footer_mark"
         ], "document_style")
         document_style = DocumentStyleConfig(**doc_style_data)
 

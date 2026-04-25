@@ -13,6 +13,7 @@
 
 import asyncio
 import gc
+import os
 import platform
 import warnings
 
@@ -28,14 +29,10 @@ def is_windows() -> bool:
 
 
 def windows_compat_setup() -> None:
-    """
-    Windows 平台兼容性初始化
-
-    在程序开始时调用，设置 Python 警告过滤器，
-    避免显示 ResourceWarning 等与资源清理相关的警告。
-    """
+    """Windows 平台兼容性初始化"""
     if is_windows():
         warnings.filterwarnings("ignore", category=ResourceWarning)
+        os.environ['PYTHONUTF8'] = '1'
 
 
 def windows_compat_cleanup() -> None:

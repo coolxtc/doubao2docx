@@ -164,7 +164,9 @@ class DocxBuilder:
 
             self._add_text_block(block)
 
-        self._add_paragraph("(豆包AI生成)")
+        footer_mark = self._config.document_style.footer_mark
+        if footer_mark:
+            self._add_paragraph(footer_mark)
 
         self.document.save(output_path)
         return output_path
@@ -424,7 +426,7 @@ class DocxBuilder:
         try:
             # 创建临时文件
             with tempfile.NamedTemporaryFile(
-                mode='w', suffix='.tex', delete=False
+                mode='w', suffix='.tex', delete=False, encoding='utf-8'
             ) as tmp_tex:
                 tmp_tex.write(tex_content)
                 tmp_tex_path = tmp_tex.name
