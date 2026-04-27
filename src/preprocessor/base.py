@@ -1,8 +1,4 @@
-"""
-解析器基类模块
-
-定义解析器的抽象基类和平台配置，支持多平台扩展。
-"""
+"""解析器基类模块"""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -16,71 +12,69 @@ from ..config import get_config
 
 
 # =============================================================================
-# PlatformConfig - 平台配置
+# 数据类型
 # =============================================================================
 
 @dataclass
 class PlatformConfig:
-    name: str = "doubao"
-    latex_attr: str = ""
-    math_display_classes: list[str] = field(default_factory=lambda: ["math-block", "katex--display"])
-    line_break_classes: list[str] = field(default_factory=lambda: ["md-box-line-break", "line-break"])
-    code_container_class: str = "custom-code-block-container"
-    code_button_pattern: str = "button-"
-    code_expanded_attr: str = "data-expanded-code"
-    message_item_selector: str = "[class*='message-item']"
-    user_message_class: str = "justify-end"
-    heading_selectors: str = "h1, .chat-title, [class*='title']"
-    paragraph_prefix: str = "paragraph-"
-    parser: str = "lxml"
-    picture_container_class: str = "picture"
-    image_wrapper_class: str = "image-wrapper"
+    """平台配置"""
+    name: str = "doubao"  # 平台名称标识
+    latex_attr: str = ""  # LaTeX 公式属性名
+    math_display_classes: list[str] = field(default_factory=lambda: ["math-block", "katex--display"])  # 展示公式 CSS 类
+    line_break_classes: list[str] = field(default_factory=lambda: ["md-box-line-break", "line-break"])  # 换行符 CSS 类
+    code_container_class: str = "custom-code-block-container"  # 代码容器 CSS 类
+    code_button_pattern: str = "button-"  # 代码按钮 CSS 类前缀
+    code_expanded_attr: str = "data-expanded-code"  # 代码展开状态属性
+    message_item_selector: str = "[class*='message-item']"  # 消息项选择器
+    user_message_class: str = "justify-end"  # 用户消息 CSS 类
+    heading_selectors: str = "h1, .chat-title, [class*='title']"  # 标题选择器
+    paragraph_prefix: str = "paragraph-"  # 段落 CSS 类前缀
+    parser: str = "lxml"  # HTML 解析器
+    picture_container_class: str = "picture"  # 图片容器 CSS 类
+    image_wrapper_class: str = "image-wrapper"  # 图片包装器 CSS 类
 
-
-# =============================================================================
-# 数据类型 - 与平台无关，可直接复用
-# =============================================================================
 
 @dataclass
 class TableData:
-    """表格数据 - 存储表格的行列信息"""
-    headers: list[str]
-    rows: list[list[str]]
-    header_bold: list[bool] = field(default_factory=list)
-    cell_bold: list[list[bool]] = field(default_factory=list)
+    """表格数据"""
+    headers: list[str]  # 表头文本列表
+    rows: list[list[str]]  # 数据行列表
+    header_bold: list[bool] = field(default_factory=list)  # 表头加粗标记
+    cell_bold: list[list[bool]] = field(default_factory=list)  # 单元格加粗标记
 
 
 @dataclass
 class InlineContent:
-    type: str
-    content: str
-    is_display: bool = False
-    bold: bool = False
-    italic: bool = False
-    image_url: Optional[str] = None
-    data: Any = None
-    list_marker: Optional[str] = None  # 列表标记："•" 用于无序列表
+    """内联内容"""
+    type: str  # 内容类型：text/latex/image/table/code
+    content: str  # 文本内容或 LaTeX 公式
+    is_display: bool = False  # 是否为展示公式
+    bold: bool = False  # 是否加粗
+    italic: bool = False  # 是否斜体
+    image_url: Optional[str] = None  # 图片 URL
+    data: Any = None  # 附加数据（如 TableData）
+    list_marker: Optional[str] = None  # 列表标记（"•" 用于无序列表）
     level: int = 0  # 嵌套层级（0 表示无嵌套或顶层）
 
 
-@dataclass 
+@dataclass
 class TextBlock:
-    type: str
-    content: str
-    language: Optional[str] = None
-    data: Any = None
-    inline: bool = False
-    items: list[InlineContent] = field(default_factory=list)
-    level: int = 0
+    """文本块"""
+    type: str  # 块类型：paragraph/latex/code/heading/list_item/table/blockquote/image
+    content: str  # 文本内容
+    language: Optional[str] = None  # 代码语言或标题级别
+    data: Any = None  # 附加数据（如 TableData）
+    inline: bool = False  # 是否内联元素
+    items: list[InlineContent] = field(default_factory=list)  # 内联内容列表
+    level: int = 0  # 嵌套层级
 
 
 @dataclass
 class ParsedPage:
-    """解析后的页面 - 包含整个文档的解析结果"""
-    title: str = ""
-    blocks: list[TextBlock] = field(default_factory=list)
-    # 公式识别回退计数：当 copy-text 属性缺失时触发策略2
-    latex_fallback_count: int = 0
+    """解析后的页面"""
+    title: str = ""  # 页面标题
+    blocks: list[TextBlock] = field(default_factory=list)  # 内容块列表
+    latex_fallback_count: int = 0  # 公式识别回退计数：当 copy-text 属性缺失时触发策略2
 
 
 # =============================================================================
@@ -88,67 +82,51 @@ class ParsedPage:
 # =============================================================================
 
 class BaseParser(ABC):
-    """解析器抽象基类 - 定义统一接口"""
-    
-    # 子类必须设置此属性
-    config: PlatformConfig
-    
-    # -------------------------------------------------------------------------
-    # 模板方法 - 提供解析流程骨架
-    # -------------------------------------------------------------------------
-    
+    """解析器抽象基类"""
+    config: PlatformConfig  # 平台配置（子类必须设置）
+
+
     def parse(self, html: str) -> ParsedPage:
-        """解析 HTML 页面 - 模板方法入口
-        
+        """
+        解析 HTML 页面
+
         Args:
             html: HTML 字符串
-            
+
         Returns:
             ParsedPage: 包含 title 和 blocks 的解析结果
         """
         return self._parse_impl(html)
-    
+
     def _parse_impl(self, html: str) -> ParsedPage:
-        """解析实现 - 可被子类覆盖
-        
+        """
+        解析实现
+
         默认实现提供了完整的解析流程骨架。
         如果子类需要完全自定义解析逻辑，可以覆盖此方法。
-        
+
         Args:
             html: HTML 字符串
-            
+
         Returns:
             ParsedPage: 解析结果
         """
         soup = BeautifulSoup(html, self.config.parser)
-        
-        # 提取标题
         title = self._extract_title(soup)
-        
-        # 获取内容容器（优先用 body，没有就用整个文档）
         container = soup.body if soup.body else soup
-        
-        # 提取所有内容块
         blocks = self._extract_blocks(container)
-        
         return ParsedPage(title=title, blocks=blocks)
-    
+
+
     # -------------------------------------------------------------------------
     # 抽象钩子方法 - 子类必须实现
     # -------------------------------------------------------------------------
-    
+
     @abstractmethod
     def _get_title_selectors(self) -> list[str]:
-        """获取标题选择器列表
-        
-        返回用于查找页面标题的 CSS 选择器列表。
-        基类使用第一个匹配的选择器。
-        
-        Returns:
-            CSS 选择器字符串列表，如 ["h1", ".title", "[class*='title']"]
-        """
+        """获取标题选择器列表"""
         raise NotImplementedError("子类必须实现 _get_title_selectors()")
-    
+
     @abstractmethod
     def _is_math_element(self, element: Tag) -> bool:
         """判断元素是否为公式元素"""
@@ -178,23 +156,25 @@ class BaseParser(ABC):
     def _extract_latex_content(self, element: Tag) -> str:
         """从公式元素中提取 LaTeX 内容"""
         raise NotImplementedError("子类必须实现 _extract_latex_content()")
-    
+
     @abstractmethod
     def _is_image_element(self, element: Tag) -> bool:
         """判断元素是否为图片元素"""
         raise NotImplementedError("子类必须实现 _is_image_element()")
-    
+
     @abstractmethod
     def _extract_image_url(self, element: Tag) -> str:
         """从图片元素中提取 URL"""
         raise NotImplementedError("子类必须实现 _extract_image_url()")
-    
+
+
     # -------------------------------------------------------------------------
-    # 通用方法 - 不依赖平台特定逻辑
+    # 通用方法
     # -------------------------------------------------------------------------
-    
+
     def _has_any_class(self, element: Tag, class_names: list[str]) -> bool:
-        """检查元素是否包含指定类名中的任意一个
+        """
+        检查元素是否包含指定类名中的任意一个
 
         Args:
             element: HTML 元素
@@ -207,40 +187,53 @@ class BaseParser(ABC):
         if isinstance(classes, str):
             classes = classes.split()
         return any(c in class_names for c in classes)
-    
+
     def _skip_whitespace_siblings(self, prev_sibling: PageElement | None) -> PageElement | None:
         """跳过连续的空白文本兄弟节点"""
         while prev_sibling is not None and isinstance(prev_sibling, NavigableString) and not str(prev_sibling).strip():
             prev_sibling = prev_sibling.previous_sibling
         return prev_sibling
-    
-    def _handle_line_break(self, prev_sibling: PageElement | None, items: list[InlineContent], 
+
+    def _handle_line_break(self, prev_sibling: PageElement | None, items: list[InlineContent],
                            current_text: str, current_bold: bool, current_italic: bool,
                            parent_bold: bool, parent_italic: bool,
                            flush_fn: Optional[Callable[..., Any]] = None) -> tuple[str, bool, bool]:
-        """处理 div.line-break 换行符"""
+        """
+        处理换行符
+
+        Args:
+            prev_sibling: 前一个兄弟节点
+            items: 内联内容列表
+            current_text: 当前累积文本
+            current_bold: 当前加粗状态
+            current_italic: 当前斜体状态
+            parent_bold: 父级加粗状态
+            parent_italic: 父级斜体状态
+            flush_fn: 刷新回调函数
+
+        Returns:
+            (剩余文本, 加粗状态, 斜体状态)
+        """
         prev = self._skip_whitespace_siblings(prev_sibling)
-        
-        # 先 flush 当前文本
+
         if flush_fn:
             flush_fn()
         else:
             stripped = current_text.strip()
             if stripped:
                 items.append(InlineContent(
-                    type="text", 
-                    content=stripped, 
+                    type="text",
+                    content=stripped,
                     bold=current_bold,
                     italic=current_italic
                 ))
-        
-        # 跳过空白的 md-box-line-break div（豆包页面中常见的空换行容器）
+
         if isinstance(prev, Tag):
-            if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes) 
+            if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes)
                 and not prev.get_text(strip=True)):
                 items.append(InlineContent(type="text", content="\n"))
                 return "", parent_bold, parent_italic
-        
+
         if isinstance(prev, NavigableString):
             items.append(InlineContent(type="text", content="\n"))
             return "", parent_bold, parent_italic
@@ -251,73 +244,91 @@ class BaseParser(ABC):
         else:
             items.append(InlineContent(type="text", content="\n"))
             return "", parent_bold, parent_italic
-    
+
     def _extract_title(self, soup: BeautifulSoup) -> str:
-        """提取标题"""
-        # 尝试使用选择器
+        """
+        提取页面标题
+
+        Args:
+            soup: BeautifulSoup 对象
+
+        Returns:
+            页面标题文本
+        """
         for selector in self._get_title_selectors():
             tag = soup.select_one(selector)
             if tag:
                 return tag.get_text(strip=True)
-        
-        # 备选：<title> 标签
+
         title_tag = soup.find("title")
         if title_tag:
             return title_tag.get_text(strip=True)
-        
+
         return ""
-    
+
     def _extract_blocks(self, container: Tag) -> list[TextBlock]:
-        """从容器中提取所有内容块"""
+        """
+        从容器中提取所有内容块
+
+        Args:
+            container: HTML 容器元素
+
+        Returns:
+            TextBlock 列表
+        """
         blocks = []
-        
+
         for child in container.children:
-            # NavigableString 是文本节点
             if isinstance(child, NavigableString):
                 text = str(child).strip()
                 if text:
                     blocks.append(TextBlock(type="paragraph", content=text))
-            # Tag 是 HTML 标签
             elif isinstance(child, Tag):
                 self._process_element(child, blocks)
-        
+
         return blocks
-    
+
     def _process_element(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理单个元素 - 根据标签类型分发处理"""
-        tag = element.name
-        
-        # 表格
+        """
+        处理单个元素
+
+        Args:
+            element: HTML 元素
+            blocks: 内容块列表
+        """
+        tag = element.name  # 标签名
+
+        # 处理表格
         if tag == "table":
             table_data = self._parse_table(element)
             if table_data:
                 blocks.append(TextBlock(type="table", content="", data=table_data))
             return
-        
-        # 标题 (h1-h6)
+
+        # 处理标题 (h1-h6)
         if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
             text = element.get_text(strip=True)
             if text:
                 level = int(tag[1]) if len(tag) == 2 else 1
                 blocks.append(TextBlock(type="heading", content=text, language=str(level)))
             return
-        
-        # 无序列表
+
+        # 处理无序列表
         if tag == "ul":
             self._process_list(element, "ul", blocks, 0)
             return
-        
-        # 有序列表
+
+        # 处理有序列表
         if tag == "ol":
             self._process_list(element, "ol", blocks, 0)
             return
-        
-        # 段落
+
+        # 处理段落
         if tag == "p":
             self._process_paragraph(element, blocks)
             return
-        
-        # 预格式化代码块
+
+        # 处理预格式化代码块
         if tag == "pre":
             if element.get(self.config.code_expanded_attr):
                 return
@@ -329,48 +340,45 @@ class BaseParser(ABC):
                 lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
             blocks.append(TextBlock(type="code", content=code, language=lang or "text"))
             return
-        
-        # 引用
+
+        # 处理引用
         if tag == "blockquote":
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="blockquote", content=text))
             return
-        
-        # 换行标签
+
+        # 处理换行
         if tag == "br":
             if blocks and blocks[-1].type == "paragraph":
                 blocks[-1].content += "\n"
             return
-        
-        # picture 图片标签
+
+        # 处理图片
         if tag == "picture":
             url = self._extract_image_url(element)
             if url:
                 blocks.append(TextBlock(type="image", content=url))
             return
-        
-        # div 或 section 容器
+
+        # 处理 div/section 容器
         if tag == "div" or tag == "section":
             self._process_div_or_section(element, blocks)
             return
-        
-        # 内联标签（strong, em, span, a, b, i, u, small, del, mark）
+
         inline_tags = {"strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark"}
         if tag in inline_tags:
-            
+
             if self._is_math_element(element):
                 self._process_math_element(element, blocks)
                 return
             self._process_inline_element(element, blocks)
             return
 
-        # 使用钩子判断是否为公式元素
         if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
 
-        # 使用钩子判断是否为图片元素
         if self._is_image_element(element):
             url = self._extract_image_url(element)
             if url:
@@ -381,7 +389,6 @@ class BaseParser(ABC):
             self._process_paragraph(element, blocks)
             return
 
-        # 其他情况：提取文本并追加到上一个段落
         text = element.get_text(strip=True)
         if text:
             if blocks and blocks[-1].type == "paragraph":
@@ -390,7 +397,14 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type="paragraph", content=text))
 
     def _process_div_or_section(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理 div 或 section 元素"""
+        """
+        处理 div 或 section 元素
+
+        Args:
+            element: div 或 section 元素
+            blocks: 内容块列表
+        """
+        # 代码展开按钮
         if self._is_code_button(element):
             expanded_pre = element.find("pre", attrs={self.config.code_expanded_attr: "true"})
             if expanded_pre:
@@ -398,24 +412,29 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type="code", content=code, language="language-plaintext"))
             return
 
+        # 公式元素
         if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
 
+        # 代码容器
         if self._is_code_container(element):
             self._process_code_container(element, blocks)
             return
 
+        # 图片元素
         if self._is_image_element(element):
             url = self._extract_image_url(element)
             if url:
                 blocks.append(TextBlock(type="image", content=url))
             return
 
+        # 段落容器
         if self._is_paragraph_container(element):
             self._process_paragraph(element, blocks)
             return
 
+        # 查找单个 p 子元素（用于包裹简单段落）
         p_child = None
         for child in element.children:
             if isinstance(child, Tag) and child.name == "p":
@@ -425,13 +444,15 @@ class BaseParser(ABC):
                     p_child = None
                     break
 
+        # 单个 p 子元素：直接处理
         if p_child:
             self._process_element(p_child, blocks)
         else:
-            # 检查是否包含图片包装器
             classes = element.get("class") or []
             class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
+            # 检查是否为图片包装器
             if self.config.image_wrapper_class in class_str:
+                # 提取图片
                 pics = element.find_all("picture")
                 for pic in pics:
                     url = self._extract_image_url(pic)
@@ -439,41 +460,67 @@ class BaseParser(ABC):
                         blocks.append(TextBlock(type="image", content=url))
                 return
 
+            # 其他情况：递归提取子元素
             sub_blocks = self._extract_blocks(element)
             blocks.extend(sub_blocks)
 
     def _process_code_container(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理代码块容器"""
+        """
+        处理代码块容器
+
+        Args:
+            element: 代码容器元素
+            blocks: 内容块列表
+        """
         code_elem = element.find("code")
         pre_elem = element.find("pre")
-        
+
+        # 优先从 pre 标签提取代码
         if pre_elem:
             code_content = pre_elem.get_text("\n", strip=True)
+        # 其次从 code 标签提取
         elif code_elem:
             code_content = code_elem.get_text("\n", strip=True)
+        # 最后从元素自身提取
         else:
             code_content = element.get_text("\n", strip=True)
             if code_content.startswith("plaintext"):
                 code_content = code_content[len("plaintext"):].lstrip("\n")
-        
+
         language = "text"
         classes = element.get("class") or []
         if "plaintext" in classes:
             language = "language-plaintext"
-        
+
         if code_content:
             blocks.append(TextBlock(type="code", content=code_content, language=language))
-    
+
     def _process_list(self, element: Tag, list_type: str, blocks: list[TextBlock], level: int = 0) -> None:
-        """处理列表元素（ul 或 ol）"""
+        """
+        处理列表元素
+
+        Args:
+            element: ul 或 ol 元素
+            list_type: 列表类型 ("ul" 或 "ol")
+            blocks: 内容块列表
+            level: 嵌套层级
+        """
         list_items = element.find_all("li", recursive=False)
         for i, li in enumerate(list_items):
             self._process_list_item(li, blocks, list_type, i + 1, level)
-    
+
     def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1, level: int = 0) -> None:
-        """处理单个列表项 - 智能判断简单或复杂类型"""
+        """
+        处理单个列表项
+
+        Args:
+            li: li 元素
+            blocks: 内容块列表
+            list_type: 列表类型
+            index: 列表项序号
+            level: 嵌套层级
+        """
         has_nested_list = li.find(["ul", "ol"], recursive=False)
-        # 检查是否有换行 div（递归查找子元素）
         has_br = li.find("br") is not None or any(
             isinstance(x, str) and "line-break" in x
             for x in (li.get("class") or [])
@@ -488,103 +535,132 @@ class BaseParser(ABC):
         has_table = li.find("table") is not None
         has_pre = li.find("pre") is not None
 
+        # 包含内联内容的列表项
         if has_br or has_strong or has_math or has_em or has_nested_list or has_picture or has_table or has_pre:
             self._process_complex_list_item(li, blocks, list_type, level)
             return
 
+        # 简单列表项：直接提取文本
         text = li.get_text(strip=True)
         if text:
             blocks.append(TextBlock(type="list_item", content=text, language=list_type, level=level))
-    
+
     def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str, level: int = 0) -> None:
-        """处理复杂的列表项 - 包含内联样式、公式或嵌套列表"""
-        items: list[InlineContent] = []
-        current_text = ""
-        current_bold = False
-        current_italic = False
-        
-        def flush():
+        """
+        处理复杂的列表项
+
+        Args:
+            li: li 元素
+            blocks: 内容块列表
+            list_type: 列表类型
+            level: 嵌套层级
+        """
+        items: list[InlineContent] = []  # 内联内容列表
+        current_text = ""  # 当前累积文本
+        current_bold = False  # 当前加粗状态
+        current_italic = False  # 当前斜体状态
+
+        def flush():  # 刷新累积的文本到 items
             nonlocal current_text, current_bold, current_italic
             stripped = current_text.strip()
             if stripped:
                 items.append(InlineContent(
-                    type="text", 
-                    content=stripped, 
+                    type="text",
+                    content=stripped,
                     bold=current_bold,
                     italic=current_italic
                 ))
             current_text = ""
             current_bold = False
             current_italic = False
-        
+
         for child in li.children:
             if isinstance(child, NavigableString):
+                # 纯文本节点：累积到当前文本
                 text = str(child).strip()
                 if text:
                     current_text += text
             elif isinstance(child, Tag):
                 if self._is_math_element(child):
+                    # 公式元素
                     flush()
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 elif child.name in ("strong", "b"):
+                    # 加粗标签
                     flush()
                     bold_items = self._extract_strong_recursive(child)
                     for bi in bold_items:
                         items.append(bi)
                 elif child.name in ("em", "i"):
+                    # 斜体标签
                     flush()
                     italic_items = self._extract_italic_recursive(child)
                     for ii in italic_items:
                         items.append(ii)
                 elif child.name == "p":
-                    # 段落内部可能包含多种内容，递归处理
+                    # 段落容器：递归处理
                     self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                    # 换行符 div
                     current_text, current_bold, current_italic = self._handle_line_break(
                         child.previous_sibling, items, current_text, current_bold, current_italic, current_bold, current_italic
                     )
                 elif child.name == "br":
+                    # 换行标签
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
                 elif child.name in ("div", "span"):
+                    # 嵌套容器：递归处理
                     self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name == "picture":
+                    # 图片元素
                     flush()
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
                 elif child.name == "table":
+                    # 表格元素
                     flush()
                     table_data = self._parse_table(child)
                     if table_data:
                         items.append(InlineContent(type="table", content="", data=table_data, bold=current_bold, italic=current_italic))
                 elif child.name == "pre":
+                    # 代码块（未展开）
                     if not child.get(self.config.code_expanded_attr):
                         flush()
                         code_content = child.get_text("\n", strip=True)
                         items.append(InlineContent(type="code", content=code_content, bold=current_bold, italic=current_italic))
                 elif child.name in ("ul", "ol"):
+                    # 嵌套列表
                     flush()
                     items.append(InlineContent(type="text", content="\n", bold=current_bold, italic=current_italic))
                     self._extract_nested_list_text(child, items, current_bold, current_italic, level + 1)
                 else:
-                    # 其他元素，尝试提取文本
+                    # 其他元素：提取文本内容
                     sub_text = child.get_text(strip=False)
                     if sub_text:
                         current_text += sub_text
-        
+
         flush()
-        
-        # 添加列表项到 blocks
+
         if items:
             valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in ("latex", "image", "table", "code")]
             if valid_items:
                 blocks.append(TextBlock(type="list_item", content="", language=list_type, items=valid_items, level=level))
 
     def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False, level: int = 1) -> None:
-        """提取嵌套列表的文本内容作为 InlineContent"""
+        """
+        提取嵌套列表的文本内容
+
+        Args:
+            element: ul 或 ol 元素
+            items: 内联内容列表
+            bold: 加粗状态
+            italic: 斜体状态
+            level: 嵌套层级
+        """
         counter = 1
         li_elements = element.find_all("li", recursive=False)
         for idx, child in enumerate(li_elements):
@@ -613,7 +689,15 @@ class BaseParser(ABC):
                 self._extract_nested_list_text(nested, items, bold, italic, level + 1)
 
     def _get_direct_text(self, element: Tag) -> str:
-        """获取元素的直接文本（排除嵌套的 ul/ol）"""
+        """
+        获取元素的直接文本（排除嵌套的 ul/ol）
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            直接文本字符串
+        """
         texts = []
         for child in element.children:
             if isinstance(child, str):
@@ -627,7 +711,15 @@ class BaseParser(ABC):
         return ''.join(texts).strip()
 
     def _collect_nested_content_in_li(self, li: Tag, items: list[InlineContent], bold: bool, italic: bool) -> None:
-        """收集列表项中的深层嵌套内容块（图片、表格、代码）"""
+        """
+        收集列表项中的深层嵌套内容块
+
+        Args:
+            li: li 元素
+            items: 内联内容列表
+            bold: 加粗状态
+            italic: 斜体状态
+        """
         for pic in li.find_all("picture"):
             url = self._extract_image_url(pic)
             if url:
@@ -649,27 +741,35 @@ class BaseParser(ABC):
                 lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
             items.append(InlineContent(type="code", content=code_content, bold=bold, italic=italic))
 
-    def _process_nested_container(self, element: Tag, items: list[InlineContent], 
+    def _process_nested_container(self, element: Tag, items: list[InlineContent],
                                    parent_bold: bool = False, parent_italic: bool = False) -> None:
-        """递归处理嵌套容器 - 支持样式状态传递"""
-        current_text = ""
-        current_bold = parent_bold
-        current_italic = parent_italic
-        
-        def flush():
+        """
+        递归处理嵌套容器
+
+        Args:
+            element: HTML 容器元素
+            items: 内联内容列表
+            parent_bold: 父级加粗状态
+            parent_italic: 父级斜体状态
+        """
+        current_text = ""  # 当前累积文本
+        current_bold = parent_bold  # 当前加粗状态（继承自父级）
+        current_italic = parent_italic  # 当前斜体状态（继承自父级）
+
+        def flush():  # 刷新累积的文本到 items
             nonlocal current_text, current_bold, current_italic
             stripped = current_text.strip()
             if stripped:
                 items.append(InlineContent(
-                    type="text", 
-                    content=stripped, 
+                    type="text",
+                    content=stripped,
                     bold=current_bold,
                     italic=current_italic
                 ))
             current_text = ""
             current_bold = parent_bold
             current_italic = parent_italic
-        
+
         for child in element.children:
             if isinstance(child, NavigableString):
                 text = str(child).strip()
@@ -683,7 +783,7 @@ class BaseParser(ABC):
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
                     current_text, current_bold, current_italic = self._handle_line_break(
-                        child.previous_sibling, items, current_text, current_bold, current_italic, 
+                        child.previous_sibling, items, current_text, current_bold, current_italic,
                         parent_bold, parent_italic, flush
                     )
                 elif child.name == "br":
@@ -694,14 +794,14 @@ class BaseParser(ABC):
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
-                        bi.italic = current_italic  # 继承父级斜体
+                        bi.italic = current_italic
                         items.append(bi)
                 elif child.name in ("em", "i"):
                     italic_items = self._extract_italic_recursive(child)
                     if current_text.strip():
                         flush()
                     for ii in italic_items:
-                        ii.bold = current_bold  # 继承父级加粗
+                        ii.bold = current_bold
                         items.append(ii)
                 elif child.name in ("div", "span"):
                     self._process_nested_container(child, items, current_bold, current_italic)
@@ -730,84 +830,111 @@ class BaseParser(ABC):
                         current_text += sub_text
 
         flush()
-    
+
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理段落元素 - 区分简单和复杂段落"""
-        math_elements = self._find_math_in_element(element)
-        has_strong = element.find("strong") or element.find("b")
-        has_picture = element.find("picture")
-        
+        """
+        处理段落元素
+
+        Args:
+            element: p 元素
+            blocks: 内容块列表
+        """
+        math_elements = self._find_math_in_element(element)  # 段落中的公式元素
+        has_strong = element.find("strong") or element.find("b")  # 是否包含加粗
+        has_picture = element.find("picture")  # 是否包含图片
+
+        # 简单段落：直接提取文本
         if not math_elements and not has_strong and not has_picture:
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="paragraph", content=text))
             return
-        
-        items: list[InlineContent] = []
-        current_text = ""
-        current_bold = False
-        current_italic = False
-        
-        def flush():
+
+        # 复杂段落：解析内联内容
+        items: list[InlineContent] = []  # 内联内容列表
+        current_text = ""  # 当前累积文本
+        current_bold = False  # 当前加粗状态
+        current_italic = False  # 当前斜体状态
+
+        def flush():  # 刷新累积的文本到 items
             nonlocal current_text, current_bold, current_italic
             if current_text.strip():
                 items.append(InlineContent(
-                    type="text", 
-                    content=current_text, 
+                    type="text",
+                    content=current_text,
                     bold=current_bold,
                     italic=current_italic
                 ))
             current_text = ""
             current_bold = False
             current_italic = False
-        
+
         for child in element.children:
             if isinstance(child, NavigableString):
+                # 文本节点：累积到当前文本
                 current_text += str(child)
             elif isinstance(child, Tag):
                 if self._is_math_element(child):
+                    # 公式元素
                     flush()
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 elif child.name in ("strong", "b"):
+                    # 加粗标签
                     bold_items = self._extract_strong_recursive(child)
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
                         items.append(bi)
                 elif child.name in ("em", "i"):
+                    # 斜体标签
                     italic_items = self._extract_italic_recursive(child)
                     if current_text.strip():
                         flush()
                     for ii in italic_items:
                         items.append(ii)
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                    # 换行符 div
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
                 elif child.name == "br":
+                    # 换行标签
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
                 elif child.name == "picture":
+                    # 图片元素
                     flush()
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
                 elif child.name in ("div", "span"):
+                    # 嵌套容器：递归提取图片
                     has_pic, text = self._extract_images_recursive(child, items, flush)
                     if not has_pic and text:
                         current_text += text
                 else:
+                    # 其他元素：提取文本内容
                     sub_text = child.get_text(strip=False)
                     if sub_text:
                         current_text += sub_text
-        
+
         flush()
 
         blocks.append(TextBlock(type="paragraph", content="", items=items))
-    
+
     def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: Callable[..., Any]) -> tuple[bool, str]:
-        """递归查找嵌套的 picture 并提取图片，返回 (has_picture, text)"""
+        """
+        递归查找嵌套的 picture 并提取图片
+
+        Args:
+            element: HTML 元素
+            items: 内联内容列表
+            flush_func: 刷新回调函数
+
+        Returns:
+            (是否有图片, 剩余文本)
+        """
         pics = element.find_all("picture")
         if pics:
             for pic in pics:
@@ -819,9 +946,17 @@ class BaseParser(ABC):
         else:
             sub_text = element.get_text(strip=False)
             return False, sub_text
-    
+
     def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
-        """递归提取 strong/b 内的内容 - 保留嵌套加粗"""
+        """
+        递归提取 strong/b 内的内容
+
+        Args:
+            element: strong 或 b 元素
+
+        Returns:
+            InlineContent 列表
+        """
         items = []
         for child in element.children:
             if isinstance(child, NavigableString):
@@ -829,23 +964,28 @@ class BaseParser(ABC):
                 if text:
                     items.append(InlineContent(type="text", content=text, bold=True))
             elif isinstance(child, Tag):
-                # 嵌套的加粗
                 if child.name in ("strong", "b"):
                     items.extend(self._extract_strong_recursive(child))
-                # 嵌套的公式 - 使用钩子判断
                 elif self._is_math_element(child):
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                # 其他内容
                 else:
                     text = child.get_text(strip=False)
                     if text:
                         items.append(InlineContent(type="text", content=text, bold=True))
         return items
-    
+
     def _extract_italic_recursive(self, element: Tag) -> list[InlineContent]:
-        """递归提取斜体/强调内容 - 支持嵌套结构"""
+        """
+        递归提取斜体/强调内容
+
+        Args:
+            element: em 或 i 元素
+
+        Returns:
+            InlineContent 列表
+        """
         items = []
         for child in element.children:
             if isinstance(child, NavigableString):
@@ -869,18 +1009,27 @@ class BaseParser(ABC):
                     if text:
                         items.append(InlineContent(type="text", content=text, italic=True))
         return items
-    
+
     def _extract_inline_text_with_format(self, element: Tag, in_bold: bool = False) -> list[InlineContent]:
-        """提取内联元素的文本 - 保留加粗格式"""
-        items: list[InlineContent] = []
-        current_text = ""
-        
-        def flush(bold: bool = False):
+        """
+        提取内联元素的文本
+
+        Args:
+            element: HTML 元素
+            in_bold: 是否继承父级加粗
+
+        Returns:
+            InlineContent 列表
+        """
+        items: list[InlineContent] = []  # 内联内容列表
+        current_text = ""  # 当前累积文本
+
+        def flush(bold: bool = False):  # 刷新累积的文本到 items
             nonlocal current_text
             if current_text.strip():
                 items.append(InlineContent(type="text", content=current_text.strip(), bold=bold))
             current_text = ""
-        
+
         for child in element.children:
             if isinstance(child, NavigableString):
                 current_text += str(child)
@@ -911,15 +1060,20 @@ class BaseParser(ABC):
                         sub_text = child.get_text(strip=False)
                         if sub_text:
                             current_text += sub_text
-        
+
         if current_text.strip():
             items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
-        
+
         return items
-    
+
     def _process_inline_element(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理内联元素（如 strong, em, span 等）"""
-        # 先处理嵌套的 picture 元素
+        """
+        处理内联元素
+
+        Args:
+            element: HTML 元素
+            blocks: 内容块列表
+        """
         pics = element.find_all("picture")
         for pic in pics:
             url = self._extract_image_url(pic)
@@ -938,11 +1092,17 @@ class BaseParser(ABC):
                 text = element.get_text(strip=True)
                 if text:
                     blocks.append(TextBlock(type="paragraph", content=text, language="bold" if bold else None))
-    
+
     def _process_element_with_inline_math(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理包含公式的内联元素"""
+        """
+        处理包含公式的内联元素
+
+        Args:
+            element: HTML 元素
+            blocks: 内容块列表
+        """
         math_elements = self._find_math_in_element(element)
-        
+
         if not math_elements:
             text = element.get_text(strip=True)
             if text and blocks and blocks[-1].type == "paragraph":
@@ -950,10 +1110,10 @@ class BaseParser(ABC):
             elif text:
                 blocks.append(TextBlock(type="paragraph", content=text))
             return
-        
+
         math_ids = set(id(el) for el in math_elements)
         text_parts = []
-        
+
         for child in element.children:
             if isinstance(child, NavigableString):
                 text = str(child).strip()
@@ -970,57 +1130,76 @@ class BaseParser(ABC):
                     sub_text = child.get_text(strip=True)
                     if sub_text:
                         text_parts.append(sub_text)
-        
+
         if text_parts:
             combined = " ".join(text_parts).strip()
             if combined:
                 blocks.append(TextBlock(type="paragraph", content=combined))
-    
+
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """解析数学公式元素"""
-        # 使用钩子提取 LaTeX 内容
+        """
+        处理公式元素
+
+        Args:
+            element: 公式元素
+            blocks: 内容块列表
+        """
         latex = self._extract_latex_content(element)
-        
+
         if not latex:
             latex = element.get_text(strip=True)
-        
+
         latex = self._strip_latex_delimiters(latex)
-        # 使用钩子判断是否为展示公式
         is_display = self._is_display_math(element)
-        
+
         blocks.append(TextBlock(
             type="latex",
             content=latex,
             language="display" if is_display else "inline"
         ))
-        
+
         if len(blocks) >= 2:
             prev_block = blocks[-2]
             if prev_block.type == "paragraph" and not prev_block.items:
                 prev_block.items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 blocks.pop()
-    
+
     # -------------------------------------------------------------------------
-    # 辅助方法 - 提供通用功能，供钩子方法或子类使用
+    # 辅助方法
     # -------------------------------------------------------------------------
-    
+
     def _find_math_in_element(self, element: Tag) -> list[Tag]:
-        """在元素中查找所有公式元素"""
+        """
+        在元素中查找所有公式元素
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            公式元素列表
+        """
         math_elements = []
         for child in element.find_all(recursive=False):
             if self._is_math_element(child):
                 math_elements.append(child)
         return math_elements
-    
+
     @staticmethod
     def _parse_table(table: Tag) -> Optional[TableData]:
-        """解析表格 - 提取表头和数据行"""
-        headers = []
-        rows = []
-        header_bold = []
-        cell_bold = []
-        
-        # 提取表头
+        """
+        解析表格
+
+        Args:
+            table: table 元素
+
+        Returns:
+            TableData 对象，解析失败返回 None
+        """
+        headers = []  # 表头文本列表
+        rows = []  # 数据行列表
+        header_bold = []  # 表头加粗标记
+        cell_bold = []  # 单元格加粗标记
+
         thead = table.find("thead")
         if thead:
             header_row = thead.find("tr")
@@ -1030,12 +1209,11 @@ class BaseParser(ABC):
                 for th in header_row.find_all(["th", "td"]):
                     headers.append(th.get_text(strip=True))
                     header_bold.append(th.find("strong") is not None or th.find("b") is not None)
-        
-        # 提取数据行
+
         tbody = table.find("tbody")
         if not tbody:
             tbody = table
-        
+
         for row in tbody.find_all("tr"):
             row_data = []
             row_bold = []
@@ -1045,29 +1223,34 @@ class BaseParser(ABC):
             if row_data:
                 rows.append(row_data)
                 cell_bold.append(row_bold)
-        
-        # 处理没有 thead 的情况（第一行作为表头）
+
         if not rows and not headers:
             return None
-        
+
         if not headers:
             headers = rows[0] if rows else []
             rows = rows[1:] if rows else []
             header_bold = [False] * len(headers)
             cell_bold = cell_bold[1:] if cell_bold else []
-        
+
         return TableData(headers=headers, rows=rows, header_bold=header_bold, cell_bold=cell_bold)
-    
+
     @staticmethod
     def _strip_latex_delimiters(latex: str) -> str:
-        """去除 LaTeX 公式的边界符"""
+        """
+        去除 LaTeX 公式的边界符
+
+        Args:
+            latex: LaTeX 公式字符串
+
+        Returns:
+            去除边界符后的公式
+        """
         latex = latex.strip()
-        # 块级公式分隔符
         if latex.startswith("\\[") and latex.endswith("\\]"):
             return latex[2:-2]
         if latex.startswith("$$") and latex.endswith("$$"):
             return latex[2:-2]
-        # 行内公式分隔符
         if latex.startswith("\\(") and latex.endswith("\\)"):
             return latex[2:-2]
         if latex.startswith("$") and latex.endswith("$"):

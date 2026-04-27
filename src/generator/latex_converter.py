@@ -1,14 +1,12 @@
-"""
-LaTeX 公式转换器模块
+"""LaTeX 公式 Unicode 转换器模块"""
 
-提供 LaTeX 公式的 Unicode fallback 转换。
-pandoc 不可用时，将 LaTeX 公式转换为 Unicode 字符近似显示。
-"""
+import subprocess
 
 
 class LaTeXConverter:
-    """LaTeX 公式 Unicode 转换器"""
+    """LaTeX 公式 Unicode fallback 转换器"""
 
+    # LaTeX 命令到 Unicode 字符的映射表
     _UNICODE_REPLACEMENTS: dict[str, str] = {
         r"\alpha": "α", r"\beta": "β", r"\gamma": "γ", r"\delta": "δ",
         r"\pi": "π", r"\theta": "θ", r"\lambda": "λ", r"\sigma": "σ",
@@ -20,12 +18,13 @@ class LaTeXConverter:
         r"\in": "∈", r"\subset": "⊂", r"\cup": "∪", r"\cap": "∩",
     }
 
-    def __init__(self) -> None:
-        """初始化 LaTeX 转换器"""
-
     def check_dependencies(self) -> tuple[bool, str]:
-        """检查 pandoc 是否可用"""
-        import subprocess
+        """
+        检查 pandoc 依赖是否可用
+
+        Returns:
+            tuple[bool, str]: (是否可用, 错误信息)
+        """
         try:
             result = subprocess.run(
                 ["pandoc", "--version"],
@@ -39,7 +38,15 @@ class LaTeXConverter:
         return True, ""
 
     def convert_inline(self, latex_formula: str) -> str:
-        """转换 LaTeX 公式为 Unicode 表示"""
+        """
+        将 LaTeX 公式转换为 Unicode 表示
+
+        Args:
+            latex_formula: LaTeX 公式文本
+
+        Returns:
+            str: Unicode 表示的公式文本
+        """
         result = latex_formula
 
         # 替换 LaTeX 命令为 Unicode 字符

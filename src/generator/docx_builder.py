@@ -1,9 +1,4 @@
-"""
-Word 文档构建器模块
-
-将解析后的内容块转换为 Word 文档（.docx 格式）。
-使用 python-docx 库创建文档，通过 pandoc 将 LaTeX 公式转换为 Word 原生格式。
-"""
+"""Word 文档构建器模块"""
 
 import os
 import re
@@ -31,23 +26,16 @@ from .latex_converter import LaTeXConverter
 
 @dataclass
 class DocumentConfig:
-    """
-    文档配置 - 定义 Word 文档的全局样式和属性
-
-    为什么使用 dataclass？
-    - 自动生成 __init__、__repr__ 等方法
-    - 类型注解让代码更易维护
-    - 不可变属性（默认）避免意外修改
-    """
-    title: str = "豆包聊天记录"
-    author: str = "Doubao Export"
-    margin_left: float = 1.0
-    margin_right: float = 1.0
-    margin_top: float = 1.0
-    margin_bottom: float = 1.0
-    font_name: str = "微软雅黑"
-    font_size: int = 12
-    style_config: DocumentStyleConfig | None = None
+    """Word 文档全局样式配置"""
+    title: str = "豆包聊天记录"  # 文档标题
+    author: str = "Doubao Export"  # 文档作者
+    margin_left: float = 1.0  # 左边距（英寸）
+    margin_right: float = 1.0  # 右边距（英寸）
+    margin_top: float = 1.0  # 上边距（英寸）
+    margin_bottom: float = 1.0  # 下边距（英寸）
+    font_name: str = "微软雅黑"  # 正文字体
+    font_size: int = 12  # 字号
+    style_config: DocumentStyleConfig | None = None  # 样式配置
 
     def __post_init__(self):
         if self.style_config is None:
@@ -56,14 +44,9 @@ class DocumentConfig:
 
 class DocxBuilder:
     """
-    Word 文档构建器 - 将内容块转换为 Word 文档
+    Word 文档构建器
 
-    这是核心的文档生成类，负责将解析后的 TextBlock 列表转换为可读的 Word 文档。
-
-    为什么需要这个类？
-    - 解析器只能提取结构化数据，不能直接生成 Word 文件
-    - python-docx API 比较底层，需要封装成更易用的接口
-    - 不同类型的内容（公式、代码、表格）需要不同的处理逻辑
+    将 TextBlock 列表转换为 Word 文档。
     """
 
     def __init__(self, config: Optional[DocumentConfig] = None) -> None:
@@ -71,13 +54,7 @@ class DocxBuilder:
         初始化文档构建器
 
         Args:
-            config: 文档配置，如果为 None 则使用默认配置
-
-        初始化时做了什么？
-        1. 创建 Document 对象（Word 文档的根节点）
-        2. 初始化 LaTeX 转换器（用于公式转换）
-        3. 设置页面边距和默认字体
-        4. 初始化列表状态追踪器（用于有序列表序号）
+            config: 文档配置，为 None 时使用默认配置
         """
         self.config = config or DocumentConfig(style_config=get_config().document_style)
         self.document = Document()  # python-docx 文档对象
@@ -87,7 +64,7 @@ class DocxBuilder:
         # 列表状态追踪（用于有序列表序号连续性）
         self._last_list_type: str | None = None  # 上一个列表类型（"ul" 或 "ol"）
         self._last_list_level: int = 0  # 上一个列表的嵌套层级
-        self._list_counter: int = 0  # 当前有序列表的序号
+        self._list_counter: int = 0  # 有序列表当前序号
         self._last_block_type: str | None = None  # 上一个内容块类型
 
         # 图片下载失败追踪
@@ -98,14 +75,13 @@ class DocxBuilder:
         self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
 
     def _setup_document(self) -> None:
-        """设置文档基础样式（页边距和默认字体）"""
+        """设置页边距和默认字体"""
         section = self.document.sections[0]
         section.top_margin = Inches(self.config.margin_top)
         section.bottom_margin = Inches(self.config.margin_bottom)
         section.left_margin = Inches(self.config.margin_left)
         section.right_margin = Inches(self.config.margin_right)
 
-        # 设置默认字体
         style = self.document.styles["Normal"]
         font = getattr(style, 'font', None)
         if font:
@@ -113,7 +89,12 @@ class DocxBuilder:
             font.size = Pt(self.config.font_size)
 
     def _set_run_font(self, run) -> None:
-        """设置字体（包含中文字体支持）"""
+        """
+        设置 Run 字体
+
+        Args:
+            run: docx Run 对象
+        """
         run.font.name = self.config.font_name
         run.font.size = Pt(self.config.font_size)
         try:
@@ -122,7 +103,12 @@ class DocxBuilder:
             pass
 
     def _add_title(self, title: str) -> None:
-        """添加文档标题（居中显示）"""
+        """
+        添加文档标题
+
+        Args:
+            title: 标题文本
+        """
         heading = self.document.add_heading(title, level=1)
         heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
         for run in heading.runs:
@@ -132,7 +118,13 @@ class DocxBuilder:
             self._set_run_font(run)
 
     def _add_paragraph(self, text: str, style: Optional[str] = None) -> None:
-        """添加普通段落"""
+        """
+        添加普通段落
+
+        Args:
+            text: 段落文本
+            style: 段落样式
+        """
         para = self.document.add_paragraph(text, style=style)
         for run in para.runs:
             self._set_run_font(run)
@@ -143,7 +135,17 @@ class DocxBuilder:
         blocks: list[tuple[str, "TextBlock"]],
         output_path: str,
     ) -> str:
-        """从内容块构建文档（主入口方法）"""
+        """
+        从内容块构建文档
+
+        Args:
+            title: 文档标题
+            blocks: (角色, TextBlock) 元组列表
+            output_path: 输出文件路径
+
+        Returns:
+            str: 输出文件路径
+        """
         self._add_title(title)
 
         # 重置列表状态
@@ -153,7 +155,7 @@ class DocxBuilder:
 
         current_role = ""
         for role, block in blocks:
-            # 切换角色时添加角色标签（用户/豆包）
+            # 切换角色时添加角色标签
             if role != current_role:
                 current_role = role
                 role_label = "用户" if role == "user" else "豆包"
@@ -172,51 +174,76 @@ class DocxBuilder:
         return output_path
 
     def get_image_failures(self) -> tuple[int, list[str]]:
+        """
+        获取图片下载失败信息
+
+        Returns:
+            tuple[int, list[str]]: (失败数量, 失败 URL 列表)
+        """
         return self._image_failure_count, self._image_failure_urls
 
     def _add_text_block(self, block: "TextBlock") -> None:
-        """根据块类型分发处理"""
+        """
+        根据块类型分发处理
+
+        Args:
+            block: TextBlock 内容块
+        """
+        # 公式
         if block.type == "latex":
             self._add_latex(block.content, is_display=(block.language == "display"), as_standalone=True)
+        # 代码块
         elif block.type == "code":
             self._add_code_block(block.content, block.language)
+        # 标题
         elif block.type == "heading":
-            level = int(block.language) if block.language else 3
+            level = int(block.language) if block.language else 3  # 标题级别
             heading = self.document.add_heading(block.content, level=min(level, 6))
             for run in heading.runs:
                 run.font.color.rgb = RGBColor(0, 0, 0)
                 self._set_run_font(run)
-            # 标题意味着新的逻辑分组，重置列表状态，让后续列表从 1 开始编号
+            # 标题意味着新的逻辑分组，重置列表状态
             self._last_list_type = None
             self._last_list_level = 0
             self._list_counter = 0
+        # 简单列表
         elif block.type == "list":
             self._add_list(block.content, block.language)
+        # 列表项
         elif block.type == "list_item":
             self._add_list_item(block)
+        # 表格
         elif block.type == "table":
             self._add_table(block.data)
+        # 引用
         elif block.type == "blockquote":
             self._add_blockquote(block.content)
+        # 图片
         elif block.type == "image":
             self._add_image(block.content)
+        # 内联段落（包含公式/加粗等）
         elif block.type == "paragraph" and block.items:
-            # 包含内联内容（文本和公式混合）的段落
             self._add_inline_content(block.items)
+        # 普通段落
         else:
-            # 普通段落
             content = block.content.rstrip("\n") if block.content else ""
             if content:
                 self._add_paragraph(content)
 
     def _add_list_item(self, block: "TextBlock") -> None:
-        """添加列表项（支持有序和无序列表）"""
-        list_type = block.language if block.language in ("ul", "ol") else "ul"
-        level = getattr(block, 'level', 0)
+        """
+        添加列表项
+
+        Args:
+            block: TextBlock 内容块
+        """
+        list_type = block.language if block.language in ("ul", "ol") else "ul"  # 列表类型
+        level = getattr(block, 'level', 0)  # 嵌套层级
 
         if block.items:
-            # 包含内联内容的列表项（如加粗文本、公式）
+            # 包含内联内容的列表项
             if list_type == "ol":
+                # 遇到新标题、切换列表类型或层级变化时重置计数器
                 if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
                     self._list_counter = 0
                 self._list_counter += 1
@@ -231,6 +258,7 @@ class DocxBuilder:
         else:
             # 纯文本列表项
             if list_type == "ol":
+                # 遇到新标题、切换列表类型或层级变化时重置计数器
                 if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
                     self._list_counter = 0
                 self._list_counter += 1
@@ -245,17 +273,25 @@ class DocxBuilder:
                 para = self.document.add_paragraph(block.content, style="List Bullet")
                 for run in para.runs:
                     self._set_run_font(run)
-        
+
         self._last_block_type = block.type
 
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
-        """添加内联内容（文本和公式混合的段落）"""
+        """
+        添加内联内容（文本和公式混合的段落）
+
+        Args:
+            items: 内联内容项列表
+            list_type: 列表类型（"ol" 或 "ul"）
+            start_index: 有序列表起始序号
+            level: 嵌套层级
+        """
         if not items:
             return
 
-        para = self._create_inline_paragraph(list_type, start_index, level)
-        last_run = None
-        prev_was_latex = False
+        para = self._create_inline_paragraph(list_type, start_index, level)  # 当前段落
+        last_run = None  # 上一个 Run 对象（用于换行处理）
+        prev_was_latex = False  # 上一个元素是否为公式
         for idx, item in enumerate(items):
             # 有列表标记时，创建新的无序列表段落
             if item.list_marker and item.type == "text":
@@ -273,8 +309,9 @@ class DocxBuilder:
                 prev_was_latex = False
                 continue
 
+            # 文本内容
             if item.type == "text":
-                # 跳过纯换行符（下一个元素是列表项时会自己创建段落）
+                # 跳过纯换行符
                 if item.content == "\n":
                     next_item = items[idx + 1] if idx + 1 < len(items) else None
                     if next_item and next_item.list_marker:
@@ -296,6 +333,7 @@ class DocxBuilder:
                             run.font.italic = True
                         last_run = run
                 prev_was_latex = False
+            # 公式
             elif item.type == "latex":
                 if item.is_display:
                     self._add_latex(item.content, is_display=True, as_standalone=True)
@@ -304,6 +342,7 @@ class DocxBuilder:
                     self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
                 last_run = None
                 prev_was_latex = True
+            # 图片
             elif item.type == "image" and item.image_url:
                 url = item.image_url
                 image_data = self._download_image(url)
@@ -314,7 +353,6 @@ class DocxBuilder:
                             f.write(image_data)
                             temp_path = f.name
                         max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
-                        # 创建新段落放置图片，确保独立成段
                         para = self.document.add_paragraph()
                         para.add_run().add_picture(temp_path, width=max_width)
                     except Exception:
@@ -328,9 +366,11 @@ class DocxBuilder:
                     self._image_failure_urls.append(url or "(空URL)")
                 last_run = None
                 prev_was_latex = False
+            # 表格
             elif item.type == "table":
                 self._add_table(item.data)
                 para = self.document.add_paragraph()
+            # 代码
             elif item.type == "code":
                 self._add_code_block(item.content)
                 para = self.document.add_paragraph()
@@ -339,12 +379,14 @@ class DocxBuilder:
         """
         创建内联段落并设置列表样式
 
-        为什么需要单独的方法？
-        在 Word 中，有序列表（1. 2. 3.）和无序列表（• • •）是不同的样式。
-        创建时需要指定使用哪种样式，以及序号从几开始。
-        """
+        Args:
+            list_type: 列表类型（"ol" 或 "ul"）
+            start_index: 有序列表起始序号
+            level: 嵌套层级
 
-        # Word 列表样式：List Number 有序，List Bullet 无序
+        Returns:
+            Paragraph: 创建的段落对象
+        """
         if list_type == "ol":
             para = self.document.add_paragraph()
             run = para.add_run(f"{start_index}. ")
@@ -358,15 +400,20 @@ class DocxBuilder:
         return para
 
     def _add_latex(self, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
-        """添加 LaTeX 公式为 Word 公式对象"""
+        """
+        添加 LaTeX 公式
+
+        Args:
+            latex: LaTeX 公式文本
+            is_display: 是否为展示公式
+            as_standalone: 是否独立成段
+        """
         if not latex.strip():
             return
 
-        # 预处理 LaTeX 公式
         latex = _BaseParser._strip_latex_delimiters(latex)
         latex = self._compensate_text_latex(latex)
 
-        # 尝试转换为 Word 公式（OMML）
         math_element = self._latex_to_omml(latex, is_display)
         if math_element is not None:
             try:
@@ -384,7 +431,15 @@ class DocxBuilder:
         self._set_run_font(p.runs[0])
 
     def _add_latex_to_paragraph(self, para, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
-        """添加内联公式到已有段落"""
+        """
+        添加内联公式到已有段落
+
+        Args:
+            para: 目标段落
+            latex: LaTeX 公式文本
+            is_display: 是否为展示公式
+            as_standalone: 是否独立成段
+        """
         if not latex.strip():
             return
 
@@ -409,22 +464,31 @@ class DocxBuilder:
 
     def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
         """
-        使用 pandoc 将 LaTeX 转换为 OMML 元素"""
-        deps_ok, _ = self.latex_converter.check_dependencies()
+        使用 pandoc 将 LaTeX 转换为 OMML
+
+        Args:
+            latex: LaTeX 公式文本
+            is_display: 是否为展示公式
+
+        Returns:
+            Element | None: OMML 元素，转换失败返回 None
+        """
+        deps_ok, _ = self.latex_converter.check_dependencies()  # pandoc 是否可用
+        # pandoc 不可用时直接返回
         if not deps_ok:
             return None
 
-        # 格式化 LaTeX 内容
+        # 块级公式使用 $$...$$
         if is_display:
             tex_content = f'$$\n{latex}\n$$'
+        # 行内公式使用 \(...\)
         else:
             tex_content = f'\\({latex}\\)'
 
-        tmp_tex_path = None
-        tmp_docx_path = None
+        tmp_tex_path = None  # 临时 tex 文件路径
+        tmp_docx_path = None  # 临时 docx 文件路径
 
         try:
-            # 创建临时文件
             with tempfile.NamedTemporaryFile(
                 mode='w', suffix='.tex', delete=False, encoding='utf-8'
             ) as tmp_tex:
@@ -436,11 +500,10 @@ class DocxBuilder:
             ) as tmp_docx:
                 tmp_docx_path = tmp_docx.name
 
-            # 执行 pandoc 转换
             cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._pandoc_timeout)
 
-            # 从生成的 docx 中提取公式
+            # pandoc 转换成功：从生成的 docx 中提取公式
             if result.returncode == 0 and os.path.exists(tmp_docx_path):
                 doc = Document(tmp_docx_path)
                 for para in doc.paragraphs:
@@ -453,7 +516,6 @@ class DocxBuilder:
         except Exception as e:
             raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
-            # 清理临时文件
             import logging
             logger = logging.getLogger(__name__)
             for path in [tmp_tex_path, tmp_docx_path]:
@@ -467,9 +529,17 @@ class DocxBuilder:
         return None
 
     def _extract_math_from_paragraph(self, p_element) -> Element | None:
-        """从段落元素中提取数学公式"""
-        for child in p_element:
-            tag = child.tag
+        """
+        从段落元素中提取数学公式
+
+        Args:
+            p_element: 段落 XML 元素
+
+        Returns:
+            Element | None: 数学公式元素
+        """
+        for child in p_element:  # 遍历段落子元素
+            tag = child.tag  # 子元素标签
             if "oMath" in tag:
                 return child
             if "oMathPara" in tag:
@@ -477,16 +547,23 @@ class DocxBuilder:
         return None
 
     def _set_math_chinese_font(self, math_element: Element, font_name: str) -> None:
+        """
+        设置数学公式中的中文字体
+
+        Args:
+            math_element: 数学公式 XML 元素
+            font_name: 字体名称
+        """
         W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
         M_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
-        def qn_m(tag: str) -> str:
+        def qn_m(tag: str) -> str:  # 构建 Math 命名空间标签
             return "{%s}%s" % (M_NS, tag)
 
-        def qn_w(tag: str) -> str:
+        def qn_w(tag: str) -> str:  # 构建 Word 命名空间标签
             return "{%s}%s" % (W_NS, tag)
 
-        def is_chinese(text: str) -> bool:
+        def is_chinese(text: str) -> bool:  # 判断是否包含中文字符
             return any('\u4e00' <= c <= '\u9fff' for c in text)
 
         for m_r in math_element.iter(qn_m("r")):
@@ -504,14 +581,31 @@ class DocxBuilder:
                     m_r.append(w_rPr)
 
     def _compensate_text_latex(self, latex: str) -> str:
-        """补偿 \\text{} 中的空格丢失问题"""
+        """
+        补偿 \\text{} 中的空格丢失问题
+
+        Args:
+            latex: LaTeX 公式文本
+
+        Returns:
+            str: 处理后的 LaTeX 文本
+        """
         compensated = re.sub(r'\\text\{ ', lambda m: '\\text{~', latex)
         return compensated
 
     def _add_code_block(self, code: str, language: Optional[str] = None) -> None:
-        """添加代码块（带灰色背景）"""
-        para = self.document.add_paragraph()
-        run = para.add_run(code)
+        """
+        添加代码块
+
+        Args:
+            code: 代码文本
+            language: 代码语言
+
+        Returns:
+            None
+        """
+        para = self.document.add_paragraph()  # 代码段落
+        run = para.add_run(code)  # 代码 Run
         run.font.size = Pt(self.config.style_config.code_font_size if self.config.style_config else 10)
         self._set_run_font(run)
 
@@ -521,7 +615,16 @@ class DocxBuilder:
         pPr.append(shd)
 
     def _add_list(self, content: str, list_type: Optional[str] = None) -> None:
-        """添加简单文本列表"""
+        """
+        添加简单文本列表
+
+        Args:
+            content: 列表内容（换行分隔）
+            list_type: 列表类型（"ol" 或 "ul"）
+
+        Returns:
+            None
+        """
         items = content.split("\n")
         for item in items:
             if item.strip():
@@ -533,18 +636,26 @@ class DocxBuilder:
                     self._set_run_font(run)
 
     def _add_table(self, table_data) -> None:
-        """添加表格（表头加粗、网格样式）"""
+        """
+        添加表格
+
+        Args:
+            table_data: 表格数据对象
+
+        Returns:
+            None
+        """
         if not table_data or not table_data.headers:
             return
 
-        cols = len(table_data.headers)
-        rows_count = len(table_data.rows) + 1
+        cols = len(table_data.headers)  # 列数
+        rows_count = len(table_data.rows) + 1  # 行数（含表头）
 
         table = self.document.add_table(rows=rows_count, cols=cols)
         table.style = "Table Grid"
 
         # 添加表头
-        header_bold = getattr(table_data, 'header_bold', []) or [False] * cols
+        header_bold = getattr(table_data, 'header_bold', []) or [False] * cols  # 表头加粗标记
         for i, header in enumerate(table_data.headers):
             cell = table.rows[0].cells[i]
             cell.text = header
@@ -555,7 +666,7 @@ class DocxBuilder:
                     self._set_run_font(run)
 
         # 添加数据行
-        cell_bold = getattr(table_data, 'cell_bold', []) or []
+        cell_bold = getattr(table_data, 'cell_bold', []) or []  # 单元格加粗标记
         for row_idx, row_data in enumerate(table_data.rows):
             row_bold = cell_bold[row_idx] if row_idx < len(cell_bold) else []
             for col_idx, cell_data in enumerate(row_data):
@@ -569,7 +680,15 @@ class DocxBuilder:
                             self._set_run_font(run)
 
     def _add_blockquote(self, content: str) -> None:
-        """添加引用块（斜体样式）"""
+        """
+        添加引用块
+
+        Args:
+            content: 引用文本
+
+        Returns:
+            None
+        """
         para = self.document.add_paragraph(content)
         para.style = "Quote"
         for run in para.runs:
@@ -577,7 +696,15 @@ class DocxBuilder:
             run.font.italic = True
 
     def _download_image(self, url: str) -> Optional[bytes]:
-        """下载图片到内存"""
+        """
+        下载图片到内存
+
+        Args:
+            url: 图片 URL
+
+        Returns:
+            Optional[bytes]: 图片数据，下载失败返回 None
+        """
         if not url or not url.startswith("http"):
             self._image_failure_count += 1
             self._image_failure_urls.append(url or "(空URL)")
@@ -586,10 +713,10 @@ class DocxBuilder:
             crawler_config = self._config.crawler
             user_agents = crawler_config.user_agents if crawler_config else None
             user_agent = user_agents[0] if user_agents else "Mozilla/5.0"
-            resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})
+            resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})  # HTTP 响应
             resp.raise_for_status()
 
-            content_type = resp.headers.get("content-type", "")
+            content_type = resp.headers.get("content-type", "")  # 内容类型
             if not content_type.startswith("image/"):
                 self._image_failure_count += 1
                 self._image_failure_urls.append(url)
@@ -602,7 +729,16 @@ class DocxBuilder:
             return None
 
     def _add_image(self, url: str, max_width: Optional[Inches] = None) -> None:
-        """添加图片（独立成段，不与前文同行）"""
+        """
+        添加图片
+
+        Args:
+            url: 图片 URL
+            max_width: 最大宽度
+
+        Returns:
+            None
+        """
         image_data = self._download_image(url)
         if image_data is None:
             self._add_paragraph("[图片加载失败]")
@@ -614,7 +750,6 @@ class DocxBuilder:
                 f.write(image_data)
                 temp_path = f.name
             width = max_width or Inches(self.config.style_config.image_width if self.config.style_config else 5.0)
-            # 先创建段落再添加图片，确保图片不与前文同行
             para = self.document.add_paragraph()
             para.add_run().add_picture(temp_path, width=width)
         except Exception as e:

@@ -1,9 +1,4 @@
-"""
-浏览器生命周期管理模块
-
-负责 Playwright 浏览器的启动、配置和关闭。
-管理浏览器上下文和页面的创建。
-"""
+"""浏览器生命周期管理"""
 
 import logging
 from typing import TYPE_CHECKING, Any
@@ -15,16 +10,14 @@ from .anti_detect import AntiDetectMiddleware, create_anti_detect_middleware
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page
 
-# 模块级日志记录器
 logger = logging.getLogger(__name__)
 
 
 class BrowserManager:
     """
     浏览器生命周期管理器
-    
-    负责启动 Playwright 浏览器、创建上下文、应用反爬措施。
-    支持异步上下文管理器协议，可使用 with/async with 语法。
+
+    支持异步上下文管理器协议。
     """
 
     def __init__(
@@ -34,35 +27,32 @@ class BrowserManager:
     ) -> None:
         """
         初始化浏览器管理器
-        
+
         Args:
             anti_detect_level: 反爬级别（low/medium/high）
             config: 爬虫配置，None 时自动从全局配置获取
         """
-        self.config: CrawlerConfig = config or get_config().crawler
-        self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(anti_detect_level)
+        self.config: CrawlerConfig = config or get_config().crawler  # 爬虫配置
+        self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(anti_detect_level)  # 反爬中间件
         self.browser: "Browser | None" = None  # Playwright 浏览器实例
-        self.context: "BrowserContext | None" = None  # 浏览器上下文（隔离环境）
-        self.playwright: "Any" = None  # Playwright 主对象
+        self.context: "BrowserContext | None" = None  # Playwright 浏览器上下文
+        self.playwright: "Any" = None  # Playwright 实例
 
     async def __aenter__(self) -> "BrowserManager":
-        """异步上下文管理器入口：启动浏览器"""
+        """异步上下文管理器入口"""
         await self.start()
         return self
 
     async def __aexit__(self, exc_type: type, exc_val: BaseException, exc_tb: Any) -> None:
-        """异步上下文管理器退出：关闭浏览器"""
+        """异步上下文管理器退出"""
         await self.close()
 
     async def start(self) -> None:
         """
-        启动浏览器并创建浏览器上下文
-        
-        执行步骤：
-        1. 启动 Playwright
-        2. 启动 Chromium 浏览器（无头模式）
-        3. 创建隔离的浏览器上下文，模拟真实浏览器环境
-        4. 应用反爬措施
+        启动浏览器并创建上下文
+
+        Raises:
+            RuntimeError: 浏览器启动失败
         """
         from playwright.async_api import async_playwright
 
@@ -80,12 +70,7 @@ class BrowserManager:
         await self.anti_detect.apply(self.context)
 
     async def close(self) -> None:
-        """
-        关闭浏览器并释放资源
-        
-        按顺序关闭：上下文 → 浏览器 → Playwright
-        Windows 平台会额外等待一段时间再退出，确保资源释放。
-        """
+        """关闭浏览器并释放资源"""
         try:
             if self.context:
                 await self.context.close()
@@ -109,13 +94,13 @@ class BrowserManager:
 
     async def new_page(self) -> "Page":
         """
-        在当前上下文中创建新页面
-        
+        创建新页面
+
         Returns:
             Page: 新创建的页面对象
-            
+
         Raises:
-            RuntimeError: 上下文未初始化时抛出
+            RuntimeError: 上下文未初始化
         """
         if not self.context:
             raise RuntimeError("Browser context not initialized")

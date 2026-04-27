@@ -1,21 +1,4 @@
-"""
-数据模型定义
-
-本模块定义了爬虫和解析模块使用的数据结构。
-使用 dataclass 装饰器简化类的定义，自动生成 __init__、__repr__ 等方法。
-
-为什么需要这个模块？
-在爬取和解析过程中，需要统一的数据结构来表示聊天内容。
-使用 dataclass 可以：
-- 代码更简洁，省去手动定义 __init__
-- 自动生成 __repr__，便于调试
-- 支持类型提示，提高代码可靠性
-
-主要数据结构：
-- ImageData: 单张图片的信息（URL 和上下文文本）
-- ChatMessage: 单条聊天消息（角色、内容、时间戳、图片）
-- ChatData: 完整的聊天记录（包含标题和多条消息）
-"""
+"""爬虫数据模型"""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,22 +6,27 @@ from typing import Any
 
 @dataclass
 class ImageData:
-    """单张图片的数据模型"""
-    url: str
-    prev_text: str
-    next_text: str
+    """单张图片数据"""
+    url: str  # 图片 URL
+    prev_text: str  # 图片前相邻的标题文本
+    next_text: str  # 图片后相邻的标题文本
 
 
 @dataclass
 class ChatMessage:
-    """单条聊天消息的数据模型"""
-    role: str
-    content: str
-    timestamp: str | None = None
-    images: list[ImageData] = field(default_factory=list)
+    """单条聊天消息"""
+    role: str  # 消息角色（user/assistant）
+    content: str  # 消息 HTML 内容
+    timestamp: str | None = None  # 时间戳
+    images: list[ImageData] = field(default_factory=list)  # 图片列表
 
     def to_dict(self) -> dict[str, Any]:
-        """将消息转换为字典格式"""
+        """
+        转换为字典格式
+
+        Returns:
+            dict[str, Any]: 消息字典
+        """
         return {
             "role": self.role,
             "content": self.content,
@@ -52,14 +40,19 @@ class ChatMessage:
 
 @dataclass
 class ChatData:
-    """聊天记录数据模型"""
-    url: str
-    title: str = ""
-    messages: list[ChatMessage] = field(default_factory=list)
-    raw_html: str = ""
+    """完整聊天记录"""
+    url: str  # 聊天页面 URL
+    title: str = ""  # 聊天标题
+    messages: list[ChatMessage] = field(default_factory=list)  # 消息列表
+    raw_html: str = ""  # 原始 HTML
 
     def to_dict(self) -> dict[str, Any]:
-        """将聊天记录转换为字典格式"""
+        """
+        转换为字典格式
+
+        Returns:
+            dict[str, Any]: 聊天记录字典
+        """
         return {
             "url": self.url,
             "title": self.title,

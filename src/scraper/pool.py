@@ -1,13 +1,4 @@
-"""
-浏览器池模块
-
-提供浏览器实例的复用机制，减少批量导出时的浏览器启动开销。
-
-采用单浏览器多标签页模式：
-- 只启动 1 个浏览器进程
-- 每个任务使用独立的标签页 (page)
-- 任务完成后关闭标签页，浏览器进程复用
-"""
+"""浏览器池（单浏览器多标签页模式）"""
 
 import asyncio
 import logging
@@ -25,22 +16,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PooledPage:
-    page: "Page | None" = None
-    in_use: bool = False
+    """池化页面对象"""
+    page: "Page | None" = None  # Playwright 页面
+    in_use: bool = False  # 是否正在使用
 
 
 class BrowserPool:
     """
-    浏览器池（单浏览器多标签页模式）
+    浏览器池
 
-    管理一个预热的浏览器实例，通过标签页实现并发。
-
-    使用方式：
-    1. 创建池实例并初始化
-    2. 调用 acquire() 获取页面
-    3. 执行任务
-    4. 调用 release() 归还页面
-    5. 任务完成后调用 close() 关闭池
+    单浏览器多标签页模式，支持异步上下文管理器协议。
     """
 
     def __init__(
@@ -49,13 +34,18 @@ class BrowserPool:
         config: CrawlerConfig | None = None,
     ) -> None:
         self._anti_detect_level: str = anti_detect_level
-        self._config: CrawlerConfig = config or get_config().crawler
-        self._manager: BrowserManager | None = None
-        self._closed: bool = False
-        self._semaphore: asyncio.Semaphore | None = None
+        self._config: CrawlerConfig = config or get_config().crawler  # 爬虫配置
+        self._manager: BrowserManager | None = None  # 浏览器管理器
+        self._closed: bool = False  # 池是否已关闭
+        self._semaphore: asyncio.Semaphore | None = None  # 并发控制信号量
 
     async def initialize(self) -> None:
-        """初始化池：启动浏览器实例"""
+        """
+        初始化浏览器池
+
+        Raises:
+            RuntimeError: 池已关闭
+        """
         if self._closed:
             raise RuntimeError("浏览器池已关闭，无法初始化")
 
@@ -69,17 +59,22 @@ class BrowserPool:
 
     async def acquire(self, concurrency: int = 5) -> "Page":
         """
-        从池中获取一个页面
+        获取页面
 
         Args:
-            concurrency: 允许的最大并发数（控制信号量大小）
+            concurrency: 允许的最大并发数
 
         Returns:
             Page: 可用的页面
+
+        Raises:
+            RuntimeError: 池已关闭或浏览器未初始化
         """
+        # 池已关闭
         if self._closed:
             raise RuntimeError("浏览器池已关闭，无法获取资源")
 
+        # 浏览器未初始化
         if self._manager is None or self._manager.browser is None:
             raise RuntimeError("浏览器未初始化")
 
@@ -98,14 +93,16 @@ class BrowserPool:
 
     async def release(self, page: "Page | None") -> None:
         """
-        归还页面到池中（关闭标签页）
+        归还页面（关闭标签页）
 
         Args:
             page: 待关闭的页面
         """
+        # 释放信号量占用
         if self._semaphore is not None:
             self._semaphore.release()
 
+        # 关闭页面
         if page is not None:
             try:
                 await page.close()
@@ -113,13 +110,15 @@ class BrowserPool:
                 logger.debug(f"关闭页面时出错: {e}")
 
     async def close(self) -> None:
-        """关闭池：清理浏览器资源"""
+        """关闭池并清理资源"""
+        # 池已关闭，直接返回
         if self._closed:
             return
 
         self._closed = True
         logger.info("正在关闭浏览器池...")
 
+        # 关闭浏览器管理器
         if self._manager is not None:
             await self._manager.close()
             self._manager = None

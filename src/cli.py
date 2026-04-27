@@ -1,18 +1,4 @@
-"""
-命令行入口模块
-
-本模块是整个程序的入口点，负责：
-1. 解析命令行参数
-2. 管理批量任务执行
-3. 显示实时进度（Rich Live）
-4. 生成最终报告
-
-主要流程：
-1. main() 解析参数，创建 TaskManager
-2. fetch_and_export_batch() 批量执行导出任务
-3. fetch_and_export_single() 单个任务执行
-4. TaskManager 管理进度显示
-"""
+"""命令行入口模块"""
 
 import argparse
 import asyncio
@@ -40,7 +26,7 @@ from src.exceptions import CrawlerError, ParseError, ExportError
 # 全局配置实例
 _config = GlobalConfig.load()
 
-# 预编译的正则表达式，用于从 URL 提取 thread ID
+# 从 URL 提取 thread ID 的正则
 THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
 
 # 全局任务管理器（用于进度回调）
@@ -49,15 +35,13 @@ _task_manager: "TaskManager | None" = None
 
 def _get_url_tag(url: str) -> str:
     """
-    从 URL 中提取 thread ID 作为简短标签
-
-    用于在进度显示中标识不同的任务。
+    从 URL 提取 thread ID 作为标签
 
     Args:
         url: 完整的豆包 URL
 
     Returns:
-        thread ID 或 URL 的前 N 个字符
+        thread ID 或截断的 URL
     """
     match = THREAD_ID_PATTERN.search(url)
     return match.group(1) if match else url[:_config.url_fallback_length]
@@ -65,21 +49,17 @@ def _get_url_tag(url: str) -> str:
 
 @dataclass
 class TaskStatus:
-    """
-    单个任务的状态
-
-    用于 TaskManager 追踪每个 URL 的导出进度。
-    """
-    task_index: int  # 任务序号（1-based）
+    """单个任务的状态"""
+    task_index: int  # 任务序号
     total: int  # 总任务数
-    url_tag: str  # URL 标签（thread ID）
-    step: int = 0  # 当前步骤（0-6）
+    url_tag: str  # URL 标签（thread ID 或截断的 URL）
+    step: int = 0  # 当前步骤索引
     status: str = "等待中"  # 状态文本
     result: str = ""  # 结果或错误信息
     elapsed: float = 0.0  # 已耗时（秒）
 
     def to_line(self) -> str:
-        """转换为纯文本行（非交互式终端使用）"""
+        """转换为纯文本行"""
         total = STEP_COUNT
         dots = "●" * self.step + "○" * (total - self.step) if self.step < total else "●" * total
         elapsed_str = f"({self.elapsed:.1f}s)" if self.elapsed > 0 else ""
@@ -88,29 +68,21 @@ class TaskStatus:
 
 class TaskManager:
     """
-    任务管理器 - 管理批量任务的进度显示
+    任务进度管理器
 
-    支持两种显示模式：
-    1. 交互式终端：使用 Rich Live 动态刷新表格
-    2. 非交互式终端：降级为纯文本打印
-
-    使用方式：
-    1. 创建实例并调用 start()
-    2. 使用 add_task() 添加任务
-    3. 使用 update() 更新进度
-    4. 使用 stop() 停止显示
+    支持交互式终端（Rich Live）和非交互式终端（纯文本）两种模式。
     """
 
     def __init__(self, total: int):
-        self.total = total
-        self.tasks: list[TaskStatus] = []
-        self._live: Optional[Live] = None
-        self._console = Console()
+        self.total: int = total  # 总任务数
+        self.tasks: list[TaskStatus] = []  # 任务列表
+        self._live: Optional[Live] = None  # Rich Live 显示实例
+        self._console = Console()  # Rich 控制台
         # 检测是否为交互式终端
-        self._is_interactive = self._console.is_terminal
+        self._is_interactive = self._console.is_terminal  # 是否交互式终端
 
     def add_task(self, task_index: int, url_tag: str) -> TaskStatus:
-        """添加一个新任务"""
+        """添加任务"""
         task = TaskStatus(task_index=task_index, total=self.total, url_tag=url_tag)
         self.tasks.append(task)
         return task
@@ -133,20 +105,12 @@ class TaskManager:
                 task.result = result
                 task.elapsed = elapsed
                 break
-
         # 交互式终端使用 Live 刷新
         if self._is_interactive and self._live is not None:
             self._live.update(self._build_table())
 
     def _build_table(self) -> Table:
-        """
-        构建 Rich 表格
-
-        使用 Unicode 字符显示进度：
-        - ●: 已完成步骤
-        - →: 当前步骤
-        - ○: 未完成步骤
-        """
+        """构建 Rich 进度表格"""
         table = Table(show_header=True, show_lines=False, box=None, pad_edge=False)
         table.add_column("序号", width=4)
         table.add_column("进度", width=6)
@@ -189,7 +153,6 @@ class TaskManager:
                 elapsed_text,
                 result_text,
             )
-
         return table
 
     def start(self) -> None:
@@ -198,8 +161,8 @@ class TaskManager:
             self._live = Live(
                 self._build_table(),
                 console=self._console,
-                refresh_per_second=4,  # 每秒刷新4次
-                transient=False,  # 停止时保留最终状态
+                refresh_per_second=4,
+                transient=False,
             )
             self._live.start()
 
@@ -217,9 +180,7 @@ class TaskManager:
 
     def print_all(self) -> None:
         """打印所有任务状态（非交互式终端）"""
-        if self._is_interactive:
-            pass  # 交互式终端已通过 Live 显示
-        else:
+        if not self._is_interactive:
             for task in self.tasks:
                 print(task.to_line())
 
@@ -236,22 +197,17 @@ async def fetch_and_export_single(
     """
     单个 URL 的导出流程
 
-    执行步骤：
-    1. 使用 DoubaoSpider 爬取页面内容
-    2. 使用 DoubaoHTMLParser 解析 HTML
-    3. 使用 DocxBuilder 生成 Word 文档
-    4. 更新 TaskManager 进度
-
     Args:
         url: 豆包聊天页面 URL
         output_dir: 输出目录
         anti_detect_level: 反爬级别
         task_index: 任务序号
         total: 总任务数
-        namer: 文档命名器（共享实例用于批量操作）
+        namer: 文档命名器（共享实例）
+        external_page: 外部页面（浏览器池复用）
 
     Returns:
-        (url, success, filename, file_path, latex_fallback_count) 元组
+        (url, success, filename, file_path, latex_fallback_count, title) 元组
     """
     global _task_manager
 
@@ -276,33 +232,29 @@ async def fetch_and_export_single(
             _task_manager.update(task_index, step_idx, name, elapsed=elapsed)
 
     try:
-        # 步骤 1-7: 爬取页面
+        # 爬取页面
         async with DoubaoSpider(anti_detect_level=anti_detect_level, tag=url_tag, progress_callback=on_progress, external_page=external_page) as spider:
             chat_data = await spider.fetch(url)
 
-        # 步骤 8: 解析 HTML
+        # 解析 HTML
         update_step("解析内容")
-
         parser = DoubaoHTMLParser()
         all_blocks: list[tuple[str, TextBlock]] = []
         total_fallback: int = 0
 
-        # 将消息按角色分类
         for msg in chat_data.messages:
             parsed = parser.parse(msg.content)
             total_fallback += parsed.latex_fallback_count
             for block in parsed.blocks:
                 all_blocks.append((msg.role, block))
 
-        # 创建输出目录
+        # 初始化文档命名器
         index_file = output_dir / "link_index.json"
         output_dir.mkdir(parents=True, exist_ok=True)
-
-        # 共享文档命名器（用于批量操作保持序号一致）
         if namer is None:
             namer = DocNamer(index_file)
 
-        # 生成文件名（预分配模式不更新 title）
+        # 生成文件名
         filename_base = namer.get_filename(url, chat_data.title, update_title=False)
 
         # 构建输出路径
@@ -310,14 +262,10 @@ async def fetch_and_export_single(
         output_path = output_dir / "export" / date_str / f"{filename_base}.docx"
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 步骤 9: 生成文档
+        # 生成文档
         update_step("生成文档")
-
-        # 检查是否获取到消息内容，避免生成空文档
         if not all_blocks:
-            raise CrawlerError(
-                "未能提取到任何消息内容，可能是页面加载失败、需要登录或反爬拦截"
-            )
+            raise CrawlerError("未能提取到任何消息内容，可能是页面加载失败、需要登录或反爬拦截")
 
         config = DocumentConfig(title=chat_data.title, style_config=_config.document_style)
         builder = DocxBuilder(config)
@@ -337,7 +285,7 @@ async def fetch_and_export_single(
             if fail_count > 3:
                 print(f"    ...还有{fail_count - 3}张")
 
-        # 步骤 10: 完成
+        # 完成
         elapsed = time.time() - total_start
         if _task_manager:
             _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
@@ -370,8 +318,6 @@ async def fetch_and_export_batch(
     """
     批量导出多个 URL
 
-    使用 asyncio.Semaphore 控制并发数 + 浏览器池复用，实现批量并发导出。
-
     Args:
         urls: URL 列表
         output_dir: 输出目录
@@ -384,7 +330,7 @@ async def fetch_and_export_batch(
     report = BatchReport()
     total = len(urls)
 
-    # 初始化文档命名器（共享实例保证序号一致）
+    # 初始化文档命名器
     index_file = Path("data/link_index.json")
     namer = DocNamer(index_file)
     namer.cleanup_old_entries()
@@ -408,10 +354,8 @@ async def fetch_and_export_batch(
 
     namer.save()
 
-    # 单浏览器多标签页模式
+    # 浏览器池
     pool = BrowserPool(anti_detect_level=anti_detect_level)
-
-    # 初始化浏览器池
     await pool.initialize()
 
     async def bounded_export(task_index: int, url: str):
@@ -430,36 +374,27 @@ async def fetch_and_export_batch(
                 await pool.release(page)
 
     try:
-        # 创建所有任务
         tasks = [
             bounded_export(i + 1, url)
             for i, url in enumerate(urls)
         ]
-
-        # 并发执行
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # 记录需要更新 title 的映射
         url_title_map: dict[str, str] = {}
-
-        # 收集结果
         for result in results:
-            # 防御性：处理未预料的异常
             if isinstance(result, Exception):
                 report.add_failure("未知URL", str(result))
                 continue
-            # 正常结果 (6元组: url, success, filename, file_path, fallback_count, title)
             if isinstance(result, tuple) and len(result) == 6:
                 url, success, filename, file_path, fallback_count, chat_title = result
                 report.latex_fallback_count += fallback_count
                 if success:
                     report.add_success(url, filename, file_path if file_path else None)
-                    # 记录 title 用于后续统一更新
                     url_title_map[url] = chat_title
                 else:
                     report.add_failure(url, filename or "未知错误")
 
-        # 统一更新 title 并保存
+        # 统一更新 title
         for url, title in url_title_map.items():
             namer.update_title(url, title)
         namer.save()
@@ -473,14 +408,13 @@ def main() -> int:
     """
     主入口函数
 
-    命令行参数：
-    - urls: 豆包聊天页面 URL（必需，支持多个）
-    - --level: 反爬级别（low/medium/high，默认 medium）
-    - --concurrency: 批量并发数（默认 5）
+    Args:
+        urls: 豆包聊天页面 URL（必需，支持多个）
+        --level: 反爬级别（low/medium/high，默认 medium）
+        --concurrency: 批量并发数（默认 5）
 
-    返回值：
-    - 0: 全部成功
-    - 1: 有失败的任务
+    Returns:
+        0: 全部成功，1: 有失败任务
     """
     parser = argparse.ArgumentParser(
         description="导出豆包聊天记录为Word文档",
@@ -503,15 +437,12 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    # 输出空行，避免日志直接贴在命令行后面
     print()
 
     output_dir = Path(__file__).parent.parent / "data"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     from src.utils import windows_compat_setup, windows_compat_cleanup
-
-    # Windows 平台兼容性处理
     windows_compat_setup()
 
     try:
@@ -526,16 +457,14 @@ def main() -> int:
             manager.add_task(i + 1, url_tag)
         manager.start()
 
-        # 单 URL 使用串行，多 URL 使用并发
+        # 单 URL 串行，多 URL 并发
         if total == 1:
             urls = [args.urls[0]]
             concurrency = 1
         else:
             urls = args.urls
-            # 命令行参数 > 配置文件 > 默认值
             concurrency = args.concurrency if args.concurrency is not None else _config.concurrency
 
-        # 执行批量导出
         report = asyncio.run(fetch_and_export_batch(
             urls, output_dir, args.level, concurrency
         ))
@@ -544,14 +473,12 @@ def main() -> int:
         manager.print_all()
         _task_manager = None
 
-        # 打印汇总报告
         report.print_summary()
         print_folder_link()
 
         failure_count = sum(1 for r in report.results if not r.success)
         return 0 if failure_count == 0 else 1
     finally:
-        # Windows 平台资源清理
         windows_compat_cleanup()
 
 

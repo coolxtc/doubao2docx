@@ -1,25 +1,4 @@
-"""
-数据提取功能模块
-
-负责从 Playwright 页面中提取聊天数据。
-使用 JavaScript 在浏览器内执行提取逻辑，获取结构化的聊天信息。
-
-为什么需要这个模块？
-1. 性能：直接在浏览器中提取数据，避免数据传输开销
-2. 准确性：可以访问 DOM 的完整状态，包括懒加载内容
-3. 可靠性：复杂的 CSS 选择器在浏览器中可以正确执行
-
-提取流程：
-1. extract_title(): 提取聊天标题
-2. extract_messages(): 提取消息列表（角色、内容、图片）
-3. extract_all(): 组装完整的 ChatData
-
-技术细节：
-- 使用 page.evaluate() 在浏览器内执行 JavaScript
-- 通过 querySelectorAll 获取消息块
-- 解析 class 属性判断用户/助手角色
-- 从 picture 元素提取懒加载图片
-"""
+"""数据提取模块"""
 
 import logging
 from typing import TYPE_CHECKING, Any
@@ -32,14 +11,22 @@ from .models import ChatData, ChatMessage, ImageData
 
 
 class DataExtractor:
-    """数据提取器"""
+    """从 Playwright 页面提取聊天数据"""
 
     def __init__(self, config: CrawlerConfig) -> None:
         self.config: CrawlerConfig = config
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)  # 日志记录器
 
     async def extract_title(self, page: "Page") -> str:
-        """提取聊天标题"""
+        """
+        提取聊天标题
+
+        Args:
+            page: Playwright 页面对象
+
+        Returns:
+            str: 聊天标题，未找到时返回"未命名对话"
+        """
         try:
             title_element = await page.query_selector("h1, .chat-title, [class*='title']")
             if title_element:
@@ -49,7 +36,15 @@ class DataExtractor:
         return "未命名对话"
 
     async def extract_messages(self, page: "Page") -> list[ChatMessage]:
-        """提取聊天消息列表"""
+        """
+        提取聊天消息列表
+
+        Args:
+            page: Playwright 页面对象
+
+        Returns:
+            list[ChatMessage]: 聊天消息列表
+        """
         messages: list[ChatMessage] = []
 
         try:
@@ -174,7 +169,15 @@ class DataExtractor:
         return messages
 
     async def _extract_fallback(self, page: "Page") -> list[ChatMessage]:
-        """备用消息提取方法"""
+        """
+        备用消息提取方法
+
+        Args:
+            page: Playwright 页面对象
+
+        Returns:
+            list[ChatMessage]: 聊天消息列表
+        """
         messages: list[ChatMessage] = []
         try:
             text = await page.evaluate("""
@@ -190,7 +193,16 @@ class DataExtractor:
         return messages
 
     async def extract_all(self, page: "Page", url: str) -> ChatData:
-        """提取完整的聊天数据"""
+        """
+        提取完整聊天数据
+
+        Args:
+            page: Playwright 页面对象
+            url: 页面 URL
+
+        Returns:
+            ChatData: 完整的聊天数据
+        """
         title = await self.extract_title(page)
         messages = await self.extract_messages(page)
         raw_html = await page.content()

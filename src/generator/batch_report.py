@@ -1,9 +1,4 @@
-"""
-批量导出报告生成器模块
-
-生成批量导出的汇总报告，记录成功和失败情况。
-使用 Rich 库实现终端彩色输出和可点击链接。
-"""
+"""批量导出报告生成器模块"""
 
 import platform
 import time
@@ -18,31 +13,49 @@ from rich.console import Console
 
 @dataclass
 class ExportResult:
-    """单条导出结果的数据类"""
-    url: str
-    success: bool
-    filename: Optional[str] = None
-    file_path: Optional[str] = None
-    error_message: Optional[str] = None
+    """单条导出结果"""
+    url: str  # 导出的 URL
+    success: bool  # 是否成功
+    filename: Optional[str] = None  # 文件名
+    file_path: Optional[str] = None  # 文件路径
+    error_message: Optional[str] = None  # 错误信息
 
 
 @dataclass
 class BatchReport:
-    """收集和管理多次导出结果，提供汇总报告"""
+    """批量导出报告收集器"""
     results: list[ExportResult] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     latex_fallback_count: int = 0  # 公式识别回退计数
 
     def add_success(self, url: str, filename: str, file_path: Optional[str] = None) -> None:
-        """记录成功的导出"""
+        """
+        记录成功的导出
+
+        Args:
+            url: 导出 URL
+            filename: 文件名
+            file_path: 文件路径
+        """
         self.results.append(ExportResult(url=url, success=True, filename=filename, file_path=file_path))
 
     def add_failure(self, url: str, error: str) -> None:
-        """记录失败的导出"""
+        """
+        记录失败的导出
+
+        Args:
+            url: 导出 URL
+            error: 错误信息
+        """
         self.results.append(ExportResult(url=url, success=False, error_message=error))
 
     def _format_report(self) -> str:
-        """格式化报告文本（用于日志）"""
+        """
+        格式化报告文本
+
+        Returns:
+            str: 格式化的报告文本
+        """
         total = len(self.results)
         success_count = sum(1 for r in self.results if r.success)
         failure_count = total - success_count
@@ -78,7 +91,9 @@ class BatchReport:
         return "\n".join(lines)
 
     def print_summary(self) -> None:
-        """打印汇总报告到终端"""
+        """
+        打印汇总报告到终端
+        """
         console = Console()
         success_results = [r for r in self.results if r.success]
         failure_results = [r for r in self.results if not r.success]
@@ -110,12 +125,22 @@ class BatchReport:
         console.print(f"[bold]本次任务共耗时: {elapsed_seconds:.1f} 秒[/bold]")
 
 
-# 默认导出目录（项目 data/export/ 目录）
+# 默认导出目录
 DEFAULT_EXPORT_DIR = Path(__file__).parent.parent.parent / "data" / "export"
 
 
 def _build_file_link(file_path: str, text: str | None = None, style: str = "bold blue") -> str:
-    """构建跨平台的文件链接"""
+    """
+    构建跨平台的文件链接
+
+    Args:
+        file_path: 文件路径
+        text: 链接显示文本
+        style: Rich 样式
+
+    Returns:
+        str: Rich 格式的链接
+    """
     system = platform.system()
     text = text or file_path
 
@@ -134,7 +159,12 @@ def _build_file_link(file_path: str, text: str | None = None, style: str = "bold
 
 
 def _get_latest_export_folder() -> Path:
-    """获取最新的导出文件夹"""
+    """
+    获取最新的导出文件夹
+
+    Returns:
+        Path: 最新导出的文件夹路径，无文件夹时返回基础目录
+    """
     export_base = DEFAULT_EXPORT_DIR.resolve()
 
     if not export_base.exists():
@@ -153,7 +183,9 @@ def _get_latest_export_folder() -> Path:
 
 
 def print_folder_link() -> None:
-    """打印导出文件夹链接"""
+    """
+    打印导出文件夹链接到终端
+    """
     console = Console()
     export_dir = str(_get_latest_export_folder())
 
