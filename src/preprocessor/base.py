@@ -543,7 +543,7 @@ class BaseParser(ABC):
                     self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
                     current_text, current_bold, current_italic = self._handle_line_break(
-                        child.previousSibling, items, current_text, current_bold, current_italic, current_bold, current_italic
+                        child.previous_sibling, items, current_text, current_bold, current_italic, current_bold, current_italic
                     )
                 elif child.name == "br":
                     flush()
@@ -683,7 +683,7 @@ class BaseParser(ABC):
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
                     current_text, current_bold, current_italic = self._handle_line_break(
-                        child.previousSibling, items, current_text, current_bold, current_italic, 
+                        child.previous_sibling, items, current_text, current_bold, current_italic, 
                         parent_bold, parent_italic, flush
                     )
                 elif child.name == "br":

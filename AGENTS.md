@@ -1,7 +1,7 @@
 # AGENTS.md - Doubao Export
 
-**Generated:** 2026-04-23
-**Commit:** ab232cab
+**Generated:** 2026-04-27
+**Commit:** 631a6d48
 **Branch:** master
 
 豆包聊天记录导出工具：爬取 → 解析 → 生成 Word。
@@ -111,3 +111,80 @@ DoubaoHTMLParser(config=PlatformConfig())     # 解析器
 - pyproject.toml 无 linter/formatter 配置，依赖 AGENTS.md 约定
 - scraper 模块支持 `external_page` 注入（BrowserPool 复用）
 - preprocessor 使用钩子方法（`_is_*()`, `_extract_*()`）支持多平台
+
+## 测试
+
+### 运行测试
+
+```bash
+# 运行所有测试
+python3 -m pytest tests/
+
+# 运行单个测试文件
+python3 -m pytest tests/test_base_extended.py -v
+
+# 查看覆盖率
+python3 -m pytest tests/ --cov=src --cov-report=term
+```
+
+### 测试覆盖率
+
+| 模块 | 覆盖率 | 测试文件 |
+|------|--------|---------|
+| preprocessor/base.py | 79% | test_base_extended.py |
+| scraper/page_actions.py | 100% | test_page_actions.py |
+| scraper/extractor.py | 98% | test_extractor.py |
+| scraper/crawler.py | 50% | test_crawler.py |
+| generator/batch_report.py | 72% | test_batch_report.py |
+| config.py | 90% | test_config.py |
+
+### 测试模式
+
+**MockParser 模式**（用于 base.py 扩展测试）：
+```python
+from src.preprocessor.base import BaseParser, PlatformConfig, TextBlock, InlineContent
+
+class MockParser(BaseParser):
+    def __init__(self):
+        self.config = PlatformConfig()
+
+    def _get_title_selectors(self):
+        return ["h1"]
+
+    def _is_math_element(self, element):
+        return element.has_attr("copy-text")
+
+    def _is_display_math(self, element):
+        return "display" in (element.get("class") or [])
+
+    def _is_code_container(self, element):
+        return "code-container" in (element.get("class") or [])
+
+    def _is_paragraph_container(self, element):
+        return "paragraph" in (element.get("class") or [])
+
+    def _is_code_button(self, element):
+        return "button-" in (element.get("class") or [])
+
+    def _extract_latex_content(self, element):
+        return element.get("copy-text", "")
+
+    def _is_image_element(self, element):
+        return element.name == "picture"
+
+    def _extract_image_url(self, element):
+        return element.get("src", "")
+```
+
+**真实 HTML 结构**（来自 tests/test2.html）：
+- 嵌套 ul：`ul > li > strong > ul > li`
+- line-break div：`<div class="md-box-line-break">`
+- header：`<h3 class="header-iWP5WJ">`
+
+### 覆盖目标
+
+| 模块 | 目标 |
+|------|------|
+| preprocessor/base.py | ≥75% |
+| scraper/* | ≥50% |
+| generator/* | ≥50% |
