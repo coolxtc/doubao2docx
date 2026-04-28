@@ -1122,79 +1122,73 @@ class BaseParser(ABC):
             element: HTML 元素
             blocks: 内容块列表
         """
+        # 先提取图片（保持原有行为）
         pics = element.find_all(IMAGE_TAGS)
         for pic in pics:
             url = self._extract_image_url(pic)
             if url:
                 blocks.append(TextBlock(type="image", content=url))
 
-        math_in_children = self._find_math_in_element(element)
-        if math_in_children:
-            self._process_element_with_inline_math(element, blocks)
+        # 统一使用 _walk_inline_children 提取内联内容
+        bold = element.name in BOLD_TAGS
+        italic = element.name in ITALIC_TAGS
+        items = self._walk_inline_children(
+            element,
+            parent_bold=bold,
+            parent_italic=italic,
+            conditional_format_flush=False,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
+        if items:
+            blocks.append(TextBlock(type="paragraph", content="", items=items))
         else:
-            bold = element.name in BOLD_TAGS
-            italic = element.name in ITALIC_TAGS
-            items = self._walk_inline_children(
-                element,
-                parent_bold=bold,
-                parent_italic=italic,
-                conditional_format_flush=False,
-                handle_line_break_div=False,
-                parse_div_span_inline=False,
-                strip_nav_strings=True,
-                reset_format_to_parent=False,
-                handle_nested_lists=False,
-                list_level=1,
-            )
-            if items:
-                blocks.append(TextBlock(type="paragraph", content="", items=items))
-            else:
-                text = element.get_text(strip=True)
-                if text:
-                    blocks.append(TextBlock(type="paragraph", content=text, language="bold" if bold else None))
+            text = element.get_text(strip=True)
+            if text:
+                blocks.append(TextBlock(type="paragraph", content=text, language="bold" if bold else None))
 
     def _process_element_with_inline_math(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
-        处理包含公式的内联元素
+        处理包含公式的内联元素（委托给 _walk_inline_children）
+
+        注意：此方法仅用于单元测试。业务逻辑已内联到 _process_inline_element。
 
         Args:
             element: HTML 元素
             blocks: 内容块列表
         """
-        math_elements = self._find_math_in_element(element)
+        # 提取图片
+        pics = element.find_all(IMAGE_TAGS)
+        for pic in pics:
+            url = self._extract_image_url(pic)
+            if url:
+                blocks.append(TextBlock(type="image", content=url))
 
-        if not math_elements:
+        # 使用 _walk_inline_children 统一提取
+        bold = element.name in BOLD_TAGS
+        italic = element.name in ITALIC_TAGS
+        items = self._walk_inline_children(
+            element,
+            parent_bold=bold,
+            parent_italic=italic,
+            conditional_format_flush=False,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
+        if items:
+            blocks.append(TextBlock(type="paragraph", content="", items=items))
+        else:
             text = element.get_text(strip=True)
-            if text and blocks and blocks[-1].type == "paragraph":
-                blocks[-1].content += " " + text
-            elif text:
-                blocks.append(TextBlock(type="paragraph", content=text))
-            return
-
-        math_ids = set(id(el) for el in math_elements)
-        text_parts = []
-
-        for child in element.children:
-            if isinstance(child, NavigableString):
-                text = str(child).strip()
-                if text:
-                    text_parts.append(text)
-            elif isinstance(child, Tag):
-                if id(child) in math_ids:
-                    text_so_far = " ".join(text_parts).strip()
-                    if text_so_far:
-                        blocks.append(TextBlock(type="paragraph", content=text_so_far))
-                        text_parts.clear()
-                    self._process_math_element(child, blocks)
-                else:
-                    sub_text = child.get_text(strip=True)
-                    if sub_text:
-                        text_parts.append(sub_text)
-
-        if text_parts:
-            combined = " ".join(text_parts).strip()
-            if combined:
-                blocks.append(TextBlock(type="paragraph", content=combined))
+            if text:
+                blocks.append(TextBlock(type="paragraph", content=text, language="bold" if bold else None))
 
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
