@@ -817,7 +817,7 @@ class BaseParser(ABC):
                     if handle_nested_lists:
                         flush()
                         items.append(InlineContent(type="text", content="\n", bold=current_bold, italic=current_italic))
-                        self._extract_nested_list_text(child, items, current_bold, current_italic, list_level)
+                        self._extract_nested_list_text(child, items, current_bold, current_italic, list_level + 1)
                     else:
                         pass  # 跳过
                 # 内联容器 div/span
