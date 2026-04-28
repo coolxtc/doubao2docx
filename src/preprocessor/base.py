@@ -734,10 +734,20 @@ class BaseParser(ABC):
                             flush()
                     else:
                         flush()
-                    bold_items = self._extract_strong_recursive(child)
-                    for bi in bold_items:
-                        bi.italic = current_italic
-                        items.append(bi)
+                    items.extend(
+                        self._walk_inline_children(
+                            child,
+                            parent_bold=True,
+                            parent_italic=current_italic,
+                            conditional_format_flush=conditional_format_flush,
+                            handle_line_break_div=handle_line_break_div,
+                            parse_div_span_inline=parse_div_span_inline,
+                            strip_nav_strings=strip_nav_strings,
+                            reset_format_to_parent=reset_format_to_parent,
+                            handle_nested_lists=False,
+                            list_level=list_level,
+                        )
+                    )
                 # 斜体标签
                 elif child.name in ITALIC_TAGS:
                     if conditional_format_flush:
@@ -745,10 +755,20 @@ class BaseParser(ABC):
                             flush()
                     else:
                         flush()
-                    italic_items = self._extract_italic_recursive(child)
-                    for ii in italic_items:
-                        ii.bold = current_bold
-                        items.append(ii)
+                    items.extend(
+                        self._walk_inline_children(
+                            child,
+                            parent_bold=current_bold,
+                            parent_italic=True,
+                            conditional_format_flush=conditional_format_flush,
+                            handle_line_break_div=handle_line_break_div,
+                            parse_div_span_inline=parse_div_span_inline,
+                            strip_nav_strings=strip_nav_strings,
+                            reset_format_to_parent=reset_format_to_parent,
+                            handle_nested_lists=False,
+                            list_level=list_level,
+                        )
+                    )
                 # line-break-class div
                 elif child.name in INLINE_CONTAINER_TAGS and self._has_any_class(child, self.config.line_break_classes):
                     if handle_line_break_div and child.previous_sibling is not None:
@@ -803,15 +823,23 @@ class BaseParser(ABC):
                 # 内联容器 div/span
                 elif child.name in INLINE_CONTAINER_TAGS:
                     if parse_div_span_inline:
-                        flush()
-                        items.extend(
-                            self._walk_inline_children(
-                                child, parent_bold=current_bold, parent_italic=current_italic,
-                                conditional_format_flush=conditional_format_flush, handle_line_break_div=handle_line_break_div,
-                                parse_div_span_inline=parse_div_span_inline, strip_nav_strings=strip_nav_strings,
-                                reset_format_to_parent=reset_format_to_parent, handle_nested_lists=handle_nested_lists, list_level=list_level
+                        if self._contains_block_elements(child):
+                            # 内联容器中包含块级元素，不扁平化，提取纯文本并保留格式状态
+                            saved_bold, saved_italic = current_bold, current_italic
+                            flush()
+                            text = child.get_text(strip=True)
+                            if text:
+                                items.append(InlineContent(type="text", content="\n" + text + "\n", bold=saved_bold, italic=saved_italic))
+                        else:
+                            flush()
+                            items.extend(
+                                self._walk_inline_children(
+                                    child, parent_bold=current_bold, parent_italic=current_italic,
+                                    conditional_format_flush=conditional_format_flush, handle_line_break_div=handle_line_break_div,
+                                    parse_div_span_inline=parse_div_span_inline, strip_nav_strings=strip_nav_strings,
+                                    reset_format_to_parent=reset_format_to_parent, handle_nested_lists=handle_nested_lists, list_level=list_level
+                                )
                             )
-                        )
                     else:
                         has_pic, text = self._extract_images_recursive(child, items, flush)
                         if not has_pic and text:
@@ -948,7 +976,7 @@ class BaseParser(ABC):
             True 如果包含数学公式、加粗、斜体、链接、内联代码或图片
         """
         return (
-            self._find_math_in_element(element) is not None or  # 数学公式
+            bool(self._find_math_in_element(element)) or  # 数学公式
             element.find(BOLD_TAGS) is not None or  # 加粗
             element.find(ITALIC_TAGS) is not None or  # 斜体
             element.find("a") is not None or  # 链接
@@ -1010,72 +1038,11 @@ class BaseParser(ABC):
             sub_text = element.get_text(strip=False)
             return False, sub_text
 
-    def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
-        """
-        递归提取 strong/b 内的内容
-
-        Args:
-            element: strong 或 b 元素
-
-        Returns:
-            InlineContent 列表
-        """
-        items = []
-        for child in element.children:
-            if isinstance(child, NavigableString):
-                text = str(child)
-                if text:
-                    items.append(InlineContent(type="text", content=text, bold=True))
-            elif isinstance(child, Tag):
-                if child.name in BOLD_TAGS:
-                    items.extend(self._extract_strong_recursive(child))
-                elif self._is_math_element(child):
-                    latex = self._extract_latex_content(child)
-                    is_display = self._is_display_math(child)
-                    items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                else:
-                    text = child.get_text(strip=False)
-                    if text:
-                        items.append(InlineContent(type="text", content=text, bold=True))
-        return items
-
-    def _extract_italic_recursive(self, element: Tag) -> list[InlineContent]:
-        """
-        递归提取斜体/强调内容
-
-        Args:
-            element: em 或 i 元素
-
-        Returns:
-            InlineContent 列表
-        """
-        items = []
-        for child in element.children:
-            if isinstance(child, NavigableString):
-                text = str(child)
-                if text:
-                    items.append(InlineContent(type="text", content=text, italic=True))
-            elif isinstance(child, Tag):
-                if child.name in ITALIC_TAGS:
-                    items.extend(self._extract_italic_recursive(child))
-                elif child.name in BOLD_TAGS:
-                    bold_items = self._extract_strong_recursive(child)
-                    for bi in bold_items:
-                        bi.italic = True
-                        items.append(bi)
-                elif self._is_math_element(child):
-                    latex = self._extract_latex_content(child)
-                    is_display = self._is_display_math(child)
-                    items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                else:
-                    text = child.get_text(strip=False)
-                    if text:
-                        items.append(InlineContent(type="text", content=text, italic=True))
-        return items
-
     def _extract_inline_text_with_format(self, element: Tag, in_bold: bool = False) -> list[InlineContent]:
         """
-        提取内联元素的文本
+        提取内联元素的文本（委托给 _walk_inline_children）
+
+        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
 
         Args:
             element: HTML 元素
@@ -1084,50 +1051,68 @@ class BaseParser(ABC):
         Returns:
             InlineContent 列表
         """
-        items: list[InlineContent] = []  # 内联内容列表
-        current_text = ""  # 当前累积文本
+        return self._walk_inline_children(
+            element,
+            parent_bold=in_bold,
+            parent_italic=False,
+            conditional_format_flush=False,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
 
-        def flush(bold: bool = False):  # 刷新累积的文本到 items
-            nonlocal current_text
-            if current_text.strip():
-                items.append(InlineContent(type="text", content=current_text.strip(), bold=bold))
-            current_text = ""
+    def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
+        """
+        递归提取 strong/b 内的内容（委托给 _walk_inline_children）
 
-        for child in element.children:
-            if isinstance(child, NavigableString):
-                current_text += str(child)
-            elif isinstance(child, Tag):
-                if child.name in BOLD_TAGS:
-                    bold_text = child.get_text(strip=True)
-                    if bold_text:
-                        if current_text.strip():
-                            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
-                            current_text = ""
-                        items.append(InlineContent(type="text", content=bold_text, bold=True))
-                else:
-                    if child.find(BOLD_TAGS):
-                        bold_items = self._extract_strong_recursive(child)
-                        if current_text.strip():
-                            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
-                            current_text = ""
-                        for bi in bold_items:
-                            items.append(bi)
-                    elif child.find(ITALIC_TAGS):
-                        italic_items = self._extract_italic_recursive(child)
-                        if current_text.strip():
-                            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
-                            current_text = ""
-                        for ii in italic_items:
-                            items.append(ii)
-                    else:
-                        sub_text = child.get_text(strip=False)
-                        if sub_text:
-                            current_text += sub_text
+        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
 
-        if current_text.strip():
-            items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
+        Args:
+            element: strong 或 b 元素
 
-        return items
+        Returns:
+            InlineContent 列表
+        """
+        return self._walk_inline_children(
+            element,
+            parent_bold=True,
+            parent_italic=False,
+            conditional_format_flush=True,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
+
+    def _extract_italic_recursive(self, element: Tag) -> list[InlineContent]:
+        """
+        递归提取斜体/强调内容（委托给 _walk_inline_children）
+
+        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
+
+        Args:
+            element: em 或 i 元素
+
+        Returns:
+            InlineContent 列表
+        """
+        return self._walk_inline_children(
+            element,
+            parent_bold=False,
+            parent_italic=True,
+            conditional_format_flush=True,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
 
     def _process_inline_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
@@ -1148,7 +1133,19 @@ class BaseParser(ABC):
             self._process_element_with_inline_math(element, blocks)
         else:
             bold = element.name in BOLD_TAGS
-            items = self._extract_inline_text_with_format(element)
+            italic = element.name in ITALIC_TAGS
+            items = self._walk_inline_children(
+                element,
+                parent_bold=bold,
+                parent_italic=italic,
+                conditional_format_flush=False,
+                handle_line_break_div=False,
+                parse_div_span_inline=False,
+                strip_nav_strings=True,
+                reset_format_to_parent=False,
+                handle_nested_lists=False,
+                list_level=1,
+            )
             if items:
                 blocks.append(TextBlock(type="paragraph", content="", items=items))
             else:
@@ -1242,11 +1239,26 @@ class BaseParser(ABC):
         Returns:
             公式元素列表
         """
-        math_elements = []
-        for child in element.find_all(recursive=False):
-            if self._is_math_element(child):
-                math_elements.append(child)
-        return math_elements
+        return [
+            el for el in element.descendants
+            if isinstance(el, Tag) and self._is_math_element(el)
+        ]
+
+    def _contains_block_elements(self, element: Tag) -> bool:
+        """
+        检查元素是否包含块级子元素
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            如果包含块级元素返回 True，否则返回 False
+        """
+        block_tags = set(HEADING_TAGS) | set(LIST_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS) | set(BLOCKQUOTE_TAGS)
+        for child in element.descendants:
+            if isinstance(child, Tag) and child.name in block_tags:
+                return True
+        return False
 
     @staticmethod
     def _parse_table(table: Tag) -> Optional[TableData]:
