@@ -1122,14 +1122,7 @@ class BaseParser(ABC):
             element: HTML 元素
             blocks: 内容块列表
         """
-        # 先提取图片（保持原有行为）
-        pics = element.find_all(IMAGE_TAGS)
-        for pic in pics:
-            url = self._extract_image_url(pic)
-            if url:
-                blocks.append(TextBlock(type="image", content=url))
-
-        # 统一使用 _walk_inline_children 提取内联内容
+        # 统一使用 _walk_inline_children 提取内联内容（包括图片）
         bold = element.name in BOLD_TAGS
         italic = element.name in ITALIC_TAGS
         items = self._walk_inline_children(
@@ -1161,13 +1154,6 @@ class BaseParser(ABC):
             element: HTML 元素
             blocks: 内容块列表
         """
-        # 提取图片
-        pics = element.find_all(IMAGE_TAGS)
-        for pic in pics:
-            url = self._extract_image_url(pic)
-            if url:
-                blocks.append(TextBlock(type="image", content=url))
-
         # 使用 _walk_inline_children 统一提取
         bold = element.name in BOLD_TAGS
         italic = element.name in ITALIC_TAGS
