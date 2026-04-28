@@ -80,6 +80,7 @@ class InlineContent:
     data: Any = None  # 附加数据（如 TableData）
     list_marker: Optional[str] = None  # 列表标记（"•" 用于无序列表）
     level: int = 0  # 嵌套层级（0 表示无嵌套或顶层）
+    language: Optional[str] = None  # 代码语言（如 "python"）
 
 
 @dataclass
@@ -358,12 +359,8 @@ class BaseParser(ABC):
             if element.get(self.config.code_expanded_attr):
                 return
             code = element.get_text("\n", strip=True)
-            lang = ""
-            code_elem = element.find("code")
-            if code_elem:
-                lang = code_elem.get("class") or []
-                lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
-            blocks.append(TextBlock(type="code", content=code, language=lang or "text"))
+            language = self._extract_code_language(element)
+            blocks.append(TextBlock(type="code", content=code, language=language))
             return
 
         # 处理引用
@@ -511,13 +508,36 @@ class BaseParser(ABC):
             if code_content.startswith("plaintext"):
                 code_content = code_content[len("plaintext"):].lstrip("\n")
 
-        language = "text"
-        classes = element.get("class") or []
-        if "plaintext" in classes:
-            language = "language-plaintext"
-
         if code_content:
+            language = self._extract_code_language(element)
             blocks.append(TextBlock(type="code", content=code_content, language=language))
+
+    @staticmethod
+    def _extract_code_language(element: Tag) -> str:
+        """
+        从代码块元素中提取编程语言标识
+
+        Args:
+            element: 代码块根元素（pre 或代码容器）
+
+        Returns:
+            语言标识字符串，如 "python"、"language-plaintext"，默认 "text"
+        """
+        # 优先从 <code> 子元素的 class 中提取（如 "language-python"）
+        code_elem = element.find("code")
+        if code_elem:
+            classes = code_elem.get("class") or []
+            # 过滤掉 highlight.js 的通用类名 "hljs"
+            lang = " ".join(c for c in classes if c != "hljs")
+            if lang:
+                return lang
+
+        # 兜底：从容器自身的类名判断（如豆包的 "plaintext"）
+        container_classes = element.get("class") or []
+        if "plaintext" in container_classes:
+            return "language-plaintext"
+
+        return "text"
 
     def _process_list(self, element: Tag, list_type: str, blocks: list[TextBlock], level: int = 0) -> None:
         """
@@ -760,12 +780,8 @@ class BaseParser(ABC):
             if pre.get(self.config.code_expanded_attr):
                 continue
             code_content = pre.get_text("\n", strip=True)
-            lang = ""
-            code_elem = pre.find("code")
-            if code_elem:
-                lang = code_elem.get("class") or []
-                lang = " ".join([c for c in lang if c != "hljs"]) if lang else ""
-            items.append(InlineContent(type="code", content=code_content, bold=bold, italic=italic))
+            language = self._extract_code_language(pre)
+            items.append(InlineContent(type="code", content=code_content, bold=bold, italic=italic, language=language))
 
     def _process_nested_container(self, element: Tag, items: list[InlineContent],
                                    parent_bold: bool = False, parent_italic: bool = False) -> None:
@@ -857,6 +873,25 @@ class BaseParser(ABC):
 
         flush()
 
+    def _should_parse_as_complex(self, element: Tag) -> bool:
+        """
+        判断段落元素是否包含需要复杂解析的内联内容
+
+        Args:
+            element: p 元素
+
+        Returns:
+            True 如果包含数学公式、加粗、斜体、链接、内联代码或图片
+        """
+        return (
+            self._find_math_in_element(element) is not None or  # 数学公式
+            element.find(BOLD_TAGS) is not None or  # 加粗
+            element.find(ITALIC_TAGS) is not None or  # 斜体
+            element.find("a") is not None or  # 链接
+            element.find("code") is not None or  # 内联代码
+            element.find(IMAGE_TAGS) is not None  # 图片
+        )
+
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
         处理段落元素
@@ -865,12 +900,8 @@ class BaseParser(ABC):
             element: p 元素
             blocks: 内容块列表
         """
-        math_elements = self._find_math_in_element(element)  # 段落中的公式元素
-        has_strong = element.find(BOLD_TAGS)
-        has_picture = element.find(IMAGE_TAGS)  # 是否包含图片
-
         # 简单段落：直接提取文本
-        if not math_elements and not has_strong and not has_picture:
+        if not self._should_parse_as_complex(element):
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="paragraph", content=text))
