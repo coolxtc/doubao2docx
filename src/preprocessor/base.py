@@ -1,14 +1,39 @@
 """解析器基类模块"""
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 from bs4 import BeautifulSoup, Tag
 from bs4.element import NavigableString, PageElement
 
-from ..exceptions import ParseError
-from ..config import get_config
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# 标签名常量
+# =============================================================================
+
+BOLD_TAGS = ("strong", "b")  # 加粗标签
+ITALIC_TAGS = ("em", "i")  # 斜体标签
+INLINE_CONTAINER_TAGS = ("div", "span")  # 内联容器标签
+LIST_TAGS = ("ul", "ol")  # 列表标签
+HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")  # 标题标签
+IMAGE_TAGS = ("picture",)  # 图片标签（单元素元组）
+BREAK_TAGS = ("br",)  # 换行标签（单元素元组）
+TABLE_TAGS = ("table",)  # 表格标签（单元素元组）
+CODE_TAGS = ("pre",)  # 代码标签（单元素元组）
+BLOCKQUOTE_TAGS = ("blockquote",)  # 引用标签（单元素元组）
+PARAGRAPH_TAGS = ("p",)  # 段落标签（单元素元组）
+SECTION_TAGS = ("section",)  # 区域标签（单元素元组）
+INLINE_TAGS = ("strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark")  # 所有内联格式标签
+LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
+
+# =============================================================================
+# 类型别名
+# =============================================================================
+
+FlushFunc = Callable[[], None]  # flush 回调函数类型
 
 
 # =============================================================================
@@ -197,7 +222,7 @@ class BaseParser(ABC):
     def _handle_line_break(self, prev_sibling: PageElement | None, items: list[InlineContent],
                            current_text: str, current_bold: bool, current_italic: bool,
                            parent_bold: bool, parent_italic: bool,
-                           flush_fn: Optional[Callable[..., Any]] = None) -> tuple[str, bool, bool]:
+                           flush_fn: Optional[FlushFunc] = None) -> tuple[str, bool, bool]:
         """
         处理换行符
 
@@ -229,7 +254,7 @@ class BaseParser(ABC):
                 ))
 
         if isinstance(prev, Tag):
-            if (prev.name == "div" and self._has_any_class(prev, self.config.line_break_classes)
+            if (prev.name in INLINE_CONTAINER_TAGS and self._has_any_class(prev, self.config.line_break_classes)
                 and not prev.get_text(strip=True)):
                 items.append(InlineContent(type="text", content="\n"))
                 return "", parent_bold, parent_italic
@@ -237,9 +262,9 @@ class BaseParser(ABC):
         if isinstance(prev, NavigableString):
             items.append(InlineContent(type="text", content="\n"))
             return "", parent_bold, parent_italic
-        elif isinstance(prev, Tag) and prev.name in ("ul", "ol"):
+        elif isinstance(prev, Tag) and prev.name in LIST_TAGS:
             return "", parent_bold, parent_italic
-        elif isinstance(prev, Tag) and prev.name in ("div", "span"):
+        elif isinstance(prev, Tag) and prev.name in INLINE_CONTAINER_TAGS:
             return "", parent_bold, parent_italic
         else:
             items.append(InlineContent(type="text", content="\n"))
@@ -288,8 +313,7 @@ class BaseParser(ABC):
                     self._process_element(child, blocks)
             except Exception:
                 # 解析失败时跳过该元素，确保其余内容仍然导出
-                import logging
-                logging.warning(f"解析元素失败，跳过: {child.name if hasattr(child, 'name') else 'Unknown'}")
+                logger.warning(f"解析元素失败，跳过: {child.name if hasattr(child, 'name') else 'Unknown'}")
                 continue
 
         return blocks
@@ -305,37 +329,32 @@ class BaseParser(ABC):
         tag = element.name  # 标签名
 
         # 处理表格
-        if tag == "table":
+        if tag in TABLE_TAGS:
             table_data = self._parse_table(element)
             if table_data:
                 blocks.append(TextBlock(type="table", content="", data=table_data))
             return
 
         # 处理标题 (h1-h6)
-        if tag in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+        if tag in HEADING_TAGS:
             text = element.get_text(strip=True)
             if text:
                 level = int(tag[1]) if len(tag) == 2 else 1
                 blocks.append(TextBlock(type="heading", content=text, language=str(level)))
             return
 
-        # 处理无序列表
-        if tag == "ul":
-            self._process_list(element, "ul", blocks, 0)
-            return
-
-        # 处理有序列表
-        if tag == "ol":
-            self._process_list(element, "ol", blocks, 0)
+        # 处理列表
+        if tag in LIST_TAGS:
+            self._process_list(element, tag, blocks, 0)
             return
 
         # 处理段落
-        if tag == "p":
+        if tag in PARAGRAPH_TAGS:
             self._process_paragraph(element, blocks)
             return
 
         # 处理预格式化代码块
-        if tag == "pre":
+        if tag in CODE_TAGS:
             if element.get(self.config.code_expanded_attr):
                 return
             code = element.get_text("\n", strip=True)
@@ -348,32 +367,31 @@ class BaseParser(ABC):
             return
 
         # 处理引用
-        if tag == "blockquote":
+        if tag in BLOCKQUOTE_TAGS:
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type="blockquote", content=text))
             return
 
         # 处理换行
-        if tag == "br":
+        if tag in BREAK_TAGS:
             if blocks and blocks[-1].type == "paragraph":
                 blocks[-1].content += "\n"
             return
 
         # 处理图片
-        if tag == "picture":
+        if tag in IMAGE_TAGS:
             url = self._extract_image_url(element)
             if url:
                 blocks.append(TextBlock(type="image", content=url))
             return
 
         # 处理 div/section 容器
-        if tag == "div" or tag == "section":
+        if tag == "div" or tag in SECTION_TAGS:
             self._process_div_or_section(element, blocks)
             return
 
-        inline_tags = {"strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark"}
-        if tag in inline_tags:
+        if tag in INLINE_TAGS:
 
             if self._is_math_element(element):
                 self._process_math_element(element, blocks)
@@ -443,7 +461,7 @@ class BaseParser(ABC):
         # 查找单个 p 子元素（用于包裹简单段落）
         p_child = None
         for child in element.children:
-            if isinstance(child, Tag) and child.name == "p":
+            if isinstance(child, Tag) and child.name in PARAGRAPH_TAGS:
                 if p_child is None:
                     p_child = child
                 else:
@@ -459,7 +477,7 @@ class BaseParser(ABC):
             # 检查是否为图片包装器
             if self.config.image_wrapper_class in class_str:
                 # 提取图片
-                pics = element.find_all("picture")
+                pics = element.find_all(IMAGE_TAGS)
                 for pic in pics:
                     url = self._extract_image_url(pic)
                     if url:
@@ -479,7 +497,7 @@ class BaseParser(ABC):
             blocks: 内容块列表
         """
         code_elem = element.find("code")
-        pre_elem = element.find("pre")
+        pre_elem = element.find(CODE_TAGS)
 
         # 优先从 pre 标签提取代码
         if pre_elem:
@@ -526,20 +544,20 @@ class BaseParser(ABC):
             index: 列表项序号
             level: 嵌套层级
         """
-        has_nested_list = li.find(["ul", "ol"], recursive=False)
-        has_br = li.find("br") is not None or any(
+        has_nested_list = li.find(LIST_TAGS, recursive=False)
+        has_br = li.find(BREAK_TAGS) is not None or any(
             isinstance(x, str) and "line-break" in x
             for x in (li.get("class") or [])
         ) or any(
             isinstance(child, Tag) and child.name == "div" and self._has_any_class(child, self.config.line_break_classes)
             for child in li.children
         )
-        has_strong = li.find("strong") or li.find("b")
+        has_strong = li.find(BOLD_TAGS)
         has_math = self._find_math_in_element(li)
-        has_em = li.find("em") or li.find("i")
-        has_picture = li.find("picture") is not None
-        has_table = li.find("table") is not None
-        has_pre = li.find("pre") is not None
+        has_em = li.find(ITALIC_TAGS)
+        has_picture = li.find(IMAGE_TAGS) is not None
+        has_table = li.find(TABLE_TAGS) is not None
+        has_pre = li.find(CODE_TAGS) is not None
 
         # 包含内联内容的列表项
         if has_br or has_strong or has_math or has_em or has_nested_list or has_picture or has_table or has_pre:
@@ -593,54 +611,54 @@ class BaseParser(ABC):
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                elif child.name in ("strong", "b"):
+                elif child.name in BOLD_TAGS:
                     # 加粗标签
                     flush()
                     bold_items = self._extract_strong_recursive(child)
                     for bi in bold_items:
                         items.append(bi)
-                elif child.name in ("em", "i"):
+                elif child.name in ITALIC_TAGS:
                     # 斜体标签
                     flush()
                     italic_items = self._extract_italic_recursive(child)
                     for ii in italic_items:
                         items.append(ii)
-                elif child.name == "p":
+                elif child.name in PARAGRAPH_TAGS:
                     # 段落容器：递归处理
                     flush()
                     self._process_nested_container(child, items, current_bold, current_italic)
-                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                elif child.name in INLINE_CONTAINER_TAGS and self._has_any_class(child, self.config.line_break_classes):
                     # 换行符 div
                     current_text, current_bold, current_italic = self._handle_line_break(
                         child.previous_sibling, items, current_text, current_bold, current_italic, current_bold, current_italic
                     )
-                elif child.name == "br":
+                elif child.name in BREAK_TAGS:
                     # 换行标签
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                elif child.name in ("div", "span"):
+                elif child.name in INLINE_CONTAINER_TAGS:
                     # 嵌套容器：递归处理
                     flush()
                     self._process_nested_container(child, items, current_bold, current_italic)
-                elif child.name == "picture":
+                elif child.name in IMAGE_TAGS:
                     # 图片元素
                     flush()
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
-                elif child.name == "table":
+                elif child.name in TABLE_TAGS:
                     # 表格元素
                     flush()
                     table_data = self._parse_table(child)
                     if table_data:
                         items.append(InlineContent(type="table", content="", data=table_data, bold=current_bold, italic=current_italic))
-                elif child.name == "pre":
+                elif child.name in CODE_TAGS:
                     # 代码块（未展开）
                     if not child.get(self.config.code_expanded_attr):
                         flush()
                         code_content = child.get_text("\n", strip=True)
                         items.append(InlineContent(type="code", content=code_content, bold=current_bold, italic=current_italic))
-                elif child.name in ("ul", "ol"):
+                elif child.name in LIST_TAGS:
                     # 嵌套列表
                     flush()
                     items.append(InlineContent(type="text", content="\n", bold=current_bold, italic=current_italic))
@@ -670,11 +688,11 @@ class BaseParser(ABC):
             level: 嵌套层级
         """
         counter = 1
-        li_elements = element.find_all("li", recursive=False)
+        li_elements = element.find_all(LIST_ITEM_TAGS, recursive=False)
         for idx, child in enumerate(li_elements):
             direct_text = self._get_direct_text(child)
             list_marker = "•" if element.name == "ul" else None
-            has_nested_list = child.find(["ul", "ol"], recursive=False) is not None
+            has_nested_list = child.find(LIST_TAGS, recursive=False) is not None
 
             if direct_text:
                 if element.name == "ul":
@@ -692,7 +710,7 @@ class BaseParser(ABC):
                 ni.level = level
             items.extend(nested_items)
 
-            nested = child.find(["ul", "ol"], recursive=False)
+            nested = child.find(LIST_TAGS, recursive=False)
             if nested:
                 self._extract_nested_list_text(nested, items, bold, italic, level + 1)
 
@@ -712,7 +730,7 @@ class BaseParser(ABC):
                 text = str(child).strip()
                 if text:
                     texts.append(text)
-            elif isinstance(child, Tag) and child.name in ('ul', 'ol'):
+            elif isinstance(child, Tag) and child.name in LIST_TAGS:
                 continue
             elif isinstance(child, Tag):
                 texts.append(self._get_direct_text(child))
@@ -728,17 +746,17 @@ class BaseParser(ABC):
             bold: 加粗状态
             italic: 斜体状态
         """
-        for pic in li.find_all("picture"):
+        for pic in li.find_all(IMAGE_TAGS):
             url = self._extract_image_url(pic)
             if url:
                 items.append(InlineContent(type="image", content="", image_url=url))
 
-        for table in li.find_all("table", recursive=False):
+        for table in li.find_all(TABLE_TAGS, recursive=False):
             table_data = self._parse_table(table)
             if table_data:
                 items.append(InlineContent(type="table", content="", data=table_data, bold=bold, italic=italic))
 
-        for pre in li.find_all("pre", recursive=False):
+        for pre in li.find_all(CODE_TAGS, recursive=False):
             if pre.get(self.config.code_expanded_attr):
                 continue
             code_content = pre.get_text("\n", strip=True)
@@ -789,48 +807,48 @@ class BaseParser(ABC):
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                elif child.name in INLINE_CONTAINER_TAGS and self._has_any_class(child, self.config.line_break_classes):
                     current_text, current_bold, current_italic = self._handle_line_break(
                         child.previous_sibling, items, current_text, current_bold, current_italic,
                         parent_bold, parent_italic, flush
                     )
-                elif child.name == "br":
+                elif child.name in BREAK_TAGS:
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                elif child.name in ("strong", "b"):
+                elif child.name in BOLD_TAGS:
                     bold_items = self._extract_strong_recursive(child)
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
                         bi.italic = current_italic
                         items.append(bi)
-                elif child.name in ("em", "i"):
+                elif child.name in ITALIC_TAGS:
                     italic_items = self._extract_italic_recursive(child)
                     if current_text.strip():
                         flush()
                     for ii in italic_items:
                         ii.bold = current_bold
                         items.append(ii)
-                elif child.name in ("div", "span"):
+                elif child.name in INLINE_CONTAINER_TAGS:
                     self._process_nested_container(child, items, current_bold, current_italic)
-                elif child.name == "picture":
+                elif child.name in IMAGE_TAGS:
                     flush()
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
-                elif child.name == "table":
+                elif child.name in TABLE_TAGS:
                     flush()
                     table_data = self._parse_table(child)
                     if table_data:
                         items.append(InlineContent(type="table", content="", data=table_data, bold=current_bold, italic=current_italic))
-                elif child.name == "pre":
+                elif child.name in CODE_TAGS:
                     if not child.get(self.config.code_expanded_attr):
                         flush()
                         code_content = child.get_text("\n", strip=True)
                         items.append(InlineContent(type="code", content=code_content, bold=current_bold, italic=current_italic))
-                elif child.name in ("ul", "ol"):
+                elif child.name in LIST_TAGS:
                     pass
-                elif child.name == "p":
+                elif child.name in PARAGRAPH_TAGS:
                     self._process_nested_container(child, items, current_bold, current_italic)
                 else:
                     sub_text = child.get_text(strip=False)
@@ -848,8 +866,8 @@ class BaseParser(ABC):
             blocks: 内容块列表
         """
         math_elements = self._find_math_in_element(element)  # 段落中的公式元素
-        has_strong = element.find("strong") or element.find("b")  # 是否包含加粗
-        has_picture = element.find("picture")  # 是否包含图片
+        has_strong = element.find(BOLD_TAGS)
+        has_picture = element.find(IMAGE_TAGS)  # 是否包含图片
 
         # 简单段落：直接提取文本
         if not math_elements and not has_strong and not has_picture:
@@ -888,35 +906,35 @@ class BaseParser(ABC):
                     latex = self._extract_latex_content(child)
                     is_display = self._is_display_math(child)
                     items.append(InlineContent(type="latex", content=latex, is_display=is_display))
-                elif child.name in ("strong", "b"):
+                elif child.name in BOLD_TAGS:
                     # 加粗标签
                     bold_items = self._extract_strong_recursive(child)
                     if current_text.strip():
                         flush()
                     for bi in bold_items:
                         items.append(bi)
-                elif child.name in ("em", "i"):
+                elif child.name in ITALIC_TAGS:
                     # 斜体标签
                     italic_items = self._extract_italic_recursive(child)
                     if current_text.strip():
                         flush()
                     for ii in italic_items:
                         items.append(ii)
-                elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
+                elif child.name in INLINE_CONTAINER_TAGS and self._has_any_class(child, self.config.line_break_classes):
                     # 换行符 div
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                elif child.name == "br":
+                elif child.name in BREAK_TAGS:
                     # 换行标签
                     flush()
                     items.append(InlineContent(type="text", content="\n"))
-                elif child.name == "picture":
+                elif child.name in IMAGE_TAGS:
                     # 图片元素
                     flush()
                     url = self._extract_image_url(child)
                     if url:
                         items.append(InlineContent(type="image", content="", image_url=url))
-                elif child.name in ("div", "span"):
+                elif child.name in INLINE_CONTAINER_TAGS:
                     # 嵌套容器：递归提取图片
                     has_pic, text = self._extract_images_recursive(child, items, flush)
                     if not has_pic and text:
@@ -932,7 +950,7 @@ class BaseParser(ABC):
         if items:
             blocks.append(TextBlock(type="paragraph", content="", items=items))
 
-    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: Callable[..., Any]) -> tuple[bool, str]:
+    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: FlushFunc) -> tuple[bool, str]:
         """
         递归查找嵌套的 picture 并提取图片
 
@@ -944,7 +962,7 @@ class BaseParser(ABC):
         Returns:
             (是否有图片, 剩余文本)
         """
-        pics = element.find_all("picture")
+        pics = element.find_all(IMAGE_TAGS)
         if pics:
             for pic in pics:
                 flush_func()
@@ -973,7 +991,7 @@ class BaseParser(ABC):
                 if text:
                     items.append(InlineContent(type="text", content=text, bold=True))
             elif isinstance(child, Tag):
-                if child.name in ("strong", "b"):
+                if child.name in BOLD_TAGS:
                     items.extend(self._extract_strong_recursive(child))
                 elif self._is_math_element(child):
                     latex = self._extract_latex_content(child)
@@ -1002,9 +1020,9 @@ class BaseParser(ABC):
                 if text:
                     items.append(InlineContent(type="text", content=text, italic=True))
             elif isinstance(child, Tag):
-                if child.name in ("em", "i"):
+                if child.name in ITALIC_TAGS:
                     items.extend(self._extract_italic_recursive(child))
-                elif child.name in ("strong", "b"):
+                elif child.name in BOLD_TAGS:
                     bold_items = self._extract_strong_recursive(child)
                     for bi in bold_items:
                         bi.italic = True
@@ -1043,7 +1061,7 @@ class BaseParser(ABC):
             if isinstance(child, NavigableString):
                 current_text += str(child)
             elif isinstance(child, Tag):
-                if child.name in ("strong", "b"):
+                if child.name in BOLD_TAGS:
                     bold_text = child.get_text(strip=True)
                     if bold_text:
                         if current_text.strip():
@@ -1051,14 +1069,14 @@ class BaseParser(ABC):
                             current_text = ""
                         items.append(InlineContent(type="text", content=bold_text, bold=True))
                 else:
-                    if child.find("strong") or child.find("b"):
+                    if child.find(BOLD_TAGS):
                         bold_items = self._extract_strong_recursive(child)
                         if current_text.strip():
                             items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
                             current_text = ""
                         for bi in bold_items:
                             items.append(bi)
-                    elif child.find("em") or child.find("i"):
+                    elif child.find(ITALIC_TAGS):
                         italic_items = self._extract_italic_recursive(child)
                         if current_text.strip():
                             items.append(InlineContent(type="text", content=current_text.strip(), bold=in_bold))
@@ -1083,7 +1101,7 @@ class BaseParser(ABC):
             element: HTML 元素
             blocks: 内容块列表
         """
-        pics = element.find_all("picture")
+        pics = element.find_all(IMAGE_TAGS)
         for pic in pics:
             url = self._extract_image_url(pic)
             if url:
@@ -1093,7 +1111,7 @@ class BaseParser(ABC):
         if math_in_children:
             self._process_element_with_inline_math(element, blocks)
         else:
-            bold = element.name in ("strong", "b")
+            bold = element.name in BOLD_TAGS
             items = self._extract_inline_text_with_format(element)
             if items:
                 blocks.append(TextBlock(type="paragraph", content="", items=items))
@@ -1218,7 +1236,7 @@ class BaseParser(ABC):
                 header_bold = []
                 for th in header_row.find_all(["th", "td"]):
                     headers.append(th.get_text(strip=True))
-                    header_bold.append(th.find("strong") is not None or th.find("b") is not None)
+                    header_bold.append(th.find(BOLD_TAGS) is not None)
 
         tbody = table.find("tbody")
         if not tbody:
@@ -1229,7 +1247,7 @@ class BaseParser(ABC):
             row_bold = []
             for td in row.find_all(["td", "th"]):
                 row_data.append(td.get_text(strip=True))
-                row_bold.append(td.find("strong") is not None or td.find("b") is not None)
+                row_bold.append(td.find(BOLD_TAGS) is not None)
             if row_data:
                 rows.append(row_data)
                 cell_bold.append(row_bold)
