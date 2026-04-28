@@ -110,6 +110,109 @@ class ParsedPage:
 class BaseParser(ABC):
     """解析器抽象基类"""
     config: PlatformConfig  # 平台配置（子类必须设置）
+    _tag_handlers: dict[str, Callable[[Tag, list[TextBlock]], None]]  # 标签 → 处理方法映射
+
+    def __init__(self) -> None:
+        super().__init__()
+        # 幂等初始化：已有字典则跳过
+        if not hasattr(self, "_tag_handlers"):
+            self._build_tag_handlers()
+
+    def _build_tag_handlers(self) -> None:
+        """构建标签名 → 处理方法的映射字典（幂等，可重复调用）"""
+        h: dict[str, Callable[[Tag, list[TextBlock]], None]] = {}
+
+        # 表格
+        for tag in TABLE_TAGS:
+            h[tag] = self._handle_table
+
+        # 标题 h1 - h6
+        for tag in HEADING_TAGS:
+            h[tag] = self._handle_heading
+
+        # 列表 ul / ol
+        for tag in LIST_TAGS:
+            h[tag] = self._handle_list
+
+        # 段落 p
+        for tag in PARAGRAPH_TAGS:
+            h[tag] = self._process_paragraph  # 签名一致，直接复用
+
+        # 预格式化代码块 pre
+        for tag in CODE_TAGS:
+            h[tag] = self._handle_pre
+
+        # 引用 blockquote
+        for tag in BLOCKQUOTE_TAGS:
+            h[tag] = self._handle_blockquote
+
+        # 换行 br
+        for tag in BREAK_TAGS:
+            h[tag] = self._handle_br
+
+        # 图片 picture
+        for tag in IMAGE_TAGS:
+            h[tag] = self._handle_picture
+
+        # div / section
+        h["div"] = self._process_div_or_section  # 签名一致，直接复用
+        for tag in SECTION_TAGS:
+            h[tag] = self._process_div_or_section
+
+        # 所有内联格式标签
+        for tag in INLINE_TAGS:
+            h[tag] = self._handle_inline
+
+        self._tag_handlers = h
+
+    def _handle_table(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理表格标签"""
+        table_data = self._parse_table(element)
+        if table_data:
+            blocks.append(TextBlock(type="table", content="", data=table_data))
+
+    def _handle_heading(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理标题标签 h1-h6"""
+        text = element.get_text(strip=True)
+        if text:
+            level = int(element.name[1]) if len(element.name) == 2 else 1
+            blocks.append(TextBlock(type="heading", content=text, language=str(level)))
+
+    def _handle_list(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理列表标签 ul / ol"""
+        self._process_list(element, element.name, blocks, 0)
+
+    def _handle_pre(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理预格式化代码块标签 pre"""
+        if element.get(self.config.code_expanded_attr):
+            return
+        code = element.get_text("\n", strip=True)
+        language = self._extract_code_language(element)
+        blocks.append(TextBlock(type="code", content=code, language=language))
+
+    def _handle_blockquote(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理引用标签 blockquote"""
+        text = element.get_text(strip=True)
+        if text:
+            blocks.append(TextBlock(type="blockquote", content=text))
+
+    def _handle_br(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理换行标签 br"""
+        if blocks and blocks[-1].type == "paragraph":
+            blocks[-1].content += "\n"
+
+    def _handle_picture(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理图片标签 picture"""
+        url = self._extract_image_url(element)
+        if url:
+            blocks.append(TextBlock(type="image", content=url))
+
+    def _handle_inline(self, element: Tag, blocks: list[TextBlock]) -> None:
+        """处理内联格式标签（strong, em, span, a, b, i, u, small, del, mark 等）"""
+        if self._is_math_element(element):
+            self._process_math_element(element, blocks)
+        else:
+            self._process_inline_element(element, blocks)
 
 
     def parse(self, html: str) -> ParsedPage:
@@ -321,81 +424,24 @@ class BaseParser(ABC):
 
     def _process_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
-        处理单个元素
+        处理单个元素（基于字典分发）
+
+        已知标签查表分发，未知标签走通用检测兜底逻辑。
 
         Args:
             element: HTML 元素
             blocks: 内容块列表
         """
-        tag = element.name  # 标签名
-
-        # 处理表格
-        if tag in TABLE_TAGS:
-            table_data = self._parse_table(element)
-            if table_data:
-                blocks.append(TextBlock(type="table", content="", data=table_data))
+        tag = element.name
+        # 懒初始化：子类未调用 super().__init__() 时兜底
+        if not hasattr(self, "_tag_handlers"):
+            self._build_tag_handlers()
+        handler = self._tag_handlers.get(tag)
+        if handler is not None:
+            handler(element, blocks)
             return
 
-        # 处理标题 (h1-h6)
-        if tag in HEADING_TAGS:
-            text = element.get_text(strip=True)
-            if text:
-                level = int(tag[1]) if len(tag) == 2 else 1
-                blocks.append(TextBlock(type="heading", content=text, language=str(level)))
-            return
-
-        # 处理列表
-        if tag in LIST_TAGS:
-            self._process_list(element, tag, blocks, 0)
-            return
-
-        # 处理段落
-        if tag in PARAGRAPH_TAGS:
-            self._process_paragraph(element, blocks)
-            return
-
-        # 处理预格式化代码块
-        if tag in CODE_TAGS:
-            if element.get(self.config.code_expanded_attr):
-                return
-            code = element.get_text("\n", strip=True)
-            language = self._extract_code_language(element)
-            blocks.append(TextBlock(type="code", content=code, language=language))
-            return
-
-        # 处理引用
-        if tag in BLOCKQUOTE_TAGS:
-            text = element.get_text(strip=True)
-            if text:
-                blocks.append(TextBlock(type="blockquote", content=text))
-            return
-
-        # 处理换行
-        if tag in BREAK_TAGS:
-            if blocks and blocks[-1].type == "paragraph":
-                blocks[-1].content += "\n"
-            return
-
-        # 处理图片
-        if tag in IMAGE_TAGS:
-            url = self._extract_image_url(element)
-            if url:
-                blocks.append(TextBlock(type="image", content=url))
-            return
-
-        # 处理 div/section 容器
-        if tag == "div" or tag in SECTION_TAGS:
-            self._process_div_or_section(element, blocks)
-            return
-
-        if tag in INLINE_TAGS:
-
-            if self._is_math_element(element):
-                self._process_math_element(element, blocks)
-                return
-            self._process_inline_element(element, blocks)
-            return
-
+        # ---- 兜底逻辑：标签名不在已知映射中 ----
         if self._is_math_element(element):
             self._process_math_element(element, blocks)
             return
