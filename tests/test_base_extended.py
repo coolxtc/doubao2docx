@@ -1433,19 +1433,32 @@ class TestProcessMathElement:
         assert blocks[0].type == "latex"
         assert blocks[0].content == "raw_latex"
 
-    def test_process_math_element_merge_with_previous_paragraph(self):
-        """公式与前一段合并"""
+    def test_process_math_element_merge_with_previous_empty_paragraph(self):
+        """内联公式与前一个空段落合并"""
         parser = MockParser()
-        blocks = [
-            TextBlock(type="paragraph", content="", items=[]),
-            TextBlock(type="paragraph", content="answer:", items=[])
-        ]
+        # 单个空段落，添加 latex 后会被合并
+        blocks = [TextBlock(type="paragraph", content="", items=[])]
         soup = BeautifulSoup('<span copy-text="theta">θ</span>', "lxml")
         parser._process_math_element(soup.find("span"), blocks)
+        # 添加 latex 后 blocks = [p, latex]，检查 blocks[-2] = p
+        # p 是空段落，满足合并条件，latex 合并到 p，pop latex
+        assert len(blocks) == 1
+        assert blocks[0].type == "paragraph"
+        assert len(blocks[0].items) == 1
+        assert blocks[0].items[0].content == "theta"
+
+    def test_process_math_element_no_merge_when_prev_has_content(self):
+        """前一段有 content 时不合并"""
+        parser = MockParser()
+        blocks = [TextBlock(type="paragraph", content="some text", items=[])]
+        soup = BeautifulSoup('<span copy-text="theta">θ</span>', "lxml")
+        parser._process_math_element(soup.find("span"), blocks)
+        # 前一段有 content，不满足合并条件
+        # 创建独立的 latex block
         assert len(blocks) == 2
-        assert blocks[1].type == "paragraph"
-        assert len(blocks[1].items) == 1
-        assert blocks[1].items[0].content == "theta"
+        assert blocks[0].content == "some text"
+        assert blocks[1].type == "latex"
+        assert blocks[1].content == "theta"
 
     def test_process_math_element_no_merge_when_no_previous(self):
         """无前一段时不合并"""

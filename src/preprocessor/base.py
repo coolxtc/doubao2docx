@@ -279,12 +279,18 @@ class BaseParser(ABC):
         blocks = []
 
         for child in container.children:
-            if isinstance(child, NavigableString):
-                text = str(child).strip()
-                if text:
-                    blocks.append(TextBlock(type="paragraph", content=text))
-            elif isinstance(child, Tag):
-                self._process_element(child, blocks)
+            try:
+                if isinstance(child, NavigableString):
+                    text = str(child).strip()
+                    if text:
+                        blocks.append(TextBlock(type="paragraph", content=text))
+                elif isinstance(child, Tag):
+                    self._process_element(child, blocks)
+            except Exception:
+                # 解析失败时跳过该元素，确保其余内容仍然导出
+                import logging
+                logging.warning(f"解析元素失败，跳过: {child.name if hasattr(child, 'name') else 'Unknown'}")
+                continue
 
         return blocks
 
@@ -601,6 +607,7 @@ class BaseParser(ABC):
                         items.append(ii)
                 elif child.name == "p":
                     # 段落容器：递归处理
+                    flush()
                     self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name == "div" and self._has_any_class(child, self.config.line_break_classes):
                     # 换行符 div
@@ -613,6 +620,7 @@ class BaseParser(ABC):
                     items.append(InlineContent(type="text", content="\n"))
                 elif child.name in ("div", "span"):
                     # 嵌套容器：递归处理
+                    flush()
                     self._process_nested_container(child, items, current_bold, current_italic)
                 elif child.name == "picture":
                     # 图片元素
@@ -921,7 +929,8 @@ class BaseParser(ABC):
 
         flush()
 
-        blocks.append(TextBlock(type="paragraph", content="", items=items))
+        if items:
+            blocks.append(TextBlock(type="paragraph", content="", items=items))
 
     def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: Callable[..., Any]) -> tuple[bool, str]:
         """
@@ -1158,9 +1167,10 @@ class BaseParser(ABC):
             language="display" if is_display else "inline"
         ))
 
-        if len(blocks) >= 2:
+        # 内联公式（非 display）可合并到前一个 paragraph
+        if not is_display and len(blocks) >= 2:
             prev_block = blocks[-2]
-            if prev_block.type == "paragraph" and not prev_block.items:
+            if prev_block.type == "paragraph" and not prev_block.items and not prev_block.content:
                 prev_block.items.append(InlineContent(type="latex", content=latex, is_display=is_display))
                 blocks.pop()
 
