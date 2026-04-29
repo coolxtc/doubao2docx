@@ -1,5 +1,6 @@
 """Word 文档构建器模块"""
 
+import logging
 import os
 import re
 import subprocess
@@ -65,7 +66,6 @@ class DocxBuilder:
         self._last_list_type: str | None = None  # 上一个列表类型（"ul" 或 "ol"）
         self._last_list_level: int = 0  # 上一个列表的嵌套层级
         self._list_counter: int = 0  # 有序列表当前序号
-        self._last_block_type: str | None = None  # 上一个内容块类型
 
         # 图片下载失败追踪
         self._image_failure_count: int = 0  # 失败图片数量
@@ -74,6 +74,7 @@ class DocxBuilder:
 
         self._config = get_config()
         self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
+        self._logger = logging.getLogger(__name__)  # 模块级 logger
 
     def _setup_document(self) -> None:
         """设置页边距和默认字体"""
@@ -249,8 +250,8 @@ class DocxBuilder:
         if block.items:
             # 包含内联内容的列表项
             if list_type == "ol":
-                # 遇到新标题、切换列表类型或层级变化时重置计数器
-                if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
+                # 切换列表类型或层级变化时重置计数器
+                if self._last_list_level != level or self._last_list_type != "ol":
                     self._list_counter = 0
                 self._list_counter += 1
                 start_index = self._list_counter
@@ -264,8 +265,8 @@ class DocxBuilder:
         else:
             # 纯文本列表项
             if list_type == "ol":
-                # 遇到新标题、切换列表类型或层级变化时重置计数器
-                if self._last_block_type == "heading" or self._last_list_level != level or self._last_list_type == "ul":
+                # 切换列表类型或层级变化时重置计数器
+                if self._last_list_level != level or self._last_list_type != "ol":
                     self._list_counter = 0
                 self._list_counter += 1
                 self._last_list_type = "ol"
@@ -279,8 +280,6 @@ class DocxBuilder:
                 para = self.document.add_paragraph(block.content, style="List Bullet")
                 for run in para.runs:
                     self._set_run_font(run)
-
-        self._last_block_type = block.type
 
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
         """
@@ -454,11 +453,8 @@ class DocxBuilder:
         return para
 
     def _create_continuation_paragraph(self, list_type: Optional[str], level: int):
-        """创建列表项内部块级元素后的续写段落（不添加序号）"""
-        if list_type in ("ol", "ul"):
-            para = self.document.add_paragraph(style="List Bullet")
-        else:
-            para = self.document.add_paragraph()
+        """创建列表项内部块级元素后的续写段落（不添加序号，仅保留缩进）"""
+        para = self.document.add_paragraph()
         if level > 0:
             para.paragraph_format.left_indent = Inches(level * 0.5)
         return para
@@ -595,15 +591,13 @@ class DocxBuilder:
         except Exception as e:
             raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
-            import logging
-            logger = logging.getLogger(__name__)
             for path in [tmp_tex_path, tmp_docx_path]:
                 if path:
                     try:
                         if os.path.exists(path):
                             os.unlink(path)
                     except OSError as e:
-                        logger.debug(f"临时文件清理失败: {e}")
+                        self._logger.debug(f"临时文件清理失败: {e}")
 
         return None
 
@@ -669,8 +663,11 @@ class DocxBuilder:
         Returns:
             str: 处理后的 LaTeX 文本
         """
-        compensated = re.sub(r'\\text\{ +', r'\\text{~', latex)
-        return compensated
+        def _replace_spaces(match):
+            """将连续空格替换为对应数量的 ~"""
+            spaces = match.group(1)
+            return '\\text{' + '~' * len(spaces)
+        return re.sub(r'\\text\{( +)', _replace_spaces, latex)
 
     def _add_code_block(self, code: str, language: Optional[str] = None) -> None:
         """
@@ -801,6 +798,36 @@ class DocxBuilder:
         image_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico")
         return url.split("?")[0].lower().endswith(image_exts)
 
+    @staticmethod
+    def _is_image_magic(data: bytes) -> bool:
+        """
+        通过文件头魔数判断是否为常见图片格式
+
+        Args:
+            data: 文件二进制数据
+
+        Returns:
+            bool: 是否为已知图片格式
+        """
+        if len(data) < 8:
+            return False
+        # PNG
+        if data[:8] == b'\x89PNG\r\n\x1a\n':
+            return True
+        # JPEG
+        if data[:3] == b'\xff\xd8\xff':
+            return True
+        # GIF
+        if data[:6] in (b'GIF89a', b'GIF87a'):
+            return True
+        # WebP
+        if data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
+            return True
+        # BMP
+        if data[:2] == b'BM':
+            return True
+        return False
+
     def _download_image(self, url: str) -> Optional[bytes]:
         """
         下载图片到内存
@@ -822,12 +849,16 @@ class DocxBuilder:
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")  # 内容类型
-            # 放宽校验：Content-Type 非图片/二进制类型且 URL 无图片后缀时才拒绝
+            # Content-Type 非图片/二进制类型且 URL 无图片后缀时拒绝
             if content_type and not self._is_image_content_type(content_type):
                 if not self._has_image_extension(url):
                     self._record_image_failure(url)
                     return None
-            # 其余情况（无 Content-Type 或有图片后缀）均尝试保留
+            # 无 Content-Type 且 URL 无图片后缀时，进行魔数校验
+            if not content_type and not self._has_image_extension(url):
+                if not self._is_image_magic(resp.content):
+                    self._record_image_failure(url)
+                    return None
             return resp.content
         except requests.RequestException as e:
             self._record_image_failure(url)
