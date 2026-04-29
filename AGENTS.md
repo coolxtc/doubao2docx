@@ -1,8 +1,8 @@
 # AGENTS.md - Doubao Export
 
-**Generated:** 2026-04-23
-**Commit:** ab232cab
-**Branch:** master
+**Generated:** 2026-04-29
+**Commit:** 89d380f
+**Branch:** feat/base代码优化
 
 豆包聊天记录导出工具：爬取 → 解析 → 生成 Word。
 
@@ -256,12 +256,12 @@ python3 -m pytest tests/ --cov=src --cov-report=term
 
 | 模块 | 覆盖率 | 测试文件 |
 |------|--------|---------|
-| preprocessor/base.py | 79% | test_base_extended.py |
+| preprocessor/base.py | 90% | test_base_extended.py |
 | scraper/page_actions.py | 100% | test_page_actions.py |
-| scraper/extractor.py | 98% | test_extractor.py |
-| scraper/crawler.py | 50% | test_crawler.py |
-| generator/batch_report.py | 72% | test_batch_report.py |
-| config.py | 90% | test_config.py |
+| scraper/extractor.py | 100% | test_extractor.py |
+| scraper/crawler.py | 87% | test_crawler.py |
+| generator/batch_report.py | 92% | test_batch_report.py |
+| config.py | 94% | test_config.py |
 
 ### 测试模式
 
@@ -310,6 +310,6 @@ class MockParser(BaseParser):
 
 | 模块 | 目标 |
 |------|------|
-| preprocessor/base.py | ≥75% |
+| preprocessor/base.py | ≥90% |
 | scraper/* | ≥50% |
 | generator/* | ≥50% |

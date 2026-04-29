@@ -416,9 +416,8 @@ doubao-export/
 ```
 doubao-export/
 ├── src/                         # 源代码目录
-│   ├── __init__.py              # 包初始化，版本信息
+│   ├── __init__.py              # 包初始化，版本信息（__version__）
 │   ├── __main__.py              # 入口点，支持 python3 -m src 运行
-│   ├── __version__.py           # 版本号（从 __init__.py 导入）
 │   ├── cli.py                   # 命令行入口，Rich Live 进度显示
 │   ├── config.py                # 配置加载（YAML → dataclass）
 │   ├── exceptions.py            # 自定义异常（CrawlerError / ParseError / ExportError）
@@ -441,8 +440,8 @@ doubao-export/
 │       ├── doc_namer.py        # 文档命名 + 序号管理
 │       └── batch_report.py     # 批量导出报告
 ├── data/                        # 数据输出目录
-│   └── export/                  # 导出的 Word 文档
-├── data/link_index.json         # 链接索引文件
+│   ├── export/                  # 导出的 Word 文档（按日期分类）
+│   └── link_index.json         # 链接索引文件
 ├── config.yaml                  # 配置文件（必填，无默认值）
 ├── pyproject.toml              # 项目配置
 └── README.md                    # 项目说明文档
