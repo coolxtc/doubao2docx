@@ -70,6 +70,7 @@ class DocxBuilder:
         # 图片下载失败追踪
         self._image_failure_count: int = 0  # 失败图片数量
         self._image_failure_urls: list[str] = []  # 失败图片 URL 列表
+        self._image_failure_urls_set: set[str] = set()  # 用于去重
 
         self._config = get_config()
         self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
@@ -189,26 +190,29 @@ class DocxBuilder:
         Args:
             block: TextBlock 内容块
         """
-        # 公式
+        # 公式（允许 content 为空，如某些占位公式由 _add_latex 处理）
         if block.type == "latex":
-            self._add_latex(block.content, is_display=(block.language == "display"), as_standalone=True)
+            if block.content.strip():
+                self._add_latex(block.content, is_display=(block.language == "display"), as_standalone=True)
         # 代码块
         elif block.type == "code":
-            self._add_code_block(block.content, block.language)
+            if block.content.strip():
+                self._add_code_block(block.content, block.language)
         # 标题
         elif block.type == "heading":
-            level = int(block.language) if block.language else 3  # 标题级别
-            heading = self.document.add_heading(block.content, level=min(level, 6))
-            for run in heading.runs:
-                run.font.color.rgb = RGBColor(0, 0, 0)
-                self._set_run_font(run)
-            # 标题意味着新的逻辑分组，重置列表状态
-            self._last_list_type = None
-            self._last_list_level = 0
-            self._list_counter = 0
-        # 简单列表
+            if block.content.strip():
+                level = int(block.language) if block.language else 3  # 标题级别
+                heading = self.document.add_heading(block.content, level=min(level, 6))
+                for run in heading.runs:
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+                    self._set_run_font(run)
+                # 标题意味着新的逻辑分组，重置列表状态
+                self._last_list_type = None
+                self._last_list_level = 0
+                self._list_counter = 0
+        # 简单列表（已废弃，列表均以 list_item 形式处理）
         elif block.type == "list":
-            self._add_list(block.content, block.language)
+            pass
         # 列表项
         elif block.type == "list_item":
             self._add_list_item(block)
@@ -217,10 +221,12 @@ class DocxBuilder:
             self._add_table(block.data)
         # 引用
         elif block.type == "blockquote":
-            self._add_blockquote(block.content)
+            if block.content.strip():
+                self._add_blockquote(block.content)
         # 图片
         elif block.type == "image":
-            self._add_image(block.content)
+            if block.content.strip():
+                self._add_image(block.content)
         # 内联段落（包含公式/加粗等）
         elif block.type == "paragraph" and block.items:
             self._add_inline_content(block.items)
@@ -280,18 +286,41 @@ class DocxBuilder:
         """
         添加内联内容（文本和公式混合的段落）
 
-        Args:
-            items: 内联内容项列表
-            list_type: 列表类型（"ol" 或 "ul"）
-            start_index: 有序列表起始序号
-            level: 嵌套层级
+        修复说明：
+        - 展示公式、表格、代码块处理后不立即创建新段落，仅标记 need_new_para。
+        - 下一次遇到文本或行内公式时才创建续写段落，避免尾部空白段落。
         """
         if not items:
             return
 
-        para = self._create_inline_paragraph(list_type, start_index, level)  # 当前段落
+        # 删除 items 末尾的纯空白项（换行/空格），避免段落尾部多余空行
+        while items and items[-1].type == "text" and not items[-1].content.strip():
+            items.pop()
+        if not items:
+            return
+
+        para = None  # 当前段落，非列表情况下可能为 None
+        new_para = self._create_inline_paragraph(list_type, start_index, level)
+        if new_para is not None:
+            para = new_para
+
         last_run = None  # 上一个 Run 对象（用于换行处理）
         prev_was_latex = False  # 上一个元素是否为公式
+        need_new_para = False  # 标记是否需要在下一个可写内容前创建续写段落
+        last_was_break = False  # 上一个添加的内容是否为换行符（用于合并连续换行）
+
+        def ensure_para_for_inline():
+            """确保 para 存在且可写入（用于文本/行内公式）"""
+            nonlocal para, need_new_para, last_run, last_was_break
+            if need_new_para or para is None:
+                if need_new_para:
+                    para = self._create_continuation_paragraph(list_type, level)
+                    need_new_para = False
+                else:
+                    para = self.document.add_paragraph()
+                last_run = None
+                last_was_break = False
+
         for idx, item in enumerate(items):
             # 有列表标记时，创建新的无序列表段落
             if item.list_marker and item.type == "text":
@@ -307,20 +336,30 @@ class DocxBuilder:
                     para.paragraph_format.left_indent = Inches(item_level * 0.5)
                 last_run = None
                 prev_was_latex = False
+                need_new_para = False
+                last_was_break = False
                 continue
 
             # 文本内容
             if item.type == "text":
-                # 跳过纯换行符
-                if item.content == "\n":
-                    next_item = items[idx + 1] if idx + 1 < len(items) else None
-                    if next_item and next_item.list_marker:
-                        continue
-                if item.content == "\n" and (prev_was_latex or last_run is None):
-                    para.add_run("").add_break(WD_BREAK.LINE)
+                ensure_para_for_inline()
+                text = item.content
+
+                # 情况1：内容为纯空白（仅换行/空格等无实质字符）
+                if not text.strip():
+                    # 需要换行的条件：
+                    # - 前一个元素是公式，或
+                    # - 段中有文本且上一个不是换行（避免连续换行）
+                    need_break = prev_was_latex or (last_run is not None and not last_was_break)
+                    if need_break:
+                        para.add_run("").add_break(WD_BREAK.LINE)
+                        last_was_break = True
                     prev_was_latex = False
                     continue
-                parts = item.content.split("\n")
+
+                # 情况2：有实际文本内容
+                last_was_break = False  # 重置连续换行标记
+                parts = text.split("\n")
                 for i, part in enumerate(parts):
                     if i > 0 and last_run:
                         last_run.add_break(WD_BREAK.LINE)
@@ -333,15 +372,22 @@ class DocxBuilder:
                             run.font.italic = True
                         last_run = run
                 prev_was_latex = False
-            # 公式
-            elif item.type == "latex":
-                if item.is_display:
-                    self._add_latex(item.content, is_display=True, as_standalone=True)
-                    para = self._create_inline_paragraph(list_type, start_index, level)
-                else:
-                    self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
+
+            # 展示公式（块级）
+            elif item.type == "latex" and item.is_display:
+                self._add_latex(item.content, is_display=True, as_standalone=True)
+                need_new_para = True
+                para = None
                 last_run = None
                 prev_was_latex = True
+
+            # 行内公式
+            elif item.type == "latex":
+                ensure_para_for_inline()
+                self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
+                last_run = None
+                prev_was_latex = True
+
             # 图片
             elif item.type == "image" and item.image_url:
                 url = item.image_url
@@ -356,28 +402,35 @@ class DocxBuilder:
                         para = self.document.add_paragraph()
                         para.add_run().add_picture(temp_path, width=max_width)
                     except Exception:
-                        self._image_failure_count += 1
-                        self._image_failure_urls.append(url)
+                        self._record_image_failure(url)
                     finally:
                         if temp_path and os.path.exists(temp_path):
                             os.unlink(temp_path)
                 else:
-                    self._image_failure_count += 1
-                    self._image_failure_urls.append(url or "(空URL)")
+                    self._record_image_failure(url or "(空URL)")
+                # 图片后可能需要续写，也标记 need_new_para
+                need_new_para = True
+                para = None
                 last_run = None
                 prev_was_latex = False
+
             # 表格
             elif item.type == "table":
                 self._add_table(item.data)
-                para = self.document.add_paragraph()
-            # 代码
+                need_new_para = True
+                para = None
+                last_run = None
+
+            # 代码块
             elif item.type == "code":
                 self._add_code_block(item.content)
-                para = self.document.add_paragraph()
+                need_new_para = True
+                para = None
+                last_run = None
 
     def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
         """
-        创建内联段落并设置列表样式
+        创建内联段落并设置列表样式；非列表且无序号时返回 None 表示复用当前段落
 
         Args:
             list_type: 列表类型（"ol" 或 "ul"）
@@ -385,13 +438,24 @@ class DocxBuilder:
             level: 嵌套层级
 
         Returns:
-            Paragraph: 创建的段落对象
+            Paragraph | None: 创建的段落对象，非列表情况返回 None
         """
         if list_type == "ol":
             para = self.document.add_paragraph()
             run = para.add_run(f"{start_index}. ")
             self._set_run_font(run)
         elif list_type == "ul":
+            para = self.document.add_paragraph(style="List Bullet")
+        else:
+            # 非列表情况：返回 None，由调用方决定是否新建段落
+            return None
+        if level > 0:
+            para.paragraph_format.left_indent = Inches(level * 0.5)
+        return para
+
+    def _create_continuation_paragraph(self, list_type: Optional[str], level: int):
+        """创建列表项内部块级元素后的续写段落（不添加序号）"""
+        if list_type in ("ol", "ul"):
             para = self.document.add_paragraph(style="List Bullet")
         else:
             para = self.document.add_paragraph()
@@ -427,8 +491,15 @@ class DocxBuilder:
 
         # Fallback: 使用 Unicode 字符表示
         unicode_text = self.latex_converter.convert_inline(latex)
-        p = self.document.add_paragraph(unicode_text)
-        self._set_run_font(p.runs[0])
+        if is_display:
+            # 展示公式独立居中显示
+            p = self.document.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(unicode_text)
+            self._set_run_font(run)
+        else:
+            p = self.document.add_paragraph(unicode_text)
+            self._set_run_font(p.runs[0])
 
     def _add_latex_to_paragraph(self, para, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
         """
@@ -455,12 +526,20 @@ class DocxBuilder:
             except Exception as e:
                 raise ExportError(f"添加公式失败: {e}") from e
         else:
+            # Fallback: 使用 Unicode 字符表示
             unicode_text = self.latex_converter.convert_inline(latex)
-            run = para.add_run(unicode_text)
-            self._set_run_font(run)
-            if as_standalone:
-                run = para.add_run(" ")
+            if is_display:
+                # 展示公式独立居中显示
+                p = self.document.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run(unicode_text)
                 self._set_run_font(run)
+            else:
+                run = para.add_run(unicode_text)
+                self._set_run_font(run)
+                if as_standalone:
+                    run = para.add_run(" ")
+                    self._set_run_font(run)
 
     def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
         """
@@ -582,7 +661,7 @@ class DocxBuilder:
 
     def _compensate_text_latex(self, latex: str) -> str:
         """
-        补偿 \\text{} 中的空格丢失问题
+        补偿 \\text{} 中的空格丢失问题，将所有前导空格替换为 ~
 
         Args:
             latex: LaTeX 公式文本
@@ -590,7 +669,7 @@ class DocxBuilder:
         Returns:
             str: 处理后的 LaTeX 文本
         """
-        compensated = re.sub(r'\\text\{ ', lambda m: '\\text{~', latex)
+        compensated = re.sub(r'\\text\{ +', r'\\text{~', latex)
         return compensated
 
     def _add_code_block(self, code: str, language: Optional[str] = None) -> None:
@@ -613,27 +692,6 @@ class DocxBuilder:
         pPr = para._element.get_or_add_pPr()
         shd = parse_xml(r'<w:shd xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:val="pro" w:fill="F2F2F2"/>')
         pPr.append(shd)
-
-    def _add_list(self, content: str, list_type: Optional[str] = None) -> None:
-        """
-        添加简单文本列表
-
-        Args:
-            content: 列表内容（换行分隔）
-            list_type: 列表类型（"ol" 或 "ul"）
-
-        Returns:
-            None
-        """
-        items = content.split("\n")
-        for item in items:
-            if item.strip():
-                if list_type == "ol":
-                    para = self.document.add_paragraph(item.strip(), style="List Number")
-                else:
-                    para = self.document.add_paragraph(item.strip(), style="List Bullet")
-                for run in para.runs:
-                    self._set_run_font(run)
 
     def _add_table(self, table_data) -> None:
         """
@@ -695,6 +753,54 @@ class DocxBuilder:
             self._set_run_font(run)
             run.font.italic = True
 
+    def _record_image_failure(self, url: str) -> None:
+        """
+        记录图片下载失败（去重）
+
+        Args:
+            url: 图片 URL
+        """
+        if url not in self._image_failure_urls_set:
+            self._image_failure_urls_set.add(url)
+            self._image_failure_count += 1
+            self._image_failure_urls.append(url)
+
+    @staticmethod
+    def _is_image_content_type(content_type: str) -> bool:
+        """
+        判断 Content-Type 是否为图片类型
+
+        Args:
+            content_type: HTTP Content-Type 头
+
+        Returns:
+            bool: 是否为图片类型
+        """
+        if not content_type:
+            return False
+        ct_lower = content_type.lower()
+        # 标准图片 MIME
+        if ct_lower.startswith("image/"):
+            return True
+        # 常见二进制流类型（某些图床使用）
+        if ct_lower in ("application/octet-stream", "binary/octet-stream"):
+            return True
+        return False
+
+    @staticmethod
+    def _has_image_extension(url: str) -> bool:
+        """
+        判断 URL 是否具有常见图片后缀
+
+        Args:
+            url: 图片 URL
+
+        Returns:
+            bool: 是否具有图片后缀
+        """
+        image_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico")
+        return url.split("?")[0].lower().endswith(image_exts)
+
     def _download_image(self, url: str) -> Optional[bytes]:
         """
         下载图片到内存
@@ -706,8 +812,7 @@ class DocxBuilder:
             Optional[bytes]: 图片数据，下载失败返回 None
         """
         if not url or not url.startswith("http"):
-            self._image_failure_count += 1
-            self._image_failure_urls.append(url or "(空URL)")
+            self._record_image_failure(url or "(空URL)")
             return None
         try:
             crawler_config = self._config.crawler
@@ -717,15 +822,15 @@ class DocxBuilder:
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")  # 内容类型
-            if not content_type.startswith("image/"):
-                self._image_failure_count += 1
-                self._image_failure_urls.append(url)
-                return None
-
+            # 放宽校验：Content-Type 非图片/二进制类型且 URL 无图片后缀时才拒绝
+            if content_type and not self._is_image_content_type(content_type):
+                if not self._has_image_extension(url):
+                    self._record_image_failure(url)
+                    return None
+            # 其余情况（无 Content-Type 或有图片后缀）均尝试保留
             return resp.content
         except requests.RequestException as e:
-            self._image_failure_count += 1
-            self._image_failure_urls.append(url)
+            self._record_image_failure(url)
             return None
 
     def _add_image(self, url: str, max_width: Optional[Inches] = None) -> None:
@@ -753,8 +858,7 @@ class DocxBuilder:
             para = self.document.add_paragraph()
             para.add_run().add_picture(temp_path, width=width)
         except Exception as e:
-            self._image_failure_count += 1
-            self._image_failure_urls.append(url)
+            self._record_image_failure(url)
             self._add_paragraph(f"[图片: {url}]")
         finally:
             if temp_path and os.path.exists(temp_path):

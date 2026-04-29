@@ -847,7 +847,6 @@ class BaseParser(ABC):
                 elif child.name in LIST_TAGS:
                     if handle_nested_lists:
                         flush()
-                        items.append(InlineContent(type=INLINE_TEXT, content="\n", bold=current_bold, italic=current_italic))
                         self._extract_nested_list_text(child, items, current_bold, current_italic, list_level + 1)
                     else:
                         pass  # 跳过

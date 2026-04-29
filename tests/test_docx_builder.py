@@ -182,26 +182,6 @@ class TestAddCodeBlock:
 
 
 # =============================================================================
-# _add_list 测试
-# =============================================================================
-
-
-class TestAddList:
-    """测试添加列表"""
-
-    def test_add_ordered_list(self, doc_builder):
-        """有序列表"""
-        doc_builder._add_list("项目1\n项目2\n项目3", "ol")
-        # 应该添加多个段落
-        assert len(doc_builder.document.paragraphs) >= 3
-
-    def test_add_unordered_list(self, doc_builder):
-        """无序列表"""
-        doc_builder._add_list("项目A\n项目B", "ul")
-        assert len(doc_builder.document.paragraphs) >= 2
-
-
-# =============================================================================
 # _add_table 测试
 # =============================================================================
 
@@ -301,10 +281,11 @@ class TestAddTextBlock:
         assert len(doc_builder.document.paragraphs) >= 1
 
     def test_add_list_block(self, doc_builder):
-        """列表块"""
+        """列表块（已废弃，直接跳过）"""
         block = TextBlock(type="list", content="项1\n项2", language="ul")
         doc_builder._add_text_block(block)
-        assert len(doc_builder.document.paragraphs) >= 2
+        # 简单列表类型已废弃，不会添加任何内容
+        assert len(doc_builder.document.paragraphs) == 0
 
     def test_add_table_block(self, doc_builder):
         """表格块"""
@@ -339,10 +320,10 @@ class TestAddTextBlock:
         assert len(doc_builder.document.paragraphs) >= 1
 
     def test_add_image_block(self, doc_builder):
-        """图片块（空 URL）"""
-        block = TextBlock(type="image", content="")
+        """图片块（无效 URL）"""
+        block = TextBlock(type="image", content="not-a-valid-url")
         doc_builder._add_text_block(block)
-        # 应该记录失败
+        # 无效 URL 应该记录失败
         assert doc_builder._image_failure_count >= 1
 
 
@@ -460,12 +441,13 @@ class TestInlineContent:
         assert len(doc_builder.document.paragraphs) >= 1
 
     def test_add_inline_display_latex(self, doc_builder):
-        """展示公式"""
+        """展示公式独立成段，无后续内容时不创建空段落"""
         items = [
             InlineContent(type="latex", content=r"\sum", is_display=True),
         ]
         doc_builder._add_inline_content(items)
-        assert len(doc_builder.document.paragraphs) >= 2
+        # 展示公式独立成段
+        assert len(doc_builder.document.paragraphs) >= 1
 
     def test_add_inline_text_multiline(self, doc_builder):
         """多行文本"""
@@ -580,10 +562,11 @@ class TestCreateInlineParagraph:
     def test_create_no_list_paragraph(self, doc_builder):
         """无列表段落"""
         para = doc_builder._create_inline_paragraph(None, 1, 0)
-        assert para is not None
+        # 非列表情况返回 None，表示复用当前段落
+        assert para is None
 
     def test_create_with_level(self, doc_builder):
-        """带嵌套级别"""
+        """带嵌套级别（非列表情况返回 None）"""
         para = doc_builder._create_inline_paragraph(None, 1, 2)
-        # 应该设置缩进
-        assert para.paragraph_format.left_indent is not None or para is not None
+        # 非列表情况返回 None
+        assert para is None
