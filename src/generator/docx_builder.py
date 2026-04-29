@@ -74,6 +74,8 @@ class DocxBuilder:
 
         self._config = get_config()
         self._pandoc_timeout: int = self._config.pandoc.timeout if self._config.pandoc else 15
+        crawler_config = self._config.crawler
+        self._image_timeout: int = crawler_config.image_download_timeout if crawler_config else 15
         self._logger = logging.getLogger(__name__)  # 模块级 logger
 
     def _setup_document(self) -> None:
@@ -281,13 +283,105 @@ class DocxBuilder:
                 for run in para.runs:
                     self._set_run_font(run)
 
+    def _handle_list_marker_item(self, item: InlineContent, level: int) -> None:
+        """处理带列表标记的文本项"""
+        para = self.document.add_paragraph(style="List Bullet")
+        run = para.add_run(item.content)
+        self._set_run_font(run)
+        if item.bold:
+            run.font.bold = True
+        if item.italic:
+            run.font.italic = True
+        item_level = getattr(item, 'level', level)
+        if item_level > 0:
+            para.paragraph_format.left_indent = Inches(item_level * 0.5)
+
+    def _handle_inline_text_item(self, para, item: InlineContent, last_run, last_was_break: bool, prev_was_latex: bool) -> tuple:
+        """
+        处理内联文本项
+
+        Args:
+            para: 当前段落
+            item: 文本项
+            last_run: 上一个 Run 对象
+            last_was_break: 上一个是否为换行符
+            prev_was_latex: 上一个是否为公式
+
+        Returns:
+            tuple: (last_run, last_was_break, prev_was_latex, need_new_para)
+        """
+        text = item.content
+        need_new_para = False
+
+        # 情况1：内容为纯空白（仅换行/空格等无实质字符）
+        if not text.strip():
+            need_break = prev_was_latex or (last_run is not None and not last_was_break)
+            if need_break:
+                para.add_run("").add_break(WD_BREAK.LINE)
+                last_was_break = True
+            return last_run, last_was_break, False, False
+
+        # 情况2：有实际文本内容
+        last_was_break = False
+        parts = text.split("\n")
+        for i, part in enumerate(parts):
+            if i > 0 and last_run:
+                last_run.add_break(WD_BREAK.LINE)
+            if part:
+                run = para.add_run(part)
+                self._set_run_font(run)
+                if item.bold:
+                    run.font.bold = True
+                if item.italic:
+                    run.font.italic = True
+                last_run = run
+        return last_run, last_was_break, False, False
+
+    def _handle_inline_image_item(self, url: str) -> tuple:
+        """
+        处理内联图片项
+
+        Args:
+            url: 图片 URL
+
+        Returns:
+            tuple: (need_new_para, para, last_run, prev_was_latex)
+        """
+        image_data = self._download_image(url)
+        if image_data:
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
+                    f.write(image_data)
+                    temp_path = f.name
+                max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
+                para = self.document.add_paragraph()
+                para.add_run().add_picture(temp_path, width=max_width)
+            except Exception:
+                self._record_image_failure(url)
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        else:
+            self._record_image_failure(url or "(空URL)")
+        return True, None, None, False
+
+    def _handle_inline_table_item(self, item: InlineContent) -> tuple:
+        """处理内联表格项"""
+        self._add_table(item.data)
+        return True, None, None, False
+
+    def _handle_inline_code_item(self, item: InlineContent) -> tuple:
+        """处理内联代码块项"""
+        self._add_code_block(item.content)
+        return True, None, None, False
+
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
         """
         添加内联内容（文本和公式混合的段落）
 
-        修复说明：
-        - 展示公式、表格、代码块处理后不立即创建新段落，仅标记 need_new_para。
-        - 下一次遇到文本或行内公式时才创建续写段落，避免尾部空白段落。
+        展示公式、表格、代码块处理后不立即创建新段落，仅标记 need_new_para。
+        下一次遇到文本或行内公式时才创建续写段落，避免尾部空白段落。
         """
         if not items:
             return
@@ -308,31 +402,10 @@ class DocxBuilder:
         need_new_para = False  # 标记是否需要在下一个可写内容前创建续写段落
         last_was_break = False  # 上一个添加的内容是否为换行符（用于合并连续换行）
 
-        def ensure_para_for_inline():
-            """确保 para 存在且可写入（用于文本/行内公式）"""
-            nonlocal para, need_new_para, last_run, last_was_break
-            if need_new_para or para is None:
-                if need_new_para:
-                    para = self._create_continuation_paragraph(list_type, level)
-                    need_new_para = False
-                else:
-                    para = self.document.add_paragraph()
-                last_run = None
-                last_was_break = False
-
-        for idx, item in enumerate(items):
+        for item in items:
             # 有列表标记时，创建新的无序列表段落
             if item.list_marker and item.type == "text":
-                para = self.document.add_paragraph(style="List Bullet")
-                run = para.add_run(item.content)
-                self._set_run_font(run)
-                if item.bold:
-                    run.font.bold = True
-                if item.italic:
-                    run.font.italic = True
-                item_level = getattr(item, 'level', level)
-                if item_level > 0:
-                    para.paragraph_format.left_indent = Inches(item_level * 0.5)
+                self._handle_list_marker_item(item, level)
                 last_run = None
                 prev_was_latex = False
                 need_new_para = False
@@ -341,91 +414,59 @@ class DocxBuilder:
 
             # 文本内容
             if item.type == "text":
-                ensure_para_for_inline()
-                text = item.content
-
-                # 情况1：内容为纯空白（仅换行/空格等无实质字符）
-                if not text.strip():
-                    # 需要换行的条件：
-                    # - 前一个元素是公式，或
-                    # - 段中有文本且上一个不是换行（避免连续换行）
-                    need_break = prev_was_latex or (last_run is not None and not last_was_break)
-                    if need_break:
-                        para.add_run("").add_break(WD_BREAK.LINE)
-                        last_was_break = True
-                    prev_was_latex = False
-                    continue
-
-                # 情况2：有实际文本内容
-                last_was_break = False  # 重置连续换行标记
-                parts = text.split("\n")
-                for i, part in enumerate(parts):
-                    if i > 0 and last_run:
-                        last_run.add_break(WD_BREAK.LINE)
-                    if part:
-                        run = para.add_run(part)
-                        self._set_run_font(run)
-                        if item.bold:
-                            run.font.bold = True
-                        if item.italic:
-                            run.font.italic = True
-                        last_run = run
-                prev_was_latex = False
+                if need_new_para or para is None:
+                    if need_new_para:
+                        para = self._create_continuation_paragraph(list_type, level)
+                        need_new_para = False
+                    else:
+                        para = self.document.add_paragraph()
+                    last_run = None
+                    last_was_break = False
+                last_run, last_was_break, prev_was_latex, _ = self._handle_inline_text_item(
+                    para, item, last_run, last_was_break, prev_was_latex
+                )
+                continue
 
             # 展示公式（块级）
-            elif item.type == "latex" and item.is_display:
+            if item.type == "latex" and item.is_display:
                 self._add_latex(item.content, is_display=True, as_standalone=True)
                 need_new_para = True
                 para = None
                 last_run = None
                 prev_was_latex = True
+                continue
 
             # 行内公式
-            elif item.type == "latex":
-                ensure_para_for_inline()
+            if item.type == "latex":
+                if need_new_para or para is None:
+                    if need_new_para:
+                        para = self._create_continuation_paragraph(list_type, level)
+                        need_new_para = False
+                    else:
+                        para = self.document.add_paragraph()
+                    last_run = None
+                    last_was_break = False
                 self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
                 last_run = None
                 prev_was_latex = True
+                continue
 
             # 图片
-            elif item.type == "image" and item.image_url:
-                url = item.image_url
-                image_data = self._download_image(url)
-                if image_data:
-                    temp_path = None
-                    try:
-                        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as f:
-                            f.write(image_data)
-                            temp_path = f.name
-                        max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
-                        para = self.document.add_paragraph()
-                        para.add_run().add_picture(temp_path, width=max_width)
-                    except Exception:
-                        self._record_image_failure(url)
-                    finally:
-                        if temp_path and os.path.exists(temp_path):
-                            os.unlink(temp_path)
-                else:
-                    self._record_image_failure(url or "(空URL)")
-                # 图片后可能需要续写，也标记 need_new_para
-                need_new_para = True
-                para = None
-                last_run = None
-                prev_was_latex = False
+            if item.type == "image" and item.image_url:
+                need_new_para, para, last_run, prev_was_latex = self._handle_inline_image_item(item.image_url)
+                continue
 
             # 表格
-            elif item.type == "table":
-                self._add_table(item.data)
-                need_new_para = True
-                para = None
-                last_run = None
+            if item.type == "table":
+                need_new_para, para, last_run, _ = self._handle_inline_table_item(item)
+                prev_was_latex = False
+                continue
 
             # 代码块
-            elif item.type == "code":
-                self._add_code_block(item.content)
-                need_new_para = True
-                para = None
-                last_run = None
+            if item.type == "code":
+                need_new_para, para, last_run, _ = self._handle_inline_code_item(item)
+                prev_was_latex = False
+                continue
 
     def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
         """
@@ -459,9 +500,27 @@ class DocxBuilder:
             para.paragraph_format.left_indent = Inches(level * 0.5)
         return para
 
+    def _convert_latex_content(self, latex: str, is_display: bool) -> tuple[Optional[Element], str]:
+        """
+        转换 LaTeX 公式为 OMML 元素或 Unicode 回退文本
+
+        Args:
+            latex: LaTeX 公式文本（已去除界定符）
+            is_display: 是否为展示公式
+
+        Returns:
+            tuple[Optional[Element], str]: (OMML 元素, Unicode 回退文本)，元素优先
+        """
+        latex = self._compensate_text_latex(latex)
+        math_element = self._latex_to_omml(latex, is_display)
+        if math_element is not None:
+            return math_element, ""
+        unicode_text = self.latex_converter.convert_inline(latex)
+        return None, unicode_text
+
     def _add_latex(self, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
         """
-        添加 LaTeX 公式
+        添加 LaTeX 公式（独立成段）
 
         Args:
             latex: LaTeX 公式文本
@@ -472,30 +531,25 @@ class DocxBuilder:
             return
 
         latex = _BaseParser._strip_latex_delimiters(latex)
-        latex = self._compensate_text_latex(latex)
+        omml, unicode_text = self._convert_latex_content(latex, is_display)
 
-        math_element = self._latex_to_omml(latex, is_display)
-        if math_element is not None:
+        if omml is not None:
             try:
                 p = self.document.add_paragraph()
                 p.add_run(" ")
-                p._element.append(deepcopy(math_element))
+                p._element.append(deepcopy(omml))
                 p.add_run(" ")
-                return
             except Exception as e:
                 raise ExportError(f"添加公式失败: {e}") from e
-
-        # Fallback: 使用 Unicode 字符表示
-        unicode_text = self.latex_converter.convert_inline(latex)
-        if is_display:
-            # 展示公式独立居中显示
-            p = self.document.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run(unicode_text)
-            self._set_run_font(run)
-        else:
-            p = self.document.add_paragraph(unicode_text)
-            self._set_run_font(p.runs[0])
+        elif unicode_text:
+            if is_display:
+                p = self.document.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run(unicode_text)
+                self._set_run_font(run)
+            else:
+                p = self.document.add_paragraph(unicode_text)
+                self._set_run_font(p.runs[0])
 
     def _add_latex_to_paragraph(self, para, latex: str, is_display: bool = False, as_standalone: bool = False) -> None:
         """
@@ -511,21 +565,17 @@ class DocxBuilder:
             return
 
         latex = _BaseParser._strip_latex_delimiters(latex)
-        latex = self._compensate_text_latex(latex)
+        omml, unicode_text = self._convert_latex_content(latex, is_display)
 
-        math_element = self._latex_to_omml(latex, is_display)
-        if math_element is not None:
+        if omml is not None:
             try:
                 para.add_run(" ")
-                para._element.append(deepcopy(math_element))
+                para._element.append(deepcopy(omml))
                 para.add_run(" ")
             except Exception as e:
                 raise ExportError(f"添加公式失败: {e}") from e
-        else:
-            # Fallback: 使用 Unicode 字符表示
-            unicode_text = self.latex_converter.convert_inline(latex)
+        elif unicode_text:
             if is_display:
-                # 展示公式独立居中显示
                 p = self.document.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 run = p.add_run(unicode_text)
@@ -845,7 +895,7 @@ class DocxBuilder:
             crawler_config = self._config.crawler
             user_agents = crawler_config.user_agents if crawler_config else None
             user_agent = user_agents[0] if user_agents else "Mozilla/5.0"
-            resp = requests.get(url, timeout=15, headers={"User-Agent": user_agent})  # HTTP 响应
+            resp = requests.get(url, timeout=self._image_timeout, headers={"User-Agent": user_agent})  # HTTP 响应
             resp.raise_for_status()
 
             content_type = resp.headers.get("content-type", "")  # 内容类型
@@ -854,9 +904,14 @@ class DocxBuilder:
                 if not self._has_image_extension(url):
                     self._record_image_failure(url)
                     return None
-            # 无 Content-Type 且 URL 无图片后缀时，进行魔数校验
+            # 无 Content-Type 且 URL 无图片后缀时，进行魔数校验和 JSON/HTML 头检测
             if not content_type and not self._has_image_extension(url):
                 if not self._is_image_magic(resp.content):
+                    self._record_image_failure(url)
+                    return None
+                # 防御性检查：JSON/HTML 响应（以 { 或 < 开头）
+                content = resp.content
+                if content[:1] == b'{' or content[:1] == b'<':
                     self._record_image_failure(url)
                     return None
             return resp.content

@@ -116,6 +116,7 @@ class CrawlerConfig:
     scroll_wait_ms: int  # 滚动等待时间（毫秒）
     browser_close_delay: float  # 浏览器关闭延迟（秒）
     user_agents: list[str]  # User-Agent 列表
+    image_download_timeout: int = 15  # 图片下载超时（秒）
 
 
 @dataclass
@@ -167,6 +168,7 @@ class GlobalConfig:
             "page_load_timeout", "scroll_wait_ms", "browser_close_delay", "user_agents"
         ], "crawler")
         crawler_data.setdefault("timeout", crawler_data["page_load_timeout"])
+        crawler_data.setdefault("image_download_timeout", 15)
         crawler = CrawlerConfig(**crawler_data)
 
         doc_style_data: _ConfigDict = dict(data["document_style"])
