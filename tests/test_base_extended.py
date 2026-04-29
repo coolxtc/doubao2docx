@@ -691,8 +691,8 @@ class TestParseTableCellBold:
         soup = BeautifulSoup(html, "lxml")
         table_data = BaseParser._parse_table(soup.find("table"))
         assert table_data.cell_bold == [[False, True]]
-        # 表头不加粗
-        assert table_data.header_bold == [False]
+        # <th> 标签本身即为粗体
+        assert table_data.header_bold == [True]
 
 
 class TestContainsBlockElements:

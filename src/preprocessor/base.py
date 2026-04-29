@@ -1253,7 +1253,7 @@ class BaseParser(ABC):
     @staticmethod
     def _parse_table(table: Tag) -> Optional[TableData]:
         """
-        解析表格
+        解析表格，支持无 <thead> 时自动识别表头粗体
 
         Args:
             table: table 元素
@@ -1266,33 +1266,53 @@ class BaseParser(ABC):
         header_bold = []  # 表头加粗标记
         cell_bold = []  # 单元格加粗标记
 
+        # 1. 解析 <thead> 表头（统一粗体判定规则：<th>标签或包含<strong>/<b>）
         thead = table.find("thead")
         if thead:
             header_row = thead.find("tr")
             if header_row:
-                headers = []
-                header_bold = []
                 for th in header_row.find_all(["th", "td"]):
                     headers.append(th.get_text(strip=True))
-                    header_bold.append(th.find(BOLD_TAGS) is not None)
+                    header_bold.append((th.name == "th") or (th.find(BOLD_TAGS) is not None))
 
-        tbody = table.find("tbody")
-        if not tbody:
-            tbody = table
+        # 2. 收集数据行 <tr>，排除 <thead> 内的行
+        if thead:
+            tbody = table.find("tbody")
+            if tbody is not None:
+                tr_elements = tbody.find_all("tr", recursive=False)
+            else:
+                # 没有 tbody，取所有 tr 但排除 thead 内的
+                all_tr = table.find_all("tr", recursive=False)
+                tr_elements = [tr for tr in all_tr if tr.parent is not None and tr.parent.name != "thead"]
+        else:
+            # 没有 <thead>，所有 <tr> 均为数据区域，第一行将作为表头
+            tr_elements = table.find_all("tr", recursive=False)
 
-        for row in tbody.find_all("tr"):
+        start_index = 0
+        if not thead and tr_elements:
+            # 第一行即表头行，解析粗体语义
+            first_tr = tr_elements[0]
+            for td in first_tr.find_all(["th", "td"]):
+                headers.append(td.get_text(strip=True))
+                is_bold = (td.name == "th") or (td.find(BOLD_TAGS) is not None)
+                header_bold.append(is_bold)
+            start_index = 1
+
+        # 3. 遍历数据行（跳过已作为表头的第一行）
+        for tr in tr_elements[start_index:]:
             row_data = []
             row_bold = []
-            for td in row.find_all(["td", "th"]):
+            for td in tr.find_all(["th", "td"]):
                 row_data.append(td.get_text(strip=True))
                 row_bold.append(td.find(BOLD_TAGS) is not None)
             if row_data:
                 rows.append(row_data)
                 cell_bold.append(row_bold)
 
-        if not rows and not headers:
+        if not headers and not rows:
             return None
 
+        # 极端情况兜底：没有任何行被解析为数据行，但 headers 为空
         if not headers:
             headers = rows[0] if rows else []
             rows = rows[1:] if rows else []
