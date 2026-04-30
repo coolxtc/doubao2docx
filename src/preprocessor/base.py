@@ -131,6 +131,42 @@ class ParsedPage:
     latex_fallback_count: int = 0  # 公式识别回退计数：当 copy-text 属性缺失时触发策略2
 
 
+@dataclass
+class _WalkContext:
+    """封装 _walk_inline_children 过程中的可变状态与控制标志"""
+    items: list[InlineContent] = field(default_factory=list)
+    current_text: str = ""
+    current_bold: bool = False
+    current_italic: bool = False
+    parent_bold: bool = False
+    parent_italic: bool = False
+    conditional_format_flush: bool = False
+    handle_line_break_div: bool = True
+    parse_div_span_inline: bool = True
+    strip_nav_strings: bool = True
+    reset_format_to_parent: bool = False
+    handle_nested_lists: bool = False
+    list_level: int = 1
+
+    def flush(self) -> None:
+        """将累积的文本 flush 到 items 列表"""
+        stripped = self.current_text.strip()
+        if stripped:
+            self.items.append(InlineContent(
+                type=INLINE_TEXT,
+                content=stripped,
+                bold=self.current_bold,
+                italic=self.current_italic
+            ))
+        self.current_text = ""
+        if self.reset_format_to_parent:
+            self.current_bold = self.parent_bold
+            self.current_italic = self.parent_italic
+        else:
+            self.current_bold = False
+            self.current_italic = False
+
+
 # =============================================================================
 # BaseParser - 解析器抽象基类
 # =============================================================================
@@ -350,57 +386,6 @@ class BaseParser(ABC):
         while prev_sibling is not None and isinstance(prev_sibling, NavigableString) and not str(prev_sibling).strip():
             prev_sibling = prev_sibling.previous_sibling
         return prev_sibling
-
-    def _handle_line_break(self, prev_sibling: PageElement | None, items: list[InlineContent],
-                           current_text: str, current_bold: bool, current_italic: bool,
-                           parent_bold: bool, parent_italic: bool,
-                           flush_fn: Optional[FlushFunc] = None) -> tuple[str, bool, bool]:
-        """
-        处理换行符
-
-        Args:
-            prev_sibling: 前一个兄弟节点
-            items: 内联内容列表
-            current_text: 当前累积文本
-            current_bold: 当前加粗状态
-            current_italic: 当前斜体状态
-            parent_bold: 父级加粗状态
-            parent_italic: 父级斜体状态
-            flush_fn: 刷新回调函数
-
-        Returns:
-            (剩余文本, 加粗状态, 斜体状态)
-        """
-        prev = self._skip_whitespace_siblings(prev_sibling)
-
-        if flush_fn:
-            flush_fn()
-        else:
-            stripped = current_text.strip()
-            if stripped:
-                items.append(InlineContent(
-                    type=INLINE_TEXT,
-                    content=stripped,
-                    bold=current_bold,
-                    italic=current_italic
-                ))
-
-        if isinstance(prev, Tag):
-            if (prev.name in INLINE_CONTAINER_TAGS and self._has_any_class(prev, self.config.line_break_classes)
-                and not prev.get_text(strip=True)):
-                items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                return "", parent_bold, parent_italic
-
-        if isinstance(prev, NavigableString):
-            items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-            return "", parent_bold, parent_italic
-        elif isinstance(prev, Tag) and prev.name in LIST_TAGS:
-            return "", parent_bold, parent_italic
-        elif isinstance(prev, Tag) and prev.name in INLINE_CONTAINER_TAGS:
-            return "", parent_bold, parent_italic
-        else:
-            items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-            return "", parent_bold, parent_italic
 
     def _extract_title(self, soup: BeautifulSoup) -> str:
         """
@@ -709,7 +694,7 @@ class BaseParser(ABC):
     ) -> list[InlineContent]:
         """
         统一遍历内联子元素并返回 InlineContent 列表
-        
+
         该方法是三个内联处理方法的公共核心，通过参数控制细微行为差异。
 
         Args:
@@ -727,161 +712,259 @@ class BaseParser(ABC):
         Returns:
             InlineContent 列表
         """
-        items: list[InlineContent] = []
-        current_text = ""
-        current_bold = parent_bold
-        current_italic = parent_italic
+        # 创建 _WalkContext 实例
+        ctx = _WalkContext(
+            parent_bold=parent_bold,
+            parent_italic=parent_italic,
+            current_bold=parent_bold,
+            current_italic=parent_italic,
+            conditional_format_flush=conditional_format_flush,
+            handle_line_break_div=handle_line_break_div,
+            parse_div_span_inline=parse_div_span_inline,
+            strip_nav_strings=strip_nav_strings,
+            reset_format_to_parent=reset_format_to_parent,
+            handle_nested_lists=handle_nested_lists,
+            list_level=list_level,
+        )
 
-        def flush() -> None:
-            nonlocal current_text, current_bold, current_italic
-            stripped = current_text.strip()
-            if stripped:
-                items.append(InlineContent(
-                    type=INLINE_TEXT,
-                    content=stripped,
-                    bold=current_bold,
-                    italic=current_italic
-                ))
-            current_text = ""
-            current_bold = parent_bold if reset_format_to_parent else False
-            current_italic = parent_italic if reset_format_to_parent else False
+        # 构建分派映射
+        handler_map = self._build_walk_handler_map()
 
         for child in element.children:
             if isinstance(child, NavigableString):
-                text = str(child).strip() if strip_nav_strings else str(child)
+                text = str(child).strip() if ctx.strip_nav_strings else str(child)
                 if text:
-                    current_text += text
+                    ctx.current_text += text
             elif isinstance(child, Tag):
-                # 公式元素
+                # 公式元素（动态判断）
                 if self._is_math_element(child):
-                    flush()
-                    latex = self._extract_latex_content(child)
-                    is_display = self._is_display_math(child)
-                    items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
-                # 加粗标签
-                elif child.name in BOLD_TAGS:
-                    if conditional_format_flush:
-                        if current_text.strip():
-                            flush()
-                    else:
-                        flush()
-                    items.extend(
-                        self._walk_inline_children(
-                            child,
-                            parent_bold=True,
-                            parent_italic=current_italic,
-                            conditional_format_flush=conditional_format_flush,
-                            handle_line_break_div=handle_line_break_div,
-                            parse_div_span_inline=parse_div_span_inline,
-                            strip_nav_strings=strip_nav_strings,
-                            reset_format_to_parent=reset_format_to_parent,
-                            handle_nested_lists=False,
-                            list_level=list_level,
-                        )
-                    )
-                # 斜体标签
-                elif child.name in ITALIC_TAGS:
-                    if conditional_format_flush:
-                        if current_text.strip():
-                            flush()
-                    else:
-                        flush()
-                    items.extend(
-                        self._walk_inline_children(
-                            child,
-                            parent_bold=current_bold,
-                            parent_italic=True,
-                            conditional_format_flush=conditional_format_flush,
-                            handle_line_break_div=handle_line_break_div,
-                            parse_div_span_inline=parse_div_span_inline,
-                            strip_nav_strings=strip_nav_strings,
-                            reset_format_to_parent=reset_format_to_parent,
-                            handle_nested_lists=False,
-                            list_level=list_level,
-                        )
-                    )
-                # line-break-class div
-                elif child.name in INLINE_CONTAINER_TAGS and self._has_any_class(child, self.config.line_break_classes):
-                    if handle_line_break_div and child.previous_sibling is not None:
-                        current_text, current_bold, current_italic = self._handle_line_break(
-                            child.previous_sibling, items, current_text, current_bold, current_italic,
-                            parent_bold, parent_italic, flush
-                        )
-                    else:
-                        flush()
-                        items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                # 换行标签
-                elif child.name in BREAK_TAGS:
-                    flush()
-                    items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                # 图片元素
-                elif child.name in IMAGE_TAGS:
-                    flush()
-                    url = self._extract_image_url(child)
-                    if url:
-                        items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
-                # 表格元素
-                elif child.name in TABLE_TAGS:
-                    flush()
-                    table_data = self._parse_table(child)
-                    if table_data:
-                        items.append(InlineContent(type=INLINE_TABLE, content="", data=table_data, bold=current_bold, italic=current_italic))
-                # 代码块
-                elif child.name in CODE_TAGS:
-                    if not child.get(self.config.code_expanded_attr):
-                        flush()
-                        code_content = child.get_text("\n", strip=True)
-                        items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=current_bold, italic=current_italic))
-                # 段落容器
-                elif child.name in PARAGRAPH_TAGS:
-                    flush()
-                    items.extend(
-                        self._walk_inline_children(
-                            child, parent_bold=current_bold, parent_italic=current_italic,
-                            conditional_format_flush=conditional_format_flush, handle_line_break_div=handle_line_break_div,
-                            parse_div_span_inline=parse_div_span_inline, strip_nav_strings=strip_nav_strings,
-                            reset_format_to_parent=reset_format_to_parent, handle_nested_lists=False, list_level=list_level
-                        )
-                    )
-                # 嵌套列表
-                elif child.name in LIST_TAGS:
-                    if handle_nested_lists:
-                        flush()
-                        self._extract_nested_list_text(child, items, current_bold, current_italic, list_level + 1)
-                    else:
-                        pass  # 跳过
-                # 内联容器 div/span
-                elif child.name in INLINE_CONTAINER_TAGS:
-                    if parse_div_span_inline:
-                        if self._contains_block_elements(child):
-                            # 内联容器中包含块级元素，不扁平化，提取纯文本并保留格式状态
-                            saved_bold, saved_italic = current_bold, current_italic
-                            flush()
-                            text = child.get_text(strip=True)
-                            if text:
-                                items.append(InlineContent(type=INLINE_TEXT, content="\n" + text + "\n", bold=saved_bold, italic=saved_italic))
-                        else:
-                            flush()
-                            items.extend(
-                                self._walk_inline_children(
-                                    child, parent_bold=current_bold, parent_italic=current_italic,
-                                    conditional_format_flush=conditional_format_flush, handle_line_break_div=handle_line_break_div,
-                                    parse_div_span_inline=parse_div_span_inline, strip_nav_strings=strip_nav_strings,
-                                    reset_format_to_parent=reset_format_to_parent, handle_nested_lists=handle_nested_lists, list_level=list_level
-                                )
-                            )
-                    else:
-                        has_pic, text = self._extract_images_recursive(child, items, flush)
-                        if not has_pic and text:
-                            current_text += text
-                # 其他元素
-                else:
-                    sub_text = child.get_text(strip=False)
-                    if sub_text:
-                        current_text += sub_text
+                    self._walk_handle_math(child, ctx)
+                    continue
+                # 查表分发
+                handler = handler_map.get(child.name, self._walk_default_handler)
+                handler(child, ctx)
 
-        flush()
-        return items
+        ctx.flush()
+        return ctx.items
+
+    def _build_walk_handler_map(self) -> dict[str, Callable[[Tag, _WalkContext], None]]:
+        """
+        构建标签名 → 处理方法的映射字典
+
+        Returns:
+            标签名到处理方法的映射字典
+        """
+        h: dict[str, Callable[[Tag, _WalkContext], None]] = {}
+
+        # 加粗标签
+        for tag in BOLD_TAGS:
+            h[tag] = self._walk_handle_bold
+
+        # 斜体标签
+        for tag in ITALIC_TAGS:
+            h[tag] = self._walk_handle_italic
+
+        # 换行标签
+        for tag in BREAK_TAGS:
+            h[tag] = self._walk_handle_br
+
+        # 图片元素
+        for tag in IMAGE_TAGS:
+            h[tag] = self._walk_handle_image
+
+        # 表格元素
+        for tag in TABLE_TAGS:
+            h[tag] = self._walk_handle_table
+
+        # 代码块
+        for tag in CODE_TAGS:
+            h[tag] = self._walk_handle_code
+
+        # 段落容器
+        for tag in PARAGRAPH_TAGS:
+            h[tag] = self._walk_handle_paragraph
+
+        # 列表
+        for tag in LIST_TAGS:
+            h[tag] = self._walk_handle_list
+
+        # 内联容器 div/span
+        for tag in INLINE_CONTAINER_TAGS:
+            h[tag] = self._walk_handle_inline_container
+
+        return h
+
+    def _walk_handle_math(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理公式元素"""
+        ctx.flush()
+        latex = self._extract_latex_content(child)
+        is_display = self._is_display_math(child)
+        ctx.items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
+
+    def _walk_handle_bold(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理加粗标签 (strong, b)"""
+        if ctx.conditional_format_flush:
+            if ctx.current_text.strip():
+                ctx.flush()
+        else:
+            ctx.flush()
+        ctx.items.extend(
+            self._walk_inline_children(
+                child,
+                parent_bold=True,
+                parent_italic=ctx.current_italic,
+                conditional_format_flush=ctx.conditional_format_flush,
+                handle_line_break_div=ctx.handle_line_break_div,
+                parse_div_span_inline=ctx.parse_div_span_inline,
+                strip_nav_strings=ctx.strip_nav_strings,
+                reset_format_to_parent=ctx.reset_format_to_parent,
+                handle_nested_lists=False,
+                list_level=ctx.list_level,
+            )
+        )
+
+    def _walk_handle_italic(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理斜体标签 (em, i)"""
+        if ctx.conditional_format_flush:
+            if ctx.current_text.strip():
+                ctx.flush()
+        else:
+            ctx.flush()
+        ctx.items.extend(
+            self._walk_inline_children(
+                child,
+                parent_bold=ctx.current_bold,
+                parent_italic=True,
+                conditional_format_flush=ctx.conditional_format_flush,
+                handle_line_break_div=ctx.handle_line_break_div,
+                parse_div_span_inline=ctx.parse_div_span_inline,
+                strip_nav_strings=ctx.strip_nav_strings,
+                reset_format_to_parent=ctx.reset_format_to_parent,
+                handle_nested_lists=False,
+                list_level=ctx.list_level,
+            )
+        )
+
+    def _walk_handle_br(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理换行标签 (br)"""
+        ctx.flush()
+        ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+
+    def _walk_handle_line_break_div(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理 line-break-class div"""
+        if ctx.handle_line_break_div and child.previous_sibling is not None:
+            prev = self._skip_whitespace_siblings(child.previous_sibling)
+
+            # 调用 flush
+            ctx.flush()
+
+            if isinstance(prev, Tag):
+                if (prev.name in INLINE_CONTAINER_TAGS and self._has_any_class(prev, self.config.line_break_classes)
+                    and not prev.get_text(strip=True)):
+                    ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+                    ctx.current_text = ""
+                    ctx.current_bold = ctx.parent_bold
+                    ctx.current_italic = ctx.parent_italic
+                    return
+
+            if isinstance(prev, NavigableString):
+                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+                ctx.current_text = ""
+                ctx.current_bold = ctx.parent_bold
+                ctx.current_italic = ctx.parent_italic
+            elif isinstance(prev, Tag) and prev.name in LIST_TAGS:
+                ctx.current_text = ""
+                ctx.current_bold = ctx.parent_bold
+                ctx.current_italic = ctx.parent_italic
+            elif isinstance(prev, Tag) and prev.name in INLINE_CONTAINER_TAGS:
+                ctx.current_text = ""
+                ctx.current_bold = ctx.parent_bold
+                ctx.current_italic = ctx.parent_italic
+            else:
+                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+                ctx.current_text = ""
+                ctx.current_bold = ctx.parent_bold
+                ctx.current_italic = ctx.parent_italic
+        else:
+            ctx.flush()
+            ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+
+    def _walk_handle_image(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理图片元素 (picture)"""
+        ctx.flush()
+        url = self._extract_image_url(child)
+        if url:
+            ctx.items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
+
+    def _walk_handle_table(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理表格元素 (table)"""
+        ctx.flush()
+        table_data = self._parse_table(child)
+        if table_data:
+            ctx.items.append(InlineContent(type=INLINE_TABLE, content="", data=table_data, bold=ctx.current_bold, italic=ctx.current_italic))
+
+    def _walk_handle_code(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理代码块 (pre)"""
+        if not child.get(self.config.code_expanded_attr):
+            ctx.flush()
+            code_content = child.get_text("\n", strip=True)
+            ctx.items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=ctx.current_bold, italic=ctx.current_italic))
+
+    def _walk_handle_paragraph(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理段落 (p)"""
+        ctx.flush()
+        ctx.items.extend(
+            self._walk_inline_children(
+                child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
+                conditional_format_flush=ctx.conditional_format_flush, handle_line_break_div=ctx.handle_line_break_div,
+                parse_div_span_inline=ctx.parse_div_span_inline, strip_nav_strings=ctx.strip_nav_strings,
+                reset_format_to_parent=ctx.reset_format_to_parent, handle_nested_lists=False, list_level=ctx.list_level
+            )
+        )
+
+    def _walk_handle_list(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理列表 (ul, ol)"""
+        if ctx.handle_nested_lists:
+            ctx.flush()
+            self._extract_nested_list_text(child, ctx.items, ctx.current_bold, ctx.current_italic, ctx.list_level + 1)
+        # else: 跳过
+
+    def _walk_handle_inline_container(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理内联容器 div/span"""
+        # 优先检查是否为 line-break div
+        if self._has_any_class(child, self.config.line_break_classes):
+            self._walk_handle_line_break_div(child, ctx)
+            return
+
+        if ctx.parse_div_span_inline:
+            if self._contains_block_elements(child):
+                # 内联容器中包含块级元素，不扁平化，提取纯文本并保留格式状态
+                saved_bold = ctx.current_bold
+                saved_italic = ctx.current_italic
+                ctx.flush()
+                text = child.get_text(strip=True)
+                if text:
+                    ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n" + text + "\n", bold=saved_bold, italic=saved_italic))
+            else:
+                ctx.flush()
+                ctx.items.extend(
+                    self._walk_inline_children(
+                        child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
+                        conditional_format_flush=ctx.conditional_format_flush, handle_line_break_div=ctx.handle_line_break_div,
+                        parse_div_span_inline=ctx.parse_div_span_inline, strip_nav_strings=ctx.strip_nav_strings,
+                        reset_format_to_parent=ctx.reset_format_to_parent, handle_nested_lists=ctx.handle_nested_lists, list_level=ctx.list_level
+                    )
+                )
+        else:
+            has_pic, text = self._extract_images_recursive_inline_container(child, ctx)
+            if not has_pic and text:
+                ctx.current_text += text
+
+    def _walk_default_handler(self, child: Tag, ctx: _WalkContext) -> None:
+        """默认处理（其他标签）"""
+        sub_text = child.get_text(strip=False)
+        if sub_text:
+            ctx.current_text += sub_text
 
     def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False, level: int = 1) -> None:
         """
@@ -1044,25 +1127,15 @@ class BaseParser(ABC):
         if items:
             blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="", items=items))
 
-    def _extract_images_recursive(self, element: Tag, items: list[InlineContent], flush_func: FlushFunc) -> tuple[bool, str]:
-        """
-        递归查找嵌套的 picture 并提取图片
-
-        Args:
-            element: HTML 元素
-            items: 内联内容列表
-            flush_func: 刷新回调函数
-
-        Returns:
-            (是否有图片, 剩余文本)
-        """
+    def _extract_images_recursive_inline_container(self, element: Tag, ctx: _WalkContext) -> tuple[bool, str]:
+        """递归查找内联容器中的 picture 并提取图片（使用 _WalkContext）"""
         pics = element.find_all(IMAGE_TAGS)
         if pics:
             for pic in pics:
-                flush_func()
+                ctx.flush()
                 url = self._extract_image_url(pic)
                 if url:
-                    items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
+                    ctx.items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
             return True, ""
         else:
             sub_text = element.get_text(strip=False)

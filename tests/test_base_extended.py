@@ -85,31 +85,39 @@ class TestSkipWhitespaceSiblings:
         assert parser._skip_whitespace_siblings(None) is None
 
 
-class TestHandleLineBreak:
-    def test_with_navigable_string(self):
-        parser = MockParser()
-        soup = BeautifulSoup("<div>text</div>", "lxml")
-        div = soup.find("div")
-        items = []
-        result = parser._handle_line_break(div, items, "current", False, False, False, False)
-        assert result == ("", False, False)
+class TestWalkHandleLineBreakDiv:
+    """验证 line-break div 处理行为（通过 _walk_inline_children 测试新接口）"""
 
-    def test_with_line_break_div(self):
+    def test_line_break_div_with_text_before(self):
+        """带纯文本前时 line-break div 应添加换行"""
+        parser = MockParser()
+        html = '<div>text<div class="md-box-line-break"></div></div>'
+        soup = BeautifulSoup(html, "lxml")
+        div = soup.find("div")
+        items = parser._walk_inline_children(div, handle_line_break_div=True)
+        newline_items = [i for i in items if i.content == "\n"]
+        assert len(newline_items) >= 1
+
+    def test_line_break_div_with_span_before_no_newline(self):
+        """带 span 前时按原始逻辑不添加换行（span 是 INLINE_CONTAINER_TAGS）"""
         parser = MockParser()
         html = '<div><span>text</span><div class="md-box-line-break"></div></div>'
         soup = BeautifulSoup(html, "lxml")
-        div = soup.find_all("div")[1]
-        items = []
-        result = parser._handle_line_break(div, items, "", False, False, False, False)
-        assert result == ("", False, False)
+        div = soup.find("div")
+        items = parser._walk_inline_children(div, handle_line_break_div=True)
+        # 原逻辑：INLINE_CONTAINER_TAGS 前不添加换行
+        newline_items = [i for i in items if i.content == "\n"]
+        assert len(newline_items) == 0
 
-    def test_with_no_sibling(self):
+    def test_no_line_break_div_no_newline(self):
+        """无 line-break 类时不应添加换行"""
         parser = MockParser()
-        items = []
-        result = parser._handle_line_break(None, items, "text", False, False, False, False)
-        assert result == ("", False, False)
-        assert items[0].content == "text"
-        assert items[1].content == "\n"
+        html = '<div><span>text</span><div>normal</div></div>'
+        soup = BeautifulSoup(html, "lxml")
+        div = soup.find("div")
+        items = parser._walk_inline_children(div)
+        newline_items = [i for i in items if i.content == "\n"]
+        assert len(newline_items) == 0
 
 
 class TestExtractTitle:
