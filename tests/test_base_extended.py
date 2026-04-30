@@ -465,14 +465,6 @@ class TestProcessInlineAndMath:
         latex = [i for i in blocks[0].items if i.type == "latex"]
         assert len(latex) == 1
 
-    def test_math_merge_to_previous_empty_paragraph(self):
-        parser = MockParser()
-        blocks = [TextBlock(type="paragraph", content="", items=[])]
-        soup = BeautifulSoup('<span copy-text="theta">θ</span>', "lxml")
-        parser._process_math_element(soup.find("span"), blocks)
-        assert len(blocks) == 1
-        assert blocks[0].items[0].content == "theta"
-
     def test_strip_latex_delimiters(self):
         assert BaseParser._strip_latex_delimiters("$x$") == "x"
         assert BaseParser._strip_latex_delimiters(r"\(y\)") == "y"

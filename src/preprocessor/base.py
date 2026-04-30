@@ -1174,7 +1174,10 @@ class BaseParser(ABC):
 
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
-        处理公式元素
+        处理公式元素，生成独立的公式块
+
+        行内公式的识别与合并已由 _walk_inline_children 在解析内联内容时完成，
+        本方法只处理作为独立块出现的公式元素。
 
         Args:
             element: 公式元素
@@ -1193,13 +1196,6 @@ class BaseParser(ABC):
             content=latex,
             language=LATEX_DISPLAY if is_display else LATEX_INLINE
         ))
-
-        # 内联公式（非 display）可合并到前一个 paragraph
-        if not is_display and len(blocks) >= 2:
-            prev_block = blocks[-2]
-            if prev_block.type == BLOCK_PARAGRAPH and not prev_block.items and not prev_block.content:
-                prev_block.items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
-                blocks.pop()
 
     # -------------------------------------------------------------------------
     # 辅助方法
