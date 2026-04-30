@@ -1169,7 +1169,8 @@ class BaseParser(ABC):
         else:
             text = element.get_text(strip=True)
             if text:
-                blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text, language="bold" if bold else None))
+                # 纯文本段落，不再用 language 字段标记加粗
+                blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
 
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
