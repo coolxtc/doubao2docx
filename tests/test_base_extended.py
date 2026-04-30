@@ -407,15 +407,41 @@ class TestProcessList:
 
 class TestExtractMethods:
     def test_strong_recursive(self):
+        """测试 strong 元素的内联内容提取（使用 _walk_inline_children）"""
         parser = MockParser()
         soup = BeautifulSoup("<strong>Text <strong>inner</strong></strong>", "lxml")
-        items = parser._extract_strong_recursive(soup.find("strong"))
+        # 直接调用核心方法 _walk_inline_children，参数与原 _extract_strong_recursive 一致
+        items = parser._walk_inline_children(
+            soup.find("strong"),
+            parent_bold=True,
+            parent_italic=False,
+            conditional_format_flush=True,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
         assert any(i.bold for i in items)
 
     def test_italic_recursive(self):
+        """测试 em 元素的内联内容提取（使用 _walk_inline_children）"""
         parser = MockParser()
         soup = BeautifulSoup("<em>Text <em>inner</em></em>", "lxml")
-        items = parser._extract_italic_recursive(soup.find("em"))
+        # 直接调用核心方法 _walk_inline_children，参数与原 _extract_italic_recursive 一致
+        items = parser._walk_inline_children(
+            soup.find("em"),
+            parent_bold=False,
+            parent_italic=True,
+            conditional_format_flush=True,
+            handle_line_break_div=False,
+            parse_div_span_inline=False,
+            strip_nav_strings=True,
+            reset_format_to_parent=False,
+            handle_nested_lists=False,
+            list_level=1,
+        )
         assert any(i.italic for i in items)
 
 

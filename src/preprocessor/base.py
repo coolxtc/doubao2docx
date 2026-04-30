@@ -1141,82 +1141,6 @@ class BaseParser(ABC):
             sub_text = element.get_text(strip=False)
             return False, sub_text
 
-    def _extract_inline_text_with_format(self, element: Tag, in_bold: bool = False) -> list[InlineContent]:
-        """
-        提取内联元素的文本（委托给 _walk_inline_children）
-
-        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
-
-        Args:
-            element: HTML 元素
-            in_bold: 是否继承父级加粗
-
-        Returns:
-            InlineContent 列表
-        """
-        return self._walk_inline_children(
-            element,
-            parent_bold=in_bold,
-            parent_italic=False,
-            conditional_format_flush=False,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
-        )
-
-    def _extract_strong_recursive(self, element: Tag) -> list[InlineContent]:
-        """
-        递归提取 strong/b 内的内容（委托给 _walk_inline_children）
-
-        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
-
-        Args:
-            element: strong 或 b 元素
-
-        Returns:
-            InlineContent 列表
-        """
-        return self._walk_inline_children(
-            element,
-            parent_bold=True,
-            parent_italic=False,
-            conditional_format_flush=True,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
-        )
-
-    def _extract_italic_recursive(self, element: Tag) -> list[InlineContent]:
-        """
-        递归提取斜体/强调内容（委托给 _walk_inline_children）
-
-        注意：此方法仅用于单元测试。业务逻辑已内联到 _walk_inline_children。
-
-        Args:
-            element: em 或 i 元素
-
-        Returns:
-            InlineContent 列表
-        """
-        return self._walk_inline_children(
-            element,
-            parent_bold=False,
-            parent_italic=True,
-            conditional_format_flush=True,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
-        )
-
     def _process_inline_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
         处理内联元素
@@ -1246,18 +1170,6 @@ class BaseParser(ABC):
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text, language="bold" if bold else None))
-
-    def _process_element_with_inline_math(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """
-        处理包含公式的内联元素（委托给 _process_inline_element）
-
-        注意：此方法仅用于单元测试兼容。与 _process_inline_element 逻辑一致。
-
-        Args:
-            element: HTML 元素
-            blocks: 内容块列表
-        """
-        return self._process_inline_element(element, blocks)
 
     def _process_math_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
