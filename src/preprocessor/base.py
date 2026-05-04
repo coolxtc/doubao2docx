@@ -151,22 +151,28 @@ class ParsedPage:
     latex_fallback_count: int = 0  # 公式识别回退计数：当 copy-text 属性缺失时触发策略2
 
 
+@dataclass(frozen=True)
+class WalkOptions:
+    """遍历策略配置（不可变，遍历过程中配置不应改变）"""
+    conditional_format_flush: bool = False  # 遇到 strong/em 时是否条件 flush
+    handle_line_break_div: bool = True  # 处理 line-break-class div 还是直接添加换行
+    parse_div_span_inline: bool = True  # 递归解析 div/span 内联内容还是仅提取图片
+    strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
+    reset_format_to_parent: bool = False  # flush 后重置为父级状态还是 False
+    handle_nested_lists: bool = False  # 处理 ul/ol 嵌套列表还是跳过
+    list_level: int = 1  # 嵌套列表层级
+
+
 @dataclass
 class _WalkContext:
-    """封装 _walk_inline_children 过程中的可变状态与控制标志"""
-    items: list[InlineContent] = field(default_factory=list)
-    current_text: str = ""
-    current_bold: bool = False
-    current_italic: bool = False
-    parent_bold: bool = False
-    parent_italic: bool = False
-    conditional_format_flush: bool = False
-    handle_line_break_div: bool = True
-    parse_div_span_inline: bool = True
-    strip_nav_strings: bool = True
-    reset_format_to_parent: bool = False
-    handle_nested_lists: bool = False
-    list_level: int = 1
+    """封装 _walk_inline_children 过程中的运行时可变状态"""
+    items: list[InlineContent] = field(default_factory=list)  # 内联内容列表
+    current_text: str = ""  # 累积的文本
+    current_bold: bool = False  # 当前加粗状态
+    current_italic: bool = False  # 当前斜体状态
+    parent_bold: bool = False  # 父级加粗状态
+    parent_italic: bool = False  # 父级斜体状态
+    options: WalkOptions = field(default_factory=WalkOptions)  # 遍历策略配置
 
     def flush(self) -> None:
         """将累积的文本 flush 到 items 列表"""
@@ -179,7 +185,7 @@ class _WalkContext:
                 italic=self.current_italic
             ))
         self.current_text = ""
-        if self.reset_format_to_parent:
+        if self.options.reset_format_to_parent:
             self.current_bold = self.parent_bold
             self.current_italic = self.parent_italic
         else:
@@ -709,13 +715,15 @@ class BaseParser(ABC):
             li,
             parent_bold=False,
             parent_italic=False,
-            conditional_format_flush=False,
-            handle_line_break_div=True,
-            parse_div_span_inline=True,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=True,
-            list_level=level,
+            options=WalkOptions(
+                conditional_format_flush=False,
+                handle_line_break_div=True,
+                parse_div_span_inline=True,
+                strip_nav_strings=True,
+                reset_format_to_parent=False,
+                handle_nested_lists=True,
+                list_level=level,
+            ),
         )
         if items:
             valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in INLINE_NON_TEXT_TYPES]
@@ -728,47 +736,31 @@ class BaseParser(ABC):
         *,
         parent_bold: bool = False,
         parent_italic: bool = False,
-        conditional_format_flush: bool = False,
-        handle_line_break_div: bool = True,
-        parse_div_span_inline: bool = True,
-        strip_nav_strings: bool = True,
-        reset_format_to_parent: bool = False,
-        handle_nested_lists: bool = False,
-        list_level: int = 1,
+        options: WalkOptions = None,
     ) -> list[InlineContent]:
         """
         统一遍历内联子元素并返回 InlineContent 列表
 
-        该方法是三个内联处理方法的公共核心，通过参数控制细微行为差异。
+        该方法是三个内联处理方法的公共核心，通过 options 控制细微行为差异。
 
         Args:
             element: 待遍历的 HTML 元素
             parent_bold: 继承的父级加粗状态
             parent_italic: 继承的父级斜体状态
-            conditional_format_flush: 遇到 strong/em 时是否条件 flush（仅文本非空时）
-            handle_line_break_div: 处理 line-break-class div 还是直接添加换行
-            parse_div_span_inline: 递归解析 div/span 内联内容还是仅提取图片
-            strip_nav_strings: 对 NavigableString 是否先 strip
-            reset_format_to_parent: flush 后重置为父级状态还是 False
-            handle_nested_lists: 处理 ul/ol 嵌套列表还是跳过
-            list_level: 嵌套列表层级
+            options: 遍历策略配置，默认为 WalkOptions()
 
         Returns:
             InlineContent 列表
         """
+        if options is None:
+            options = WalkOptions()
         # 创建 _WalkContext 实例
         ctx = _WalkContext(
             parent_bold=parent_bold,
             parent_italic=parent_italic,
             current_bold=parent_bold,
             current_italic=parent_italic,
-            conditional_format_flush=conditional_format_flush,
-            handle_line_break_div=handle_line_break_div,
-            parse_div_span_inline=parse_div_span_inline,
-            strip_nav_strings=strip_nav_strings,
-            reset_format_to_parent=reset_format_to_parent,
-            handle_nested_lists=handle_nested_lists,
-            list_level=list_level,
+            options=options,
         )
 
         # 构建分派映射
@@ -776,7 +768,7 @@ class BaseParser(ABC):
 
         for child in element.children:
             if isinstance(child, NavigableString):
-                text = str(child).strip() if ctx.strip_nav_strings else str(child)
+                text = str(child).strip() if ctx.options.strip_nav_strings else str(child)
                 if text:
                     ctx.current_text += text
             elif isinstance(child, Tag):
@@ -851,7 +843,7 @@ class BaseParser(ABC):
 
     def _walk_handle_bold(self, child: Tag, ctx: _WalkContext) -> None:
         """处理加粗标签 (strong, b)"""
-        if ctx.conditional_format_flush:
+        if ctx.options.conditional_format_flush:
             if ctx.current_text.strip():
                 ctx.flush()
         else:
@@ -861,19 +853,13 @@ class BaseParser(ABC):
                 child,
                 parent_bold=True,
                 parent_italic=ctx.current_italic,
-                conditional_format_flush=ctx.conditional_format_flush,
-                handle_line_break_div=ctx.handle_line_break_div,
-                parse_div_span_inline=ctx.parse_div_span_inline,
-                strip_nav_strings=ctx.strip_nav_strings,
-                reset_format_to_parent=ctx.reset_format_to_parent,
-                handle_nested_lists=False,
-                list_level=ctx.list_level,
+                options=ctx.options,
             )
         )
 
     def _walk_handle_italic(self, child: Tag, ctx: _WalkContext) -> None:
         """处理斜体标签 (em, i)"""
-        if ctx.conditional_format_flush:
+        if ctx.options.conditional_format_flush:
             if ctx.current_text.strip():
                 ctx.flush()
         else:
@@ -883,13 +869,7 @@ class BaseParser(ABC):
                 child,
                 parent_bold=ctx.current_bold,
                 parent_italic=True,
-                conditional_format_flush=ctx.conditional_format_flush,
-                handle_line_break_div=ctx.handle_line_break_div,
-                parse_div_span_inline=ctx.parse_div_span_inline,
-                strip_nav_strings=ctx.strip_nav_strings,
-                reset_format_to_parent=ctx.reset_format_to_parent,
-                handle_nested_lists=False,
-                list_level=ctx.list_level,
+                options=ctx.options,
             )
         )
 
@@ -911,7 +891,7 @@ class BaseParser(ABC):
         | None (第一个子元素)   | -                 | 是          |
         """
         # handle_line_break_div=False 或第一个子元素：直接添加换行
-        if not ctx.handle_line_break_div or child.previous_sibling is None:
+        if not ctx.options.handle_line_break_div or child.previous_sibling is None:
             ctx.flush()
             ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
             return
@@ -978,17 +958,15 @@ class BaseParser(ABC):
         ctx.items.extend(
             self._walk_inline_children(
                 child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
-                conditional_format_flush=ctx.conditional_format_flush, handle_line_break_div=ctx.handle_line_break_div,
-                parse_div_span_inline=ctx.parse_div_span_inline, strip_nav_strings=ctx.strip_nav_strings,
-                reset_format_to_parent=ctx.reset_format_to_parent, handle_nested_lists=False, list_level=ctx.list_level
+                options=ctx.options,
             )
         )
 
     def _walk_handle_list(self, child: Tag, ctx: _WalkContext) -> None:
         """处理列表 (ul, ol)"""
-        if ctx.handle_nested_lists:
+        if ctx.options.handle_nested_lists:
             ctx.flush()
-            self._extract_nested_list_text(child, ctx.items, ctx.current_bold, ctx.current_italic, ctx.list_level + 1)
+            self._extract_nested_list_text(child, ctx.items, ctx.current_bold, ctx.current_italic, ctx.options.list_level + 1)
         # else: 跳过
 
     def _walk_handle_inline_container(self, child: Tag, ctx: _WalkContext) -> None:
@@ -998,7 +976,7 @@ class BaseParser(ABC):
             self._walk_handle_line_break_div(child, ctx)
             return
 
-        if ctx.parse_div_span_inline:
+        if ctx.options.parse_div_span_inline:
             if self._contains_block_elements(child):
                 # 内联容器中包含块级元素，不扁平化，提取纯文本并保留格式状态
                 saved_bold = ctx.current_bold
@@ -1012,9 +990,7 @@ class BaseParser(ABC):
                 ctx.items.extend(
                     self._walk_inline_children(
                         child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
-                        conditional_format_flush=ctx.conditional_format_flush, handle_line_break_div=ctx.handle_line_break_div,
-                        parse_div_span_inline=ctx.parse_div_span_inline, strip_nav_strings=ctx.strip_nav_strings,
-                        reset_format_to_parent=ctx.reset_format_to_parent, handle_nested_lists=ctx.handle_nested_lists, list_level=ctx.list_level
+                        options=ctx.options,
                     )
                 )
         else:
@@ -1230,12 +1206,14 @@ class BaseParser(ABC):
             element,
             parent_bold=False,
             parent_italic=False,
-            conditional_format_flush=True,
-            handle_line_break_div=False,  # 直接添加换行，不过滤
-            parse_div_span_inline=True,  # 允许解析 div/span 内联内容
-            strip_nav_strings=False,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
+            options=WalkOptions(
+                conditional_format_flush=True,
+                handle_line_break_div=False,  # 直接添加换行，不过滤
+                parse_div_span_inline=True,  # 允许解析 div/span 内联内容
+                strip_nav_strings=False,
+                reset_format_to_parent=False,
+                handle_nested_lists=False,
+            ),
         )
         if items:
             blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="", items=items))
@@ -1269,13 +1247,15 @@ class BaseParser(ABC):
             element,
             parent_bold=bold,
             parent_italic=italic,
-            conditional_format_flush=False,
-            handle_line_break_div=False,
-            parse_div_span_inline=True,  # 允许解析 div/span 内联内容
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
+            options=WalkOptions(
+                conditional_format_flush=False,
+                handle_line_break_div=False,
+                parse_div_span_inline=True,  # 允许解析 div/span 内联内容
+                strip_nav_strings=True,
+                reset_format_to_parent=False,
+                handle_nested_lists=False,
+                list_level=1,
+            ),
         )
         if items:
             blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="", items=items))

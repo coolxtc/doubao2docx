@@ -10,6 +10,7 @@ from src.preprocessor.base import (
     PlatformConfig,
     TextBlock,
     InlineContent,
+    WalkOptions,
 )
 
 
@@ -94,7 +95,7 @@ class TestWalkHandleLineBreakDiv:
         html = '<div>text<div class="md-box-line-break"></div></div>'
         soup = BeautifulSoup(html, "lxml")
         div = soup.find("div")
-        items = parser._walk_inline_children(div, handle_line_break_div=True)
+        items = parser._walk_inline_children(div, options=WalkOptions(handle_line_break_div=True))
         newline_items = [i for i in items if i.content == "\n"]
         assert len(newline_items) >= 1
 
@@ -104,7 +105,7 @@ class TestWalkHandleLineBreakDiv:
         html = '<div><span>text</span><div class="md-box-line-break"></div></div>'
         soup = BeautifulSoup(html, "lxml")
         div = soup.find("div")
-        items = parser._walk_inline_children(div, handle_line_break_div=True)
+        items = parser._walk_inline_children(div, options=WalkOptions(handle_line_break_div=True))
         # 修复后：span 前的 line-break div 同样添加换行
         newline_items = [i for i in items if i.content == "\n"]
         assert len(newline_items) == 1
@@ -415,13 +416,15 @@ class TestExtractMethods:
             soup.find("strong"),
             parent_bold=True,
             parent_italic=False,
-            conditional_format_flush=True,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
+            options=WalkOptions(
+                conditional_format_flush=True,
+                handle_line_break_div=False,
+                parse_div_span_inline=False,
+                strip_nav_strings=True,
+                reset_format_to_parent=False,
+                handle_nested_lists=False,
+                list_level=1,
+            ),
         )
         assert any(i.bold for i in items)
 
@@ -434,13 +437,15 @@ class TestExtractMethods:
             soup.find("em"),
             parent_bold=False,
             parent_italic=True,
-            conditional_format_flush=True,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
-            strip_nav_strings=True,
-            reset_format_to_parent=False,
-            handle_nested_lists=False,
-            list_level=1,
+            options=WalkOptions(
+                conditional_format_flush=True,
+                handle_line_break_div=False,
+                parse_div_span_inline=False,
+                strip_nav_strings=True,
+                reset_format_to_parent=False,
+                handle_nested_lists=False,
+                list_level=1,
+            ),
         )
         assert any(i.italic for i in items)
 
@@ -651,11 +656,13 @@ class TestWalkInlineChildrenMissing:
         # 直接调用 _walk_inline_children 开启嵌套列表处理
         items = parser._walk_inline_children(
             soup.find("p"),
-            handle_nested_lists=True,
-            parse_div_span_inline=False,
-            conditional_format_flush=True,
-            strip_nav_strings=False,
-            reset_format_to_parent=False,
+            options=WalkOptions(
+                handle_nested_lists=True,
+                parse_div_span_inline=False,
+                conditional_format_flush=True,
+                strip_nav_strings=False,
+                reset_format_to_parent=False,
+            ),
         )
         # 至少应包含换行和嵌套文本
         assert len(items) >= 1
