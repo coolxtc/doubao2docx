@@ -204,9 +204,9 @@ class BaseParser(ABC):
 
     def __init__(self) -> None:
         super().__init__()
-        # 幂等初始化：已有字典则跳过
-        if not hasattr(self, "_tag_handlers"):
-            self._build_tag_handlers()
+        self._build_tag_handlers()
+        self._walk_handler_map = self._build_walk_handler_map()
+        # 注意：_process_element 中也有懒初始化守卫，支持子类直接实例化不调用 super().__init__()
 
     def _build_tag_handlers(self) -> None:
         """构建标签名 → 处理方法的映射字典（幂等，可重复调用）"""
@@ -753,6 +753,11 @@ class BaseParser(ABC):
         """
         if options is None:
             options = WalkOptions()
+        # 懒初始化：子类未调用 super().__init__() 时兜底
+        if not hasattr(self, "_tag_handlers"):
+            self._build_tag_handlers()
+        if not hasattr(self, "_walk_handler_map"):
+            self._walk_handler_map = self._build_walk_handler_map()
         # 创建 _WalkContext 实例
         ctx = _WalkContext(
             parent_bold=parent_bold,
@@ -762,9 +767,7 @@ class BaseParser(ABC):
             options=options,
         )
 
-        # 构建分派映射
-        handler_map = self._build_walk_handler_map()
-
+        # 使用缓存的分派映射
         for child in element.children:
             if isinstance(child, NavigableString):
                 text = str(child).strip() if ctx.options.strip_nav_strings else str(child)
@@ -776,7 +779,7 @@ class BaseParser(ABC):
                     self._walk_handle_math(child, ctx)
                     continue
                 # 查表分发
-                handler = handler_map.get(child.name, self._walk_default_handler)
+                handler = self._walk_handler_map.get(child.name, self._walk_default_handler)
                 handler(child, ctx)
 
         ctx.flush()
@@ -991,10 +994,6 @@ class BaseParser(ABC):
                         options=ctx.options,
                     )
                 )
-        else:
-            has_pic, text = self._extract_images_recursive_inline_container(child, ctx)
-            if not has_pic and text:
-                ctx.current_text += text
 
     def _walk_default_handler(self, child: Tag, ctx: _WalkContext) -> None:
         """默认处理（其他标签）"""
@@ -1144,7 +1143,7 @@ class BaseParser(ABC):
         1. 标签名快速检查：内联格式标签、内联代码、换行标签、块级元素。
         2. 类名语义检测：div/span 携带 line-break 或 image-wrapper 类名。
         3. 平台自定义内联结构：子类可覆盖 _platform_specific_inline_structure 扩展。
-        4. 公式元素检测：复用 _find_math_in_element。
+        4. 公式元素检测：在遍历过程中检测，避免二次后代遍历。
 
         子类可覆盖此方法或 _platform_specific_inline_structure 扩展平台特有逻辑。
 
@@ -1185,9 +1184,9 @@ class BaseParser(ABC):
             if self._platform_specific_inline_structure(child):
                 return True
 
-        # 4. 公式元素检测（复用已有方法）
-        if self._find_math_in_element(element):
-            return True
+            # 4. 公式元素检测
+            if self._is_math_element(child):
+                return True
 
         return False
 
@@ -1240,20 +1239,6 @@ class BaseParser(ABC):
         if items:
             blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="", items=items))
 
-    def _extract_images_recursive_inline_container(self, element: Tag, ctx: _WalkContext) -> tuple[bool, str]:
-        """递归查找内联容器中的 picture 并提取图片（使用 _WalkContext）"""
-        pics = element.find_all(IMAGE_TAGS)
-        if pics:
-            for pic in pics:
-                ctx.flush()
-                url = self._extract_image_url(pic)
-                if url:
-                    ctx.items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
-            return True, ""
-        else:
-            sub_text = element.get_text(strip=False)
-            return False, sub_text
-
     def _process_inline_element(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
         处理内联元素
@@ -1272,9 +1257,6 @@ class BaseParser(ABC):
             options=WalkOptions(
                 conditional_format_flush=False,
                 handle_line_break_div=False,
-                parse_div_span_inline=True,  # 允许解析 div/span 内联内容
-                strip_nav_strings=True,
-                reset_format_to_parent=False,
                 handle_nested_lists=False,
                 list_level=1,
             ),
