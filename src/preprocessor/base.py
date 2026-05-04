@@ -564,6 +564,15 @@ class BaseParser(ABC):
             self._process_paragraph(element, blocks)
             return
 
+        # 图片包装器（提前检查）
+        if self._has_any_class(element, [self.config.image_wrapper_class]):
+            pics = element.find_all(IMAGE_TAGS)
+            for pic in pics:
+                url = self._extract_image_url(pic)
+                if url:
+                    blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
+            return
+
         # 查找单个 p 子元素（用于包裹简单段落）
         p_child = None
         for child in element.children:
@@ -578,16 +587,6 @@ class BaseParser(ABC):
         if p_child:
             self._process_element(p_child, blocks)
         else:
-            # 检查是否为图片包装器
-            if self._has_any_class(element, [self.config.image_wrapper_class]):
-                # 提取图片
-                pics = element.find_all(IMAGE_TAGS)
-                for pic in pics:
-                    url = self._extract_image_url(pic)
-                    if url:
-                        blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
-                return
-
             # 其他情况：递归提取子元素
             sub_blocks = self._extract_blocks(element)
             blocks.extend(sub_blocks)
@@ -838,6 +837,7 @@ class BaseParser(ABC):
         """处理公式元素"""
         ctx.flush()
         latex = self._extract_latex_content(child)
+        latex = self._strip_latex_delimiters(latex)
         is_display = self._is_display_math(child)
         ctx.items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
 
@@ -902,11 +902,6 @@ class BaseParser(ABC):
         if self._should_insert_break_before_line_break_div(prev):
             ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
 
-        # 统一重置状态（回退到父级格式）
-        ctx.current_text = ""
-        ctx.current_bold = ctx.parent_bold
-        ctx.current_italic = ctx.parent_italic
-
     def _should_insert_break_before_line_break_div(self, prev: PageElement | None) -> bool:
         """
         判断当前 line-break div 之前是否需要插入换行符
@@ -950,7 +945,10 @@ class BaseParser(ABC):
         if not child.get(self.config.code_expanded_attr):
             ctx.flush()
             code_content = child.get_text("\n", strip=True)
-            ctx.items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=ctx.current_bold, italic=ctx.current_italic))
+            language = self._extract_code_language(child)
+            ctx.items.append(InlineContent(type=INLINE_CODE, content=code_content,
+                               bold=ctx.current_bold, italic=ctx.current_italic,
+                               language=language))
 
     def _walk_handle_paragraph(self, child: Tag, ctx: _WalkContext) -> None:
         """处理段落 (p)"""
@@ -1073,7 +1071,7 @@ class BaseParser(ABC):
                 continue
             elif isinstance(child, Tag):
                 texts.append(self._get_direct_text(child))
-        return ''.join(texts).strip()
+        return ' '.join(texts).strip()
 
     def _collect_nested_content_in_li(self, li: Tag, items: list[InlineContent], bold: bool, italic: bool) -> None:
         """
@@ -1090,17 +1088,41 @@ class BaseParser(ABC):
             if url:
                 items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
 
-        for table in li.find_all(TABLE_TAGS, recursive=False):
+        for table in li.find_all(TABLE_TAGS):
+            # 跳过嵌套列表内部的表格，避免重复提取
+            if self._inside_nested_list(table, li):
+                continue
             table_data = self._parse_table(table)
             if table_data:
                 items.append(InlineContent(type=INLINE_TABLE, content="", data=table_data, bold=bold, italic=italic))
 
-        for pre in li.find_all(CODE_TAGS, recursive=False):
+        for pre in li.find_all(CODE_TAGS):
+            # 跳过嵌套列表内部的代码块，避免重复提取
+            if self._inside_nested_list(pre, li):
+                continue
             if pre.get(self.config.code_expanded_attr):
                 continue
             code_content = pre.get_text("\n", strip=True)
             language = self._extract_code_language(pre)
             items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=bold, italic=italic, language=language))
+
+    def _inside_nested_list(self, tag: Tag, root_li: Tag) -> bool:
+        """
+        判断标签是否在 root_li 内某个嵌套列表 (ul/ol) 的子树中
+
+        Args:
+            tag: 待检查的标签
+            root_li: 根列表项元素
+
+        Returns:
+            True 如果 tag 处于 root_li 内部的嵌套列表中，否则 False
+        """
+        parent = tag.parent
+        while parent is not None and parent != root_li:
+            if isinstance(parent, Tag) and parent.name in LIST_TAGS:
+                return True
+            parent = parent.parent
+        return False
 
     def _should_parse_as_complex(self, element: Tag) -> bool:
         """
@@ -1389,10 +1411,14 @@ class BaseParser(ABC):
 
         # 极端情况兜底：没有任何行被解析为数据行，但 headers 为空
         if not headers:
-            headers = rows[0] if rows else []
-            rows = rows[1:] if rows else []
-            header_bold = [False] * len(headers)
-            cell_bold = cell_bold[1:] if cell_bold else []
+            if rows:
+                headers = rows[0]
+                rows = rows[1:]
+                header_bold = cell_bold[0] if cell_bold else [False] * len(headers)
+                cell_bold = cell_bold[1:] if cell_bold else []
+            else:
+                headers = []
+                header_bold = []
 
         return TableData(headers=headers, rows=rows, header_bold=header_bold, cell_bold=cell_bold)
 
