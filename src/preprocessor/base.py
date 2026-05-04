@@ -31,6 +31,25 @@ INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
 
 # =============================================================================
+# 单个标签名常量（用于精确匹配，与标签组常量并存）
+# =============================================================================
+
+HTML_DIV = "div"
+HTML_SPAN = "span"
+HTML_UL = "ul"
+HTML_OL = "ol"
+HTML_LI = "li"
+HTML_P = "p"
+HTML_BR = "br"
+HTML_PRE = "pre"
+HTML_CODE = "code"
+HTML_TABLE = "table"
+HTML_PICTURE = "picture"
+HTML_BLOCKQUOTE = "blockquote"
+HTML_SECTION = "section"
+HTML_A = "a"
+
+# =============================================================================
 # Block / Inline 内容类型常量
 # =============================================================================
 
@@ -220,15 +239,19 @@ class BaseParser(ABC):
             h[tag] = self._handle_picture
 
         # div / section
-        h["div"] = self._process_div_or_section  # 签名一致，直接复用
+        h[HTML_DIV] = self._handle_div_or_section  # 签名一致，直接复用
         for tag in SECTION_TAGS:
-            h[tag] = self._process_div_or_section
+            h[tag] = self._handle_div_or_section
 
         # 所有内联格式标签
         for tag in INLINE_TAGS:
             h[tag] = self._handle_inline
 
         self._tag_handlers = h
+
+    # -------------------------------------------------------------------------
+    # 块级标签处理（由 _tag_handlers 分发）
+    # -------------------------------------------------------------------------
 
     def _handle_table(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理表格标签"""
@@ -279,6 +302,9 @@ class BaseParser(ABC):
         else:
             self._process_inline_element(element, blocks)
 
+    # -------------------------------------------------------------------------
+    # 公开解析接口
+    # -------------------------------------------------------------------------
 
     def parse(self, html: str) -> ParsedPage:
         """
@@ -310,7 +336,6 @@ class BaseParser(ABC):
         container = soup.body if soup.body else soup
         blocks = self._extract_blocks(container)
         return ParsedPage(title=title, blocks=blocks)
-
 
     # -------------------------------------------------------------------------
     # 抽象钩子方法 - 子类必须实现
@@ -480,13 +505,20 @@ class BaseParser(ABC):
             else:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
 
-    def _process_div_or_section(self, element: Tag, blocks: list[TextBlock]) -> None:
+    def _handle_div_or_section(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
         处理 div 或 section 元素
 
-        Args:
-            element: div 或 section 元素
-            blocks: 内容块列表
+        决策顺序：
+        1. 如果是 line-break 类 div → 附加换行到上一个段落或新建空段落。
+        2. 如果是代码展开按钮 → 提取展开后的 pre 代码。
+        3. 如果是公式元素 → 作为独立公式块。
+        4. 如果是代码容器 → 提取代码。
+        5. 如果是图片元素 → 提取为图片块。
+        6. 如果是段落容器 → 按段落处理。
+        7. 如果只包含单个 <p> 子元素 → 直接处理该段落。
+        8. 如果是图片包装器（含有特定类名）→ 提取内部所有图片。
+        9. 其他情况 → 递归提取内部块级元素。
         """
         # line-break div：块级换行符处理
         if self._has_any_class(element, self.config.line_break_classes):
@@ -498,7 +530,7 @@ class BaseParser(ABC):
 
         # 代码展开按钮
         if self._is_code_button(element):
-            expanded_pre = element.find("pre", attrs={self.config.code_expanded_attr: "true"})
+            expanded_pre = element.find(HTML_PRE, attrs={self.config.code_expanded_attr: "true"})
             if expanded_pre:
                 code = expanded_pre.get_text("\n", strip=True)
                 blocks.append(TextBlock(type=BLOCK_CODE, content=code, language="language-plaintext"))
@@ -562,7 +594,7 @@ class BaseParser(ABC):
             element: 代码容器元素
             blocks: 内容块列表
         """
-        code_elem = element.find("code")
+        code_elem = element.find(HTML_CODE)
         pre_elem = element.find(CODE_TAGS)
 
         # 优先从 pre 标签提取代码
@@ -593,7 +625,7 @@ class BaseParser(ABC):
             语言标识字符串，如 "python"、"language-plaintext"，默认 "text"
         """
         # 优先从 <code> 子元素的 class 中提取（如 "language-python"）
-        code_elem = element.find("code")
+        code_elem = element.find(HTML_CODE)
         if code_elem:
             classes = code_elem.get("class") or []
             # 过滤掉 highlight.js 的通用类名 "hljs"
@@ -618,7 +650,7 @@ class BaseParser(ABC):
             blocks: 内容块列表
             level: 嵌套层级
         """
-        list_items = element.find_all("li", recursive=False)
+        list_items = element.find_all(HTML_LI, recursive=False)
         for i, li in enumerate(list_items):
             self._process_list_item(li, blocks, list_type, i + 1, level)
 
@@ -626,11 +658,16 @@ class BaseParser(ABC):
         """
         处理单个列表项
 
+        决策逻辑：
+        1. 检测是否包含复杂内容（嵌套列表、换行、加粗、公式、图片、表格、代码）。
+        2. 如果包含复杂内容，委托给 _process_complex_list_item 解析内联结构。
+        3. 否则直接提取文本作为简单列表项。
+
         Args:
             li: li 元素
             blocks: 内容块列表
-            list_type: 列表类型
-            index: 列表项序号
+            list_type: 列表类型 ("ul" 或 "ol")
+            index: 列表项序号（当前未使用，保留参数兼容性）
             level: 嵌套层级
         """
         has_nested_list = li.find(LIST_TAGS, recursive=False)
@@ -638,7 +675,7 @@ class BaseParser(ABC):
             isinstance(x, str) and "line-break" in x
             for x in (li.get("class") or [])
         ) or any(
-            isinstance(child, Tag) and child.name == "div" and self._has_any_class(child, self.config.line_break_classes)
+            isinstance(child, Tag) and child.name == HTML_DIV and self._has_any_class(child, self.config.line_break_classes)
             for child in li.children
         )
         has_strong = li.find(BOLD_TAGS)
@@ -753,6 +790,10 @@ class BaseParser(ABC):
 
         ctx.flush()
         return ctx.items
+
+    # -------------------------------------------------------------------------
+    # 内联遍历处理器（由 _walk_inline_children 分发）
+    # -------------------------------------------------------------------------
 
     def _build_walk_handler_map(self) -> dict[str, Callable[[Tag, _WalkContext], None]]:
         """
@@ -987,9 +1028,18 @@ class BaseParser(ABC):
         if sub_text:
             ctx.current_text += sub_text
 
+    # -------------------------------------------------------------------------
+    # 通用辅助 / 提取方法
+    # -------------------------------------------------------------------------
+
     def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False, level: int = 1) -> None:
         """
         提取嵌套列表的文本内容
+
+        处理流程：
+        1. 遍历列表项 (li)，提取直接文本内容。
+        2. 对于无序列表 (ul)，使用 "•" 作为列表标记；对于有序列表 (ol)，使用序号。
+        3. 递归处理嵌套的 ul/ol 列表。
 
         Args:
             element: ul 或 ol 元素
@@ -1002,16 +1052,16 @@ class BaseParser(ABC):
         li_elements = element.find_all(LIST_ITEM_TAGS, recursive=False)
         for idx, child in enumerate(li_elements):
             direct_text = self._get_direct_text(child)
-            list_marker = "•" if element.name == "ul" else None
+            list_marker = "•" if element.name == HTML_UL else None
             has_nested_list = child.find(LIST_TAGS, recursive=False) is not None
 
             if direct_text:
-                if element.name == "ul":
+                if element.name == HTML_UL:
                     items.append(InlineContent(type=INLINE_TEXT, content=direct_text, bold=bold, italic=italic, list_marker=list_marker, level=level))
                 else:
                     items.append(InlineContent(type=INLINE_TEXT, content=f"{counter}. {direct_text}", bold=bold, italic=italic, level=level))
 
-            if element.name == "ol" and (direct_text or has_nested_list):
+            if element.name == HTML_OL and (direct_text or has_nested_list):
                 counter += 1
 
             nested_items = []
@@ -1028,6 +1078,8 @@ class BaseParser(ABC):
     def _get_direct_text(self, element: Tag) -> str:
         """
         获取元素的直接文本（排除嵌套的 ul/ol）
+
+        递归提取元素的文本内容，但跳过内嵌的列表标签 (ul/ol)，避免重复处理。
 
         Args:
             element: HTML 元素
@@ -1074,31 +1126,6 @@ class BaseParser(ABC):
             language = self._extract_code_language(pre)
             items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=bold, italic=italic, language=language))
 
-    def _process_nested_container(self, element: Tag, items: list[InlineContent],
-                                   parent_bold: bool = False, parent_italic: bool = False) -> None:
-        """
-        递归处理嵌套容器
-
-        Args:
-            element: HTML 容器元素
-            items: 内联内容列表
-            parent_bold: 父级加粗状态
-            parent_italic: 父级斜体状态
-        """
-        items.extend(
-            self._walk_inline_children(
-                element,
-                parent_bold=parent_bold,
-                parent_italic=parent_italic,
-                conditional_format_flush=True,
-                handle_line_break_div=True,
-                parse_div_span_inline=True,
-                strip_nav_strings=True,
-                reset_format_to_parent=True,
-                handle_nested_lists=False,
-            )
-        )
-
     def _should_parse_as_complex(self, element: Tag) -> bool:
         """
         判断段落是否需要走复杂内联解析路径
@@ -1114,6 +1141,13 @@ class BaseParser(ABC):
     def _has_inline_structure(self, element: Tag) -> bool:
         """
         判断元素内部是否包含需要内联处理的结构（如格式标签、换行、图片等）。
+
+        检测逻辑（按优先级）：
+        1. 标签名快速检查：内联格式标签、内联代码、换行标签、块级元素。
+        2. 类名语义检测：div/span 携带 line-break 或 image-wrapper 类名。
+        3. 平台自定义内联结构：子类可覆盖 _platform_specific_inline_structure 扩展。
+        4. 公式元素检测：复用 _find_math_in_element。
+
         子类可覆盖此方法或 _platform_specific_inline_structure 扩展平台特有逻辑。
 
         Args:
@@ -1143,7 +1177,7 @@ class BaseParser(ABC):
                 return True
 
             # 2. 类名语义检测（div / span 携带语义 class）
-            if child.name in ("div", "span"):
+            if child.name in INLINE_CONTAINER_TAGS:
                 if self._has_any_class(child, self.config.line_break_classes):
                     return True
                 if self._has_any_class(child, [self.config.image_wrapper_class]):
@@ -1176,7 +1210,11 @@ class BaseParser(ABC):
         """
         处理段落元素
 
-        Args:
+        决策逻辑：
+        1. 如果不是复杂段落（无内联结构）→ 直接提取纯文本作为段落块。
+        2. 如果是复杂段落 → 调用 _walk_inline_children 解析内联内容。
+
+        参数:
             element: p 元素
             blocks: 内容块列表
         """

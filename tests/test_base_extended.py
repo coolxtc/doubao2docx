@@ -281,7 +281,7 @@ class TestProcessDivOrSection:
         html = '<div class="button-expanded"><pre data-expanded-code="true">code</pre></div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         code = [b for b in blocks if b.type == "code"]
         assert len(code) == 1
         assert code[0].content == "code"
@@ -291,7 +291,7 @@ class TestProcessDivOrSection:
         html = '<div class="code-container"><pre><code>print("x")</code></pre></div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert len(blocks) == 1
         assert blocks[0].type == "code"
 
@@ -300,7 +300,7 @@ class TestProcessDivOrSection:
         html = '<div class="paragraph-xxxx">段落文本</div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert len(blocks) >= 1
         assert blocks[0].type == "paragraph"
 
@@ -309,7 +309,7 @@ class TestProcessDivOrSection:
         html = "<div><p>唯一段落</p></div>"
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert blocks[0].type == "paragraph"
         assert blocks[0].content == "唯一段落"
 
@@ -318,7 +318,7 @@ class TestProcessDivOrSection:
         html = '<div class="image-wrapper"><picture><img src="img.jpg"/></picture></div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert blocks[0].type == "image"
 
     def test_math_element_inside(self):
@@ -326,7 +326,7 @@ class TestProcessDivOrSection:
         html = '<div><span copy-text="\\gamma">γ</span></div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         latex = [b for b in blocks if b.type == "latex"]
         assert len(latex) == 1
 
@@ -335,7 +335,7 @@ class TestProcessDivOrSection:
         html = '<div><p>First</p><p>Second</p></div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert len(blocks) >= 2
         assert blocks[0].content == "First"
         assert blocks[1].content == "Second"
@@ -543,7 +543,7 @@ class TestCodeButtonNoExpandedPre:
         html = '<div class="button-full">no pre</div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert len(blocks) == 0
 
 
@@ -692,7 +692,7 @@ class TestCodeLanguageFilters:
         html = '<div class="code-container">plaintext\nreal code</div>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_div_or_section(soup.find("div"), blocks)
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert blocks[0].content == "real code"
 
     def test_code_language_filters_hljs(self):
@@ -849,8 +849,8 @@ class TestHasInlineStructure:
             "lxml",
         )
         blocks = []
-        # 使用 _process_div_or_section 处理段落容器
-        parser._process_div_or_section(soup.find("div"), blocks)
+        # 使用 _handle_div_or_section 处理段落容器
+        parser._handle_div_or_section(soup.find("div"), blocks)
         assert len(blocks) == 1
         # 应走复杂解析路径（items 不为空）
         assert blocks[0].items is not None and len(blocks[0].items) > 0
