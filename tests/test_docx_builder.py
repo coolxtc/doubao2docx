@@ -884,3 +884,128 @@ class TestCoverageImprovements:
             disp_para = doc_builder.document.paragraphs[1]
             assert disp_para.alignment == WD_ALIGN_PARAGRAPH.CENTER
             assert "Σ" in disp_para.text
+
+
+# =============================================================================
+# _filter_unnecessary_linebreaks 测试
+# =============================================================================
+
+class TestFilterUnnecessaryLinebreaks:
+    """测试换行符过滤逻辑"""
+
+    def test_preserves_normal_text_newlines(self, doc_builder):
+        """普通文本之间的换行应保留"""
+        items = [
+            InlineContent(type="text", content="第一行"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="第二行"),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 3
+        assert filtered[1].content == "\n"
+
+    def test_removes_newline_before_list_marker(self, doc_builder):
+        """列表标记前的换行应被移除"""
+        items = [
+            InlineContent(type="text", content="文本内容"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="嵌套项", list_marker=True),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        # 换行应被过滤
+        assert len(filtered) == 2
+        assert all(item.content != "\n" for item in filtered)
+
+    def test_removes_multiple_newlines_before_list_marker(self, doc_builder):
+        """列表标记前的多个连续换行应全部被移除"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="嵌套项", list_marker=True),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 2
+        assert filtered[0].content == "文本"
+        assert filtered[1].list_marker is True
+
+    def test_removes_newline_before_image(self, doc_builder):
+        """图片前的换行应被移除"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="image", content="", image_url="http://example.com/a.png"),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 2
+        assert filtered[1].type == "image"
+
+    def test_removes_newline_before_table(self, doc_builder):
+        """表格前的换行应被移除"""
+        table_data = TableData(headers=["A"], rows=[["1"]])
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="table", content="", data=table_data),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 2
+        assert filtered[1].type == "table"
+
+    def test_removes_newline_before_code(self, doc_builder):
+        """代码块前的换行应被移除"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="code", content="print('x')"),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 2
+        assert filtered[1].type == "code"
+
+    def test_removes_newline_before_display_latex(self, doc_builder):
+        """块级公式前的换行应被移除"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="latex", content="\\alpha", is_display=True),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 2
+        assert filtered[1].is_display is True
+
+    def test_preserves_newline_before_inline_text(self, doc_builder):
+        """普通文本前的换行应保留"""
+        items = [
+            InlineContent(type="text", content="文本1"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="text", content="文本2"),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 3
+        assert filtered[1].content == "\n"
+
+    def test_preserves_newline_before_inline_latex(self, doc_builder):
+        """行内公式前的换行应保留"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="\n"),
+            InlineContent(type="latex", content="\\alpha", is_display=False),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert len(filtered) == 3
+        assert filtered[1].content == "\n"
+
+    def test_empty_items_returns_empty(self, doc_builder):
+        """空列表应返回空列表"""
+        assert doc_builder._filter_unnecessary_linebreaks([]) == []
+
+    def test_no_newlines_returns_original(self, doc_builder):
+        """无换行符的列表应原样返回"""
+        items = [
+            InlineContent(type="text", content="文本"),
+            InlineContent(type="text", content="更多文本"),
+        ]
+        filtered = doc_builder._filter_unnecessary_linebreaks(items)
+        assert filtered == items

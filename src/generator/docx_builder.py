@@ -315,11 +315,14 @@ class DocxBuilder:
 
         # 情况1：内容为纯空白（仅换行/空格等无实质字符）
         if not text.strip():
-            need_break = prev_was_latex or (last_run is not None and not last_was_break)
-            if need_break:
-                para.add_run("").add_break(WD_BREAK.LINE)
-                last_was_break = True
-            return last_run, last_was_break, False, False
+            # 纯换行符项：始终添加一个软换行
+            if last_run is not None:
+                last_run.add_break(WD_BREAK.LINE)
+            else:
+                # 没有可依附的 run，先添加一个空 run 再 break
+                last_run = para.add_run("")
+                last_run.add_break(WD_BREAK.LINE)
+            return last_run, True, False, False
 
         # 情况2：有实际文本内容
         last_was_break = False
@@ -389,6 +392,11 @@ class DocxBuilder:
         # 删除 items 末尾的纯空白项（换行/空格），避免段落尾部多余空行
         while items and items[-1].type == "text" and not items[-1].content.strip():
             items.pop()
+        if not items:
+            return
+
+        # 过滤掉紧邻"另起新段元素"前的换行符，避免多余空行
+        items = self._filter_unnecessary_linebreaks(items)
         if not items:
             return
 
@@ -499,6 +507,51 @@ class DocxBuilder:
         if level > 0:
             para.paragraph_format.left_indent = Inches(level * 0.5)
         return para
+
+    def _filter_unnecessary_linebreaks(self, items: list[InlineContent]) -> list[InlineContent]:
+        """
+        移除紧邻"会另起新段落的元素"之前的纯换行符。
+        保留普通文本之间必要的换行。
+
+        Args:
+            items: 内联内容列表
+
+        Returns:
+            list[InlineContent]: 过滤后的内联内容列表
+        """
+        # 判断一个 item 是否会在 Word 中另起一个新段/块
+        def _starts_new_block(item: InlineContent) -> bool:
+            if item.list_marker:  # 嵌套列表项
+                return True
+            if item.type == "latex" and item.is_display:  # 块级公式
+                return True
+            if item.type in ("image", "table", "code"):  # 图片、表格、代码块
+                return True
+            return False
+
+        filtered = []
+        i = 0
+        while i < len(items):
+            item = items[i]
+            # 当前是纯换行符？
+            if item.type == "text" and item.content == "\n":
+                # 找到下一个非换行的有效元素
+                j = i + 1
+                while j < len(items) and items[j].type == "text" and items[j].content == "\n":
+                    j += 1
+                # 如果下一个有效元素是需要另起段落的，丢弃所有连续换行
+                if j < len(items) and _starts_new_block(items[j]):
+                    i = j  # 跳过这些换行，直接处理后面的元素
+                    continue
+                else:
+                    # 保留这些换行（后面是普通文本）
+                    while i < j:
+                        filtered.append(items[i])
+                        i += 1
+                    continue
+            filtered.append(item)
+            i += 1
+        return filtered
 
     def _convert_latex_content(self, latex: str, is_display: bool) -> tuple[Optional[Element], str]:
         """

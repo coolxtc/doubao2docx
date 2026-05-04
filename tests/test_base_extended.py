@@ -99,15 +99,15 @@ class TestWalkHandleLineBreakDiv:
         assert len(newline_items) >= 1
 
     def test_line_break_div_with_span_before_no_newline(self):
-        """带 span 前时按原始逻辑不添加换行（span 是 INLINE_CONTAINER_TAGS）"""
+        """修复后：INLINE_CONTAINER_TAGS（span）前也应添加换行"""
         parser = MockParser()
         html = '<div><span>text</span><div class="md-box-line-break"></div></div>'
         soup = BeautifulSoup(html, "lxml")
         div = soup.find("div")
         items = parser._walk_inline_children(div, handle_line_break_div=True)
-        # 原逻辑：INLINE_CONTAINER_TAGS 前不添加换行
+        # 修复后：span 前的 line-break div 同样添加换行
         newline_items = [i for i in items if i.content == "\n"]
-        assert len(newline_items) == 0
+        assert len(newline_items) == 1
 
     def test_no_line_break_div_no_newline(self):
         """无 line-break 类时不应添加换行"""
@@ -809,3 +809,130 @@ class TestRealHTMLIntegration:
         result = MockParser().parse(content)
         tables = [b for b in result.blocks if b.type == "table"]
         assert len(tables) >= 5
+
+
+# =============================================================================
+# 新增：内联结构检测测试（_should_parse_as_complex 升级后）
+# =============================================================================
+
+class TestHasInlineStructure:
+    """测试通用内联结构检测方法"""
+
+    def test_line_break_div_detected(self):
+        """含有 line-break div 的段落应被识别为复杂段落
+
+        注意：测试用 div.paragraph-* 而不是 p，因为 HTML 规范下 p 不能包含 div
+        """
+        parser = MockParser()
+        soup = BeautifulSoup(
+            '<div class="paragraph-test">1）标配：外圆卡箍固定'
+            '<div class="md-box-line-break"></div>'
+            '2）可选：侧向双耳安装座</div>',
+            "lxml",
+        )
+        div = soup.find("div")
+        # _should_parse_as_complex 现在应返回 True（检测到 line-break div）
+        assert parser._should_parse_as_complex(div) is True
+
+    def test_multiple_line_breaks_in_paragraph(self):
+        """多行换行分隔的段落应走复杂解析
+
+        注意：测试用 div.paragraph-* 而不是 p
+        """
+        parser = MockParser()
+        soup = BeautifulSoup(
+            '<div class="paragraph-test">text'
+            '<div class="md-box-line-break"></div>'
+            'more text'
+            '<div class="md-box-line-break"></div>'
+            'end text</div>',
+            "lxml",
+        )
+        blocks = []
+        # 使用 _process_div_or_section 处理段落容器
+        parser._process_div_or_section(soup.find("div"), blocks)
+        assert len(blocks) == 1
+        # 应走复杂解析路径（items 不为空）
+        assert blocks[0].items is not None and len(blocks[0].items) > 0
+
+    def test_simple_paragraph_not_complex(self):
+        """纯文本段落不应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup("<p>纯文本内容</p>", "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is False
+
+    def test_paragraph_with_strong_is_complex(self):
+        """含加粗的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup("<p>text <strong>bold</strong></p>", "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+    def test_paragraph_with_em_is_complex(self):
+        """含斜体的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup("<p>text <em>italic</em></p>", "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+    def test_paragraph_with_link_is_complex(self):
+        """含链接的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup('<p>text <a href="#">link</a></p>', "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+    def test_paragraph_with_inline_code_is_complex(self):
+        """含内联代码的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup("<p>text <code>code</code></p>", "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+    def test_paragraph_with_picture_is_complex(self):
+        """含图片的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup('<p>text <picture><img src="a.jpg"/></picture></p>', "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+    def test_paragraph_with_image_wrapper_class(self):
+        """含 image-wrapper 类的 div 应被检测
+
+        注意：HTML 规范下 p 不能包含 div，所以使用 div.paragraph-* 作为容器
+        """
+        parser = MockParser()
+        soup = BeautifulSoup(
+            '<div class="paragraph-test">text <div class="image-wrapper"><img src="a.jpg"/></div></div>',
+            "lxml",
+        )
+        assert parser._should_parse_as_complex(soup.find("div")) is True
+
+    def test_paragraph_with_br_is_complex(self):
+        """含 br 标签的段落应被识别为复杂"""
+        parser = MockParser()
+        soup = BeautifulSoup("<p>line1<br/>line2</p>", "lxml")
+        assert parser._should_parse_as_complex(soup.find("p")) is True
+
+
+class TestPlatformSpecificInlineStructure:
+    """测试平台特有内联结构扩展"""
+
+    def test_platform_specific_returns_false_by_default(self):
+        """默认实现应返回 False"""
+        parser = MockParser()
+        soup = BeautifulSoup("<div>text</div>", "lxml")
+        assert parser._platform_specific_inline_structure(soup.find("div")) is False
+
+    def test_custom_parser_with_platform_extension(self):
+        """自定义解析器可扩展平台特有检测"""
+        class CustomParser(MockParser):
+            def _platform_specific_inline_structure(self, element):
+                # 自定义检测：class 包含 "custom-break" 也视为换行
+                if element.name == "div" and "custom-break" in (
+                    element.get("class") or []
+                ):
+                    return True
+                return False
+
+        parser = CustomParser()
+        soup = BeautifulSoup(
+            '<div class="paragraph-test">text <div class="custom-break"></div>more</div>',
+            "lxml",
+        )
+        assert parser._should_parse_as_complex(soup.find("div")) is True

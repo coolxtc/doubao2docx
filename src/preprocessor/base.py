@@ -27,6 +27,7 @@ BLOCKQUOTE_TAGS = ("blockquote",)  # 引用标签（单元素元组）
 PARAGRAPH_TAGS = ("p",)  # 段落标签（单元素元组）
 SECTION_TAGS = ("section",)  # 区域标签（单元素元组）
 INLINE_TAGS = ("strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark")  # 所有内联格式标签
+INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
 
 # =============================================================================
@@ -487,6 +488,14 @@ class BaseParser(ABC):
             element: div 或 section 元素
             blocks: 内容块列表
         """
+        # line-break div：块级换行符处理
+        if self._has_any_class(element, self.config.line_break_classes):
+            if blocks and blocks[-1].type == BLOCK_PARAGRAPH:
+                blocks[-1].content += "\n"
+            else:
+                blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="\n"))
+            return
+
         # 代码展开按钮
         if self._is_code_button(element):
             expanded_pre = element.find("pre", attrs={self.config.code_expanded_attr: "true"})
@@ -877,6 +886,8 @@ class BaseParser(ABC):
                 ctx.current_bold = ctx.parent_bold
                 ctx.current_italic = ctx.parent_italic
             elif isinstance(prev, Tag) and prev.name in INLINE_CONTAINER_TAGS:
+                # 普通内联容器（如 span）后也应添加换行
+                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
                 ctx.current_text = ""
                 ctx.current_bold = ctx.parent_bold
                 ctx.current_italic = ctx.parent_italic
@@ -1080,7 +1091,7 @@ class BaseParser(ABC):
 
     def _should_parse_as_complex(self, element: Tag) -> bool:
         """
-        判断段落元素是否包含需要复杂解析的内联内容
+        判断段落是否需要走复杂内联解析路径
 
         Args:
             element: p 元素
@@ -1088,14 +1099,68 @@ class BaseParser(ABC):
         Returns:
             True 如果包含数学公式、加粗、斜体、链接、内联代码或图片
         """
-        return (
-            bool(self._find_math_in_element(element)) or  # 数学公式
-            element.find(BOLD_TAGS) is not None or  # 加粗
-            element.find(ITALIC_TAGS) is not None or  # 斜体
-            element.find("a") is not None or  # 链接
-            element.find("code") is not None or  # 内联代码
-            element.find(IMAGE_TAGS) is not None  # 图片
-        )
+        return self._has_inline_structure(element)
+
+    def _has_inline_structure(self, element: Tag) -> bool:
+        """
+        判断元素内部是否包含需要内联处理的结构（如格式标签、换行、图片等）。
+        子类可覆盖此方法或 _platform_specific_inline_structure 扩展平台特有逻辑。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果包含需要内联处理的结构
+        """
+        # 1. 标签名快速检查
+        for child in element.descendants:
+            if not isinstance(child, Tag):
+                continue
+
+            # 内联格式标签 (strong, em, a, span, code, etc.)
+            if child.name in INLINE_TAGS:
+                return True
+            # 内联代码 (code)
+            if child.name in INLINE_CODE_TAGS:
+                return True
+            # 换行标签 (br)
+            if child.name in BREAK_TAGS:
+                return True
+            # 段落内嵌块级元素（异常但应保留）
+            if child.name in list(IMAGE_TAGS) + list(TABLE_TAGS) + list(CODE_TAGS):
+                return True
+            if child.name in PARAGRAPH_TAGS:
+                return True
+
+            # 2. 类名语义检测（div / span 携带语义 class）
+            if child.name in ("div", "span"):
+                if self._has_any_class(child, self.config.line_break_classes):
+                    return True
+                if self._has_any_class(child, [self.config.image_wrapper_class]):
+                    return True
+
+            # 3. 平台自定义内联结构
+            if self._platform_specific_inline_structure(child):
+                return True
+
+        # 4. 公式元素检测（复用已有方法）
+        if self._find_math_in_element(element):
+            return True
+
+        return False
+
+    def _platform_specific_inline_structure(self, element: Tag) -> bool:
+        """
+        子类可覆盖：检测平台特有的内联结构。
+        默认返回 False，保持向后兼容。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果元素是平台特有的内联结构
+        """
+        return False
 
     def _process_paragraph(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
@@ -1118,8 +1183,8 @@ class BaseParser(ABC):
             parent_bold=False,
             parent_italic=False,
             conditional_format_flush=True,
-            handle_line_break_div=False,
-            parse_div_span_inline=False,
+            handle_line_break_div=False,  # 直接添加换行，不过滤
+            parse_div_span_inline=True,  # 允许解析 div/span 内联内容
             strip_nav_strings=False,
             reset_format_to_parent=False,
             handle_nested_lists=False,
@@ -1158,7 +1223,7 @@ class BaseParser(ABC):
             parent_italic=italic,
             conditional_format_flush=False,
             handle_line_break_div=False,
-            parse_div_span_inline=False,
+            parse_div_span_inline=True,  # 允许解析 div/span 内联内容
             strip_nav_strings=True,
             reset_format_to_parent=False,
             handle_nested_lists=False,
