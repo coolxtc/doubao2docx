@@ -540,10 +540,8 @@ class BaseParser(ABC):
         if p_child:
             self._process_element(p_child, blocks)
         else:
-            classes = element.get("class") or []
-            class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
             # 检查是否为图片包装器
-            if self.config.image_wrapper_class in class_str:
+            if self._has_any_class(element, [self.config.image_wrapper_class]):
                 # 提取图片
                 pics = element.find_all(IMAGE_TAGS)
                 for pic in pics:
@@ -860,45 +858,57 @@ class BaseParser(ABC):
         ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
 
     def _walk_handle_line_break_div(self, child: Tag, ctx: _WalkContext) -> None:
-        """处理 line-break-class div"""
-        if ctx.handle_line_break_div and child.previous_sibling is not None:
-            prev = self._skip_whitespace_siblings(child.previous_sibling)
+        """
+        处理 line-break-class div
 
-            # 调用 flush
-            ctx.flush()
-
-            if isinstance(prev, Tag):
-                if (prev.name in INLINE_CONTAINER_TAGS and self._has_any_class(prev, self.config.line_break_classes)
-                    and not prev.get_text(strip=True)):
-                    ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                    ctx.current_text = ""
-                    ctx.current_bold = ctx.parent_bold
-                    ctx.current_italic = ctx.parent_italic
-                    return
-
-            if isinstance(prev, NavigableString):
-                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                ctx.current_text = ""
-                ctx.current_bold = ctx.parent_bold
-                ctx.current_italic = ctx.parent_italic
-            elif isinstance(prev, Tag) and prev.name in LIST_TAGS:
-                ctx.current_text = ""
-                ctx.current_bold = ctx.parent_bold
-                ctx.current_italic = ctx.parent_italic
-            elif isinstance(prev, Tag) and prev.name in INLINE_CONTAINER_TAGS:
-                # 普通内联容器（如 span）后也应添加换行
-                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                ctx.current_text = ""
-                ctx.current_bold = ctx.parent_bold
-                ctx.current_italic = ctx.parent_italic
-            else:
-                ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
-                ctx.current_text = ""
-                ctx.current_bold = ctx.parent_bold
-                ctx.current_italic = ctx.parent_italic
-        else:
+        决策逻辑：
+        | 前一个兄弟类型          | 条件              | 是否插入换行 |
+        |------------------------|-------------------|-------------|
+        | 空 line-break div      | 无文本            | 是          |
+        | 列表标签 (ul/ol)       | 任何情况          | 否          |
+        | 其他 Tag / NavigableString | 任何情况        | 是          |
+        | None (第一个子元素)   | -                 | 是          |
+        """
+        # handle_line_break_div=False 或第一个子元素：直接添加换行
+        if not ctx.handle_line_break_div or child.previous_sibling is None:
             ctx.flush()
             ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+            return
+
+        prev = self._skip_whitespace_siblings(child.previous_sibling)
+        ctx.flush()
+
+        if self._should_insert_break_before_line_break_div(prev):
+            ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+
+        # 统一重置状态（回退到父级格式）
+        ctx.current_text = ""
+        ctx.current_bold = ctx.parent_bold
+        ctx.current_italic = ctx.parent_italic
+
+    def _should_insert_break_before_line_break_div(self, prev: PageElement | None) -> bool:
+        """
+        判断当前 line-break div 之前是否需要插入换行符
+
+        Args:
+            prev: 前一个兄弟元素（已跳过空白文本）
+
+        Returns:
+            True 需要插入换行符，False 不插入
+        """
+        if prev is None:
+            return True
+        if isinstance(prev, Tag):
+            # 连续的空 line-break div（自身无文本）：插入换行
+            if (prev.name in INLINE_CONTAINER_TAGS
+                    and self._has_any_class(prev, self.config.line_break_classes)
+                    and not prev.get_text(strip=True)):
+                return True
+            # 列表标签后：不插入
+            if prev.name in LIST_TAGS:
+                return False
+        # 其他情况（NavigableString 或其他 Tag）：插入换行
+        return True
 
     def _walk_handle_image(self, child: Tag, ctx: _WalkContext) -> None:
         """处理图片元素 (picture)"""
