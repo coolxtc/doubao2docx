@@ -145,7 +145,6 @@ class ParsedPage:
 @dataclass(frozen=True)
 class WalkOptions:
     """遍历策略配置（不可变，遍历过程中配置不应改变）"""
-    conditional_format_flush: bool = False  # 遇到 strong/em 时是否条件 flush
     handle_line_break_div: bool = True  # 处理 line-break-class div 还是直接添加换行
     parse_div_span_inline: bool = True  # 递归解析 div/span 内联内容还是仅提取图片
     strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
@@ -409,8 +408,6 @@ class BaseParser(ABC):
             True 如果元素包含任意一个指定类名，否则 False
         """
         classes = element.get("class") or []
-        if isinstance(classes, str):
-            classes = classes.split()
         return any(c in class_names for c in classes)
 
     def _is_code_expanded(self, element: Tag) -> bool:
@@ -706,7 +703,6 @@ class BaseParser(ABC):
             parent_bold=False,
             parent_italic=False,
             options=WalkOptions(
-                conditional_format_flush=False,
                 handle_line_break_div=True,
                 parse_div_span_inline=True,
                 strip_nav_strings=True,
@@ -716,7 +712,10 @@ class BaseParser(ABC):
             ),
         )
         if items:
-            valid_items = [item for item in items if item.content.strip() or item.content == "\n" or item.type in INLINE_NON_TEXT_TYPES]
+            valid_items = [
+                item for item in items
+                if item.type in INLINE_NON_TEXT_TYPES or item.content.strip() or item.content == "\n"
+            ]
             if valid_items:
                 blocks.append(TextBlock(type=BLOCK_LIST_ITEM, content="", language=list_type, items=valid_items, level=level))
 
@@ -1223,7 +1222,6 @@ class BaseParser(ABC):
             parent_bold=False,
             parent_italic=False,
             options=WalkOptions(
-                conditional_format_flush=True,
                 handle_line_break_div=False,  # 直接添加换行，不过滤
                 parse_div_span_inline=True,  # 允许解析 div/span 内联内容
                 strip_nav_strings=True,  # 规范化空白
@@ -1250,7 +1248,6 @@ class BaseParser(ABC):
             parent_bold=bold,
             parent_italic=italic,
             options=WalkOptions(
-                conditional_format_flush=False,
                 handle_line_break_div=False,
                 handle_nested_lists=False,
                 list_level=1,
