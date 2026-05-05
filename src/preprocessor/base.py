@@ -1,6 +1,7 @@
 """解析器基类模块"""
 
 import logging
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Callable, ClassVar, Optional
@@ -177,6 +178,11 @@ class _WalkContext:
     parent_italic: bool = False  # 父级斜体状态
     options: WalkOptions = field(default_factory=WalkOptions)  # 遍历策略配置
 
+    def __post_init__(self) -> None:
+        """防御 None，确保 options 始终有效"""
+        if self.options is None:
+            self.options = WalkOptions()
+
     def flush(self) -> None:
         """将累积的文本 flush 到 items 列表"""
         stripped = self.current_text.strip()
@@ -201,7 +207,11 @@ class _WalkContext:
 # =============================================================================
 
 class BaseParser(ABC):
-    """解析器抽象基类"""
+    """
+    解析器抽象基类
+
+    ！！！重要：子类必须在 __init__ 中调用 super().__init__() 以初始化标签处理器映射。
+    """
     config: ClassVar[PlatformConfig]  # 平台配置（子类必须设置）
     _tag_handlers: dict[str, Callable[[Tag, list[TextBlock]], None]]  # 标签 → 处理方法映射
     _walk_handler_map: dict[str, Callable[[Tag, "_WalkContext"], None]]  # 内联遍历分派映射
@@ -210,7 +220,6 @@ class BaseParser(ABC):
         super().__init__()
         self._build_tag_handlers()
         self._walk_handler_map = self._build_walk_handler_map()
-        # 注意：_process_element 中也有懒初始化守卫，支持子类直接实例化不调用 super().__init__()
 
     def _build_tag_handlers(self) -> None:
         """构建标签名 → 处理方法的映射字典（幂等，可重复调用）"""
@@ -282,7 +291,7 @@ class BaseParser(ABC):
 
     def _handle_pre(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理预格式化代码块标签 pre"""
-        if element.get(self.config.code_expanded_attr):
+        if self._is_code_expanded(element):
             return
         code = element.get_text("\n", strip=True)
         language = self._extract_code_language(element)
@@ -417,6 +426,10 @@ class BaseParser(ABC):
             classes = classes.split()
         return any(c in class_names for c in classes)
 
+    def _is_code_expanded(self, element: Tag) -> bool:
+        """判断代码块是否已展开（属性值为 'true'）"""
+        return element.get(self.config.code_expanded_attr) == "true"
+
     def _skip_whitespace_siblings(self, prev_sibling: PageElement | None) -> PageElement | None:
         """跳过连续的空白文本兄弟节点和注释节点"""
         while (prev_sibling is not None
@@ -489,9 +502,7 @@ class BaseParser(ABC):
             blocks: 内容块列表
         """
         tag = element.name
-        # 懒初始化：子类未调用 super().__init__() 时兜底
-        if not hasattr(self, "_tag_handlers"):
-            self._build_tag_handlers()
+        # 直接查表分发（子类必须调用 super().__init__()）
         handler = self._tag_handlers.get(tag)
         if handler is not None:
             handler(element, blocks)
@@ -760,12 +771,7 @@ class BaseParser(ABC):
         """
         if options is None:
             options = WalkOptions()
-        # 懒初始化：子类未调用 super().__init__() 时兜底
-        if not hasattr(self, "_tag_handlers"):
-            self._build_tag_handlers()
-        if not hasattr(self, "_walk_handler_map"):
-            self._walk_handler_map = self._build_walk_handler_map()
-        # 创建 _WalkContext 实例
+        # 直接使用映射（子类必须调用 super().__init__()）
         ctx = _WalkContext(
             parent_bold=parent_bold,
             parent_italic=parent_italic,
@@ -779,7 +785,11 @@ class BaseParser(ABC):
             if isinstance(child, NavigableString):
                 if isinstance(child, Comment):
                     continue
-                text = str(child).strip() if ctx.options.strip_nav_strings else str(child)
+                text = str(child)
+                if ctx.options.strip_nav_strings:
+                    text = text.strip()
+                    # 将内部连续空白折叠为单个空格
+                    text = re.sub(r'\s+', ' ', text)
                 if text:
                     ctx.current_text += text
             elif isinstance(child, Tag):
@@ -857,37 +867,25 @@ class BaseParser(ABC):
         is_display = self._is_display_math(child)
         ctx.items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
 
-    def _walk_handle_bold(self, child: Tag, ctx: _WalkContext) -> None:
-        """处理加粗标签 (strong, b)"""
-        if ctx.options.conditional_format_flush:
-            if ctx.current_text.strip():
-                ctx.flush()
-        else:
-            ctx.flush()
+    def _walk_handle_format(self, child: Tag, ctx: _WalkContext, *, set_bold: bool, set_italic: bool) -> None:
+        """统一处理加粗/斜体标签的内联遍历"""
+        ctx.flush()
         ctx.items.extend(
             self._walk_inline_children(
                 child,
-                parent_bold=True,
-                parent_italic=ctx.current_italic,
+                parent_bold=set_bold or ctx.current_bold,
+                parent_italic=set_italic or ctx.current_italic,
                 options=ctx.options,
             )
         )
 
+    def _walk_handle_bold(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理加粗标签 (strong, b)"""
+        self._walk_handle_format(child, ctx, set_bold=True, set_italic=False)
+
     def _walk_handle_italic(self, child: Tag, ctx: _WalkContext) -> None:
         """处理斜体标签 (em, i)"""
-        if ctx.options.conditional_format_flush:
-            if ctx.current_text.strip():
-                ctx.flush()
-        else:
-            ctx.flush()
-        ctx.items.extend(
-            self._walk_inline_children(
-                child,
-                parent_bold=ctx.current_bold,
-                parent_italic=True,
-                options=ctx.options,
-            )
-        )
+        self._walk_handle_format(child, ctx, set_bold=False, set_italic=True)
 
     def _walk_handle_br(self, child: Tag, ctx: _WalkContext) -> None:
         """处理换行标签 (br)"""
@@ -958,7 +956,8 @@ class BaseParser(ABC):
 
     def _walk_handle_code(self, child: Tag, ctx: _WalkContext) -> None:
         """处理代码块 (pre)"""
-        if not child.get(self.config.code_expanded_attr):
+        # 仅当代码未展开时处理
+        if not self._is_code_expanded(child):
             ctx.flush()
             code_content = child.get_text("\n", strip=True)
             language = self._extract_code_language(child)
@@ -1122,7 +1121,7 @@ class BaseParser(ABC):
             # 跳过嵌套列表内部的代码块，避免重复提取
             if self._inside_nested_list(pre, li):
                 continue
-            if pre.get(self.config.code_expanded_attr):
+            if self._is_code_expanded(pre):
                 continue
             code_content = pre.get_text("\n", strip=True)
             language = self._extract_code_language(pre)
@@ -1145,18 +1144,6 @@ class BaseParser(ABC):
                 return True
             parent = parent.parent
         return False
-
-    def _should_parse_as_complex(self, element: Tag) -> bool:
-        """
-        判断段落是否需要走复杂内联解析路径
-
-        Args:
-            element: p 元素
-
-        Returns:
-            True 如果包含数学公式、加粗、斜体、链接、内联代码或图片
-        """
-        return self._has_inline_structure(element)
 
     def _has_inline_structure(self, element: Tag) -> bool:
         """
@@ -1239,7 +1226,7 @@ class BaseParser(ABC):
             blocks: 内容块列表
         """
         # 简单段落：直接提取文本
-        if not self._should_parse_as_complex(element):
+        if not self._has_inline_structure(element):
             text = element.get_text(strip=True)
             if text:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
@@ -1254,7 +1241,7 @@ class BaseParser(ABC):
                 conditional_format_flush=True,
                 handle_line_break_div=False,  # 直接添加换行，不过滤
                 parse_div_span_inline=True,  # 允许解析 div/span 内联内容
-                strip_nav_strings=False,
+                strip_nav_strings=True,  # 规范化空白
                 reset_format_to_parent=False,
                 handle_nested_lists=False,
             ),
@@ -1354,7 +1341,7 @@ class BaseParser(ABC):
     @staticmethod
     def _parse_table(table: Tag) -> Optional[TableData]:
         """
-        解析表格，支持无 <thead> 时自动识别表头粗体
+        解析表格，支持列数不一致的对齐
 
         Args:
             table: table 元素
@@ -1363,43 +1350,42 @@ class BaseParser(ABC):
             TableData 对象，解析失败返回 None
         """
         headers = []  # 表头文本列表
-        rows = []  # 数据行列表
         header_bold = []  # 表头加粗标记
-        cell_bold = []  # 单元格加粗标记
+        raw_rows_data: list[list[str]] = []  # 原始数据行列表
+        raw_rows_bold: list[list[bool]] = []  # 原始加粗标记列表
 
-        # 1. 解析 <thead> 表头（统一粗体判定规则：<th>标签或包含<strong>/<b>）
+        # 1. 解析 <thead> 表头（仅当 thead 及其内确实有 tr 时才视为已识别表头）
         thead = table.find("thead")
-        if thead:
-            header_row = thead.find("tr")
-            if header_row:
-                for th in header_row.find_all(["th", "td"]):
-                    headers.append(th.get_text(strip=True))
-                    header_bold.append((th.name == "th") or (th.find(BOLD_TAGS) is not None))
+        header_row = thead.find("tr") if thead else None
+        if thead and header_row:
+            for th in header_row.find_all(["th", "td"]):
+                headers.append(th.get_text(strip=True))
+                header_bold.append((th.name == "th") or (th.find(BOLD_TAGS) is not None))
 
-        # 2. 收集数据行 <tr>，排除 <thead> 内的行
-        if thead:
+        # 2. 收集所有数据行
+        if thead and header_row:
+            # thead 有效，从 tbody 收集数据行
             tbody = table.find("tbody")
             if tbody is not None:
                 tr_elements = tbody.find_all("tr", recursive=False)
             else:
-                # 没有 tbody，取所有 tr 但排除 thead 内的
                 all_tr = table.find_all("tr", recursive=False)
                 tr_elements = [tr for tr in all_tr if tr.parent is not None and tr.parent.name != "thead"]
+            start_index = 0  # thead 已处理完，不需要跳过
         else:
-            # 没有 <thead>，所有 <tr> 均为数据区域，第一行将作为表头
+            # 没有有效 thead，所有 tr 作为数据区域
             tr_elements = table.find_all("tr", recursive=False)
+            start_index = 0
+            if len(tr_elements) >= 2:
+                # 第一行作为表头（仅当行数 >= 2 时提升）
+                first_tr = tr_elements[0]
+                for td in first_tr.find_all(["th", "td"]):
+                    headers.append(td.get_text(strip=True))
+                    is_bold = (td.name == "th") or (td.find(BOLD_TAGS) is not None)
+                    header_bold.append(is_bold)
+                start_index = 1
 
-        start_index = 0
-        if not thead and len(tr_elements) >= 2:
-            # 第一行即表头行，解析粗体语义（仅当行数 >= 2 时提升，否则所有行均为数据）
-            first_tr = tr_elements[0]
-            for td in first_tr.find_all(["th", "td"]):
-                headers.append(td.get_text(strip=True))
-                is_bold = (td.name == "th") or (td.find(BOLD_TAGS) is not None)
-                header_bold.append(is_bold)
-            start_index = 1
-
-        # 3. 遍历数据行（跳过已作为表头的第一行）
+        # 收集数据行（暂存，稍后对齐）
         for tr in tr_elements[start_index:]:
             row_data = []
             row_bold = []
@@ -1407,22 +1393,43 @@ class BaseParser(ABC):
                 row_data.append(td.get_text(strip=True))
                 row_bold.append(td.find(BOLD_TAGS) is not None)
             if row_data:
-                rows.append(row_data)
-                cell_bold.append(row_bold)
+                raw_rows_data.append(row_data)
+                raw_rows_bold.append(row_bold)
 
-        if not headers and not rows:
+        if not headers and not raw_rows_data:
             return None
 
-        # 极端情况兜底：没有任何行被解析为数据行，但 headers 为空
-        if not headers:
-            if rows:
-                headers = rows[0]
-                rows = rows[1:]
-                header_bold = cell_bold[0] if cell_bold else [False] * len(headers)
-                cell_bold = cell_bold[1:] if cell_bold else []
-            else:
-                headers = []
-                header_bold = []
+        # 3. 对齐列数
+        # 如果有有效 thead，以 thead 列数为准，不扩展表头
+        # 如果无 thead，计算最大列数（表头 + 数据行）
+        if thead and header_row:
+            max_cols = len(headers)
+        else:
+            max_cols = len(headers)
+            for row in raw_rows_data:
+                max_cols = max(max_cols, len(row))
+
+        # 对齐表头
+        if len(headers) < max_cols:
+            headers.extend([""] * (max_cols - len(headers)))
+            header_bold.extend([False] * (max_cols - len(header_bold)))
+
+        # 4. 对齐数据行并构建结果
+        rows = []
+        cell_bold = []
+        for i, row in enumerate(raw_rows_data):
+            if len(row) < max_cols:
+                row.extend([""] * (max_cols - len(row)))
+                raw_rows_bold[i].extend([False] * (max_cols - len(raw_rows_bold[i])))
+            rows.append(row)
+            cell_bold.append(raw_rows_bold[i])
+
+        # 极端情况兜底：表头为空但有数据行
+        if not headers and rows:
+            headers = rows[0]
+            header_bold = cell_bold[0] if cell_bold else [False] * len(headers)
+            rows = rows[1:]
+            cell_bold = cell_bold[1:] if cell_bold else []
 
         return TableData(headers=headers, rows=rows, header_bold=header_bold, cell_bold=cell_bold)
 

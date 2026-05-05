@@ -82,36 +82,60 @@ class TestDataClasses:
 
 
 class MockParser(BaseParser):
-    """模拟解析器，用于测试基类功能"""
+    """模拟解析器，模拟豆包平台的核心特征"""
 
     def __init__(self):
         self.config = PlatformConfig()
+        super().__init__()  # 必须调用父类构造器初始化标签处理器
 
     def _get_title_selectors(self):
-        return ["h1", ".title"]
+        return ["h1", ".chat-title"]
 
     def _is_math_element(self, element):
-        return False
+        return element.has_attr("copy-text")
 
     def _is_display_math(self, element):
-        return False
+        return "display" in (element.get("class") or [])
 
     def _is_code_container(self, element):
-        return False
+        # 宽松匹配：只要类名中包含 "code-container" 即视为代码容器
+        classes = element.get("class") or []
+        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
+        return "code-container" in class_str
 
     def _is_paragraph_container(self, element):
-        return False
+        classes = element.get("class") or []
+        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
+        return "paragraph" in class_str
 
     def _is_code_button(self, element):
-        return False
+        classes = element.get("class") or []
+        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
+        return "button-" in class_str
 
     def _extract_latex_content(self, element):
-        return ""
+        return element.get("copy-text", "")
 
     def _is_image_element(self, element):
-        return False
+        return element.name == "picture"
 
     def _extract_image_url(self, element):
+        """与 DoubaoHTMLParser 一致的 URL 提取逻辑"""
+        source = element.find("source")
+        if source:
+            srcset = source.get("srcset") or source.get("data-srcset")
+            if srcset and isinstance(srcset, str) and not srcset.startswith("data:"):
+                return srcset.split(",")[0].strip().split(" ")[0]
+
+        img = element.find("img")
+        if img:
+            current_src = img.get("currentSrc")
+            if current_src and isinstance(current_src, str) and not current_src.startswith("data:"):
+                return current_src
+            src = str(img.get("data-original") or img.get("data-src") or img.get("src") or "")
+            if src and isinstance(src, str) and not src.startswith("data:"):
+                return src
+
         return ""
 
 
@@ -135,7 +159,7 @@ class TestBaseParser:
     def test_extract_title_with_selector(self):
         """使用选择器提取标题"""
         parser = MockParser()
-        html = "<html><body><div class='title'>Custom Title</div></body></html>"
+        html = "<html><body><h1>Custom Title</h1></body></html>"
         result = parser.parse(html)
         assert result.title == "Custom Title"
 

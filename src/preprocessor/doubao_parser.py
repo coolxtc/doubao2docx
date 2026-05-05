@@ -25,6 +25,7 @@ class DoubaoHTMLParser(BaseParser):
             config = PlatformConfig(latex_attr=cfg.parser.latex_attr)
         self.config = config
         self._latex_fallback_count: int = 0  # LaTeX 解析失败次数（用于统计）
+        super().__init__()  # 初始化标签处理器映射
 
     def parse(self, html: str) -> ParsedPage:
         """

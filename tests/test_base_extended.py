@@ -1,6 +1,5 @@
 """
 测试解析器基类的扩展方法（高覆盖率修正版）
-修正了 4 个因 HTML 规范与解析器内部逻辑导致的测试失败
 """
 import pytest
 from pathlib import Path
@@ -13,62 +12,8 @@ from src.preprocessor.base import (
     WalkOptions,
 )
 
-
-class MockParser(BaseParser):
-    """模拟解析器，模拟豆包平台的核心特征"""
-
-    def __init__(self):
-        self.config = PlatformConfig()
-
-    def _get_title_selectors(self):
-        return ["h1", ".chat-title"]
-
-    def _is_math_element(self, element):
-        return element.has_attr("copy-text")
-
-    def _is_display_math(self, element):
-        return "display" in (element.get("class") or [])
-
-    def _is_code_container(self, element):
-        # 宽松匹配：只要类名中包含 "code-container" 即视为代码容器
-        classes = element.get("class") or []
-        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
-        return "code-container" in class_str
-
-    def _is_paragraph_container(self, element):
-        classes = element.get("class") or []
-        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
-        return "paragraph" in class_str
-
-    def _is_code_button(self, element):
-        classes = element.get("class") or []
-        class_str = " ".join(c for c in classes) if isinstance(classes, list) else str(classes)
-        return "button-" in class_str
-
-    def _extract_latex_content(self, element):
-        return element.get("copy-text", "")
-
-    def _is_image_element(self, element):
-        return element.name == "picture"
-
-    def _extract_image_url(self, element):
-        """与 DoubaoHTMLParser 一致的 URL 提取逻辑"""
-        source = element.find("source")
-        if source:
-            srcset = source.get("srcset") or source.get("data-srcset")
-            if srcset and isinstance(srcset, str) and not srcset.startswith("data:"):
-                return srcset.split(",")[0].strip().split(" ")[0]
-
-        img = element.find("img")
-        if img:
-            current_src = img.get("currentSrc")
-            if current_src and isinstance(current_src, str) and not current_src.startswith("data:"):
-                return current_src
-            src = str(img.get("data-original") or img.get("data-src") or img.get("src") or "")
-            if src and isinstance(src, str) and not src.startswith("data:"):
-                return src
-
-        return ""
+# 从 test_preprocessor 导入 MockParser
+from tests.test_preprocessor import MockParser
 
 
 # =============================================================================
@@ -805,7 +750,7 @@ class TestRealHTMLIntegration:
 
 
 # =============================================================================
-# 新增：内联结构检测测试（_should_parse_as_complex 升级后）
+# 新增：内联结构检测测试（_has_inline_structure 升级后）
 # =============================================================================
 
 class TestHasInlineStructure:
@@ -824,8 +769,8 @@ class TestHasInlineStructure:
             "lxml",
         )
         div = soup.find("div")
-        # _should_parse_as_complex 现在应返回 True（检测到 line-break div）
-        assert parser._should_parse_as_complex(div) is True
+        # _has_inline_structure 现在应返回 True（检测到 line-break div）
+        assert parser._has_inline_structure(div) is True
 
     def test_multiple_line_breaks_in_paragraph(self):
         """多行换行分隔的段落应走复杂解析
@@ -852,37 +797,37 @@ class TestHasInlineStructure:
         """纯文本段落不应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup("<p>纯文本内容</p>", "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is False
+        assert parser._has_inline_structure(soup.find("p")) is False
 
     def test_paragraph_with_strong_is_complex(self):
         """含加粗的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup("<p>text <strong>bold</strong></p>", "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
     def test_paragraph_with_em_is_complex(self):
         """含斜体的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup("<p>text <em>italic</em></p>", "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
     def test_paragraph_with_link_is_complex(self):
         """含链接的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup('<p>text <a href="#">link</a></p>', "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
     def test_paragraph_with_inline_code_is_complex(self):
         """含内联代码的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup("<p>text <code>code</code></p>", "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
     def test_paragraph_with_picture_is_complex(self):
         """含图片的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup('<p>text <picture><img src="a.jpg"/></picture></p>', "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
     def test_paragraph_with_image_wrapper_class(self):
         """含 image-wrapper 类的 div 应被检测
@@ -894,13 +839,13 @@ class TestHasInlineStructure:
             '<div class="paragraph-test">text <div class="image-wrapper"><img src="a.jpg"/></div></div>',
             "lxml",
         )
-        assert parser._should_parse_as_complex(soup.find("div")) is True
+        assert parser._has_inline_structure(soup.find("div")) is True
 
     def test_paragraph_with_br_is_complex(self):
         """含 br 标签的段落应被识别为复杂"""
         parser = MockParser()
         soup = BeautifulSoup("<p>line1<br/>line2</p>", "lxml")
-        assert parser._should_parse_as_complex(soup.find("p")) is True
+        assert parser._has_inline_structure(soup.find("p")) is True
 
 
 class TestPlatformSpecificInlineStructure:
@@ -928,4 +873,4 @@ class TestPlatformSpecificInlineStructure:
             '<div class="paragraph-test">text <div class="custom-break"></div>more</div>',
             "lxml",
         )
-        assert parser._should_parse_as_complex(soup.find("div")) is True
+        assert parser._has_inline_structure(soup.find("div")) is True
