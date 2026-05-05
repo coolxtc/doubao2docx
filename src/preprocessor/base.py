@@ -203,8 +203,8 @@ class _WalkContext:
 class BaseParser(ABC):
     """解析器抽象基类"""
     config: ClassVar[PlatformConfig]  # 平台配置（子类必须设置）
-    _tag_handlers: ClassVar[dict[str, Callable[[Tag, list[TextBlock]], None]]]  # 标签 → 处理方法映射
-    _walk_handler_map: ClassVar[dict[str, Callable[[Tag, Any], None]]]  # 内联遍历分派映射
+    _tag_handlers: dict[str, Callable[[Tag, list[TextBlock]], None]]  # 标签 → 处理方法映射
+    _walk_handler_map: dict[str, Callable[[Tag, "_WalkContext"], None]]  # 内联遍历分派映射
 
     def __init__(self) -> None:
         super().__init__()
