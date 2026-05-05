@@ -608,7 +608,7 @@ class BaseParser(ABC):
             blocks: 内容块列表
         """
         code_elem = element.find(HTML_CODE)
-        pre_elem = element.find(CODE_TAGS)
+        pre_elem = element.find(HTML_PRE)
 
         # 优先从 pre 标签提取代码
         if pre_elem:
