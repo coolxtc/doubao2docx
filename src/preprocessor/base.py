@@ -694,22 +694,8 @@ class BaseParser(ABC):
             level: 嵌套层级
         """
         has_nested_list = li.find(LIST_TAGS, recursive=False)
-        has_br = li.find(BREAK_TAGS) is not None or any(
-            isinstance(x, str) and "line-break" in x
-            for x in (li.get("class") or [])
-        ) or any(
-            isinstance(child, Tag) and child.name == HTML_DIV and self._has_any_class(child, self.config.line_break_classes)
-            for child in li.children
-        )
-        has_strong = li.find(BOLD_TAGS)
-        has_math = self._has_math_in_element(li)
-        has_em = li.find(ITALIC_TAGS)
-        has_picture = li.find(IMAGE_TAGS) is not None
-        has_table = li.find(TABLE_TAGS) is not None
-        has_pre = li.find(CODE_TAGS) is not None
-
-        # 包含内联内容的列表项
-        if has_br or has_strong or has_math or has_em or has_nested_list or has_picture or has_table or has_pre:
+        # 复用 _has_inline_structure 统一判断，支持 <a>, <u>, <small> 等所有内联格式标签
+        if has_nested_list or self._has_inline_structure(li):
             self._process_complex_list_item(li, blocks, list_type, level)
             return
 
@@ -791,6 +777,9 @@ class BaseParser(ABC):
                     # 将内部连续空白折叠为单个空格
                     text = re.sub(r'\s+', ' ', text)
                 if text:
+                    # 相邻文本节点间需插入空格，避免 "Hello<span>world</span>" → "Helloworld"
+                    if ctx.current_text and not ctx.current_text.endswith(' '):
+                        ctx.current_text += ' '
                     ctx.current_text += text
             elif isinstance(child, Tag):
                 # 公式元素（动态判断）
@@ -1399,15 +1388,10 @@ class BaseParser(ABC):
         if not headers and not raw_rows_data:
             return None
 
-        # 3. 对齐列数
-        # 如果有有效 thead，以 thead 列数为准，不扩展表头
-        # 如果无 thead，计算最大列数（表头 + 数据行）
-        if thead and header_row:
-            max_cols = len(headers)
-        else:
-            max_cols = len(headers)
-            for row in raw_rows_data:
-                max_cols = max(max_cols, len(row))
+        # 3. 对齐列数：始终以表头与所有数据行的最大列数为准
+        max_cols = len(headers)
+        for row in raw_rows_data:
+            max_cols = max(max_cols, len(row))
 
         # 对齐表头
         if len(headers) < max_cols:

@@ -669,8 +669,8 @@ class TestParseTableCellBold:
         soup = BeautifulSoup(html, "lxml")
         table_data = BaseParser._parse_table(soup.find("table"))
         assert table_data.cell_bold == [[False, True]]
-        # <th> 标签本身即为粗体
-        assert table_data.header_bold == [True]
+        # 数据行有2列，表头需对齐扩展至2列（原本1列）
+        assert table_data.header_bold == [True, False]
 
 
 class TestOlNestedCounter:
