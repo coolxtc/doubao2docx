@@ -728,20 +728,6 @@ class TestParseTableCellBold:
         assert table_data.header_bold == [True]
 
 
-class TestContainsBlockElements:
-    """覆盖 _contains_block_elements 方法"""
-
-    def test_contains_block_elements_true(self):
-        parser = MockParser()
-        soup = BeautifulSoup("<div><h2>heading</h2></div>", "lxml")
-        assert parser._contains_block_elements(soup.find("div")) is True
-
-    def test_contains_block_elements_false(self):
-        parser = MockParser()
-        soup = BeautifulSoup("<div><span>text</span></div>", "lxml")
-        assert parser._contains_block_elements(soup.find("div")) is False
-
-
 class TestOlNestedCounter:
     """覆盖有序列表嵌套时计数器仍正确递增"""
 

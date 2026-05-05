@@ -3,10 +3,10 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, ClassVar, Optional
 
 from bs4 import BeautifulSoup, Tag
-from bs4.element import NavigableString, PageElement
+from bs4.element import Comment, NavigableString, PageElement
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,9 @@ SECTION_TAGS = ("section",)  # 区域标签（单元素元组）
 INLINE_TAGS = ("strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark")  # 所有内联格式标签
 INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
+
+# 用于 _has_inline_structure 快速判断的复合块级标签集合
+_INLINE_STRUCTURE_BLOCK_TAGS = set(IMAGE_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS)
 
 # =============================================================================
 # 单个标签名常量（用于精确匹配，与标签组常量并存）
@@ -199,8 +202,9 @@ class _WalkContext:
 
 class BaseParser(ABC):
     """解析器抽象基类"""
-    config: PlatformConfig  # 平台配置（子类必须设置）
-    _tag_handlers: dict[str, Callable[[Tag, list[TextBlock]], None]]  # 标签 → 处理方法映射
+    config: ClassVar[PlatformConfig]  # 平台配置（子类必须设置）
+    _tag_handlers: ClassVar[dict[str, Callable[[Tag, list[TextBlock]], None]]]  # 标签 → 处理方法映射
+    _walk_handler_map: ClassVar[dict[str, Callable[[Tag, Any], None]]]  # 内联遍历分派映射
 
     def __init__(self) -> None:
         super().__init__()
@@ -414,8 +418,10 @@ class BaseParser(ABC):
         return any(c in class_names for c in classes)
 
     def _skip_whitespace_siblings(self, prev_sibling: PageElement | None) -> PageElement | None:
-        """跳过连续的空白文本兄弟节点"""
-        while prev_sibling is not None and isinstance(prev_sibling, NavigableString) and not str(prev_sibling).strip():
+        """跳过连续的空白文本兄弟节点和注释节点"""
+        while (prev_sibling is not None
+               and isinstance(prev_sibling, NavigableString)
+               and (isinstance(prev_sibling, Comment) or not str(prev_sibling).strip())):
             prev_sibling = prev_sibling.previous_sibling
         return prev_sibling
 
@@ -455,6 +461,8 @@ class BaseParser(ABC):
         for child in container.children:
             try:
                 if isinstance(child, NavigableString):
+                    if isinstance(child, Comment):
+                        continue
                     text = str(child).strip()
                     if text:
                         blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
@@ -521,9 +529,9 @@ class BaseParser(ABC):
         3. 如果是公式元素 → 作为独立公式块。
         4. 如果是代码容器 → 提取代码。
         5. 如果是图片元素 → 提取为图片块。
-        6. 如果是段落容器 → 按段落处理。
-        7. 如果只包含单个 <p> 子元素 → 直接处理该段落。
-        8. 如果是图片包装器（含有特定类名）→ 提取内部所有图片。
+        6. 如果是图片包装器（含有特定类名）→ 提取内部所有图片。
+        7. 如果是段落容器 → 按段落处理。
+        8. 如果只包含单个 <p> 子元素 → 直接处理该段落。
         9. 其他情况 → 递归提取内部块级元素。
         """
         # line-break div：块级换行符处理
@@ -559,18 +567,18 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
             return
 
-        # 段落容器
-        if self._is_paragraph_container(element):
-            self._process_paragraph(element, blocks)
-            return
-
-        # 图片包装器（提前检查）
+        # 图片包装器
         if self._has_any_class(element, [self.config.image_wrapper_class]):
             pics = element.find_all(IMAGE_TAGS)
             for pic in pics:
                 url = self._extract_image_url(pic)
                 if url:
                     blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
+            return
+
+        # 段落容器
+        if self._is_paragraph_container(element):
+            self._process_paragraph(element, blocks)
             return
 
         # 查找单个 p 子元素（用于包裹简单段落）
@@ -657,9 +665,9 @@ class BaseParser(ABC):
         """
         list_items = element.find_all(HTML_LI, recursive=False)
         for i, li in enumerate(list_items):
-            self._process_list_item(li, blocks, list_type, i + 1, level)
+            self._process_list_item(li, blocks, list_type, level)
 
-    def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", index: int = 1, level: int = 0) -> None:
+    def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", level: int = 0) -> None:
         """
         处理单个列表项
 
@@ -672,7 +680,6 @@ class BaseParser(ABC):
             li: li 元素
             blocks: 内容块列表
             list_type: 列表类型 ("ul" 或 "ol")
-            index: 列表项序号（当前未使用，保留参数兼容性）
             level: 嵌套层级
         """
         has_nested_list = li.find(LIST_TAGS, recursive=False)
@@ -684,7 +691,7 @@ class BaseParser(ABC):
             for child in li.children
         )
         has_strong = li.find(BOLD_TAGS)
-        has_math = self._find_math_in_element(li)
+        has_math = self._has_math_in_element(li)
         has_em = li.find(ITALIC_TAGS)
         has_picture = li.find(IMAGE_TAGS) is not None
         has_table = li.find(TABLE_TAGS) is not None
@@ -735,7 +742,7 @@ class BaseParser(ABC):
         *,
         parent_bold: bool = False,
         parent_italic: bool = False,
-        options: WalkOptions = None,
+        options: Optional[WalkOptions] = None,
     ) -> list[InlineContent]:
         """
         统一遍历内联子元素并返回 InlineContent 列表
@@ -770,6 +777,8 @@ class BaseParser(ABC):
         # 使用缓存的分派映射
         for child in element.children:
             if isinstance(child, NavigableString):
+                if isinstance(child, Comment):
+                    continue
                 text = str(child).strip() if ctx.options.strip_nav_strings else str(child)
                 if text:
                     ctx.current_text += text
@@ -821,6 +830,10 @@ class BaseParser(ABC):
         # 代码块
         for tag in CODE_TAGS:
             h[tag] = self._walk_handle_code
+
+        # 内联代码
+        for tag in INLINE_CODE_TAGS:
+            h[tag] = self._walk_handle_inline_code
 
         # 段落容器
         for tag in PARAGRAPH_TAGS:
@@ -953,6 +966,17 @@ class BaseParser(ABC):
                                bold=ctx.current_bold, italic=ctx.current_italic,
                                language=language))
 
+    def _walk_handle_inline_code(self, child: Tag, ctx: _WalkContext) -> None:
+        """处理内联代码标签 (code)"""
+        ctx.flush()
+        code_content = child.get_text()  # 保留内部空格，不 strip
+        ctx.items.append(InlineContent(
+            type=INLINE_CODE,
+            content=code_content,
+            bold=ctx.current_bold,
+            italic=ctx.current_italic,
+        ))
+
     def _walk_handle_paragraph(self, child: Tag, ctx: _WalkContext) -> None:
         """处理段落 (p)"""
         ctx.flush()
@@ -977,23 +1001,17 @@ class BaseParser(ABC):
             self._walk_handle_line_break_div(child, ctx)
             return
 
-        if ctx.options.parse_div_span_inline:
-            if self._contains_block_elements(child):
-                # 内联容器中包含块级元素，不扁平化，提取纯文本并保留格式状态
-                saved_bold = ctx.current_bold
-                saved_italic = ctx.current_italic
-                ctx.flush()
-                text = child.get_text(strip=True)
-                if text:
-                    ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n" + text + "\n", bold=saved_bold, italic=saved_italic))
-            else:
-                ctx.flush()
-                ctx.items.extend(
-                    self._walk_inline_children(
-                        child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
-                        options=ctx.options,
-                    )
-                )
+        if not ctx.options.parse_div_span_inline:
+            return  # 不解析内联内容
+
+        # 统一递归处理内联子元素，不再区分是否包含块级元素
+        ctx.flush()
+        ctx.items.extend(
+            self._walk_inline_children(
+                child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
+                options=ctx.options,
+            )
+        )
 
     def _walk_default_handler(self, child: Tag, ctx: _WalkContext) -> None:
         """默认处理（其他标签）"""
@@ -1063,6 +1081,8 @@ class BaseParser(ABC):
         texts = []
         for child in element.children:
             if isinstance(child, str):
+                if isinstance(child, Comment):
+                    continue
                 text = str(child).strip()
                 if text:
                     texts.append(text)
@@ -1083,6 +1103,9 @@ class BaseParser(ABC):
             italic: 斜体状态
         """
         for pic in li.find_all(IMAGE_TAGS):
+            # 跳过嵌套列表内部的图片，避免重复提取
+            if self._inside_nested_list(pic, li):
+                continue
             url = self._extract_image_url(pic)
             if url:
                 items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
@@ -1168,7 +1191,7 @@ class BaseParser(ABC):
             if child.name in BREAK_TAGS:
                 return True
             # 段落内嵌块级元素（异常但应保留）
-            if child.name in list(IMAGE_TAGS) + list(TABLE_TAGS) + list(CODE_TAGS):
+            if child.name in _INLINE_STRUCTURE_BLOCK_TAGS:
                 return True
             if child.name in PARAGRAPH_TAGS:
                 return True
@@ -1313,19 +1336,18 @@ class BaseParser(ABC):
             if isinstance(el, Tag) and self._is_math_element(el)
         ]
 
-    def _contains_block_elements(self, element: Tag) -> bool:
+    def _has_math_in_element(self, element: Tag) -> bool:
         """
-        检查元素是否包含块级子元素
+        快速检查元素子孙中是否存在公式元素（短路求值）
 
         Args:
             element: HTML 元素
 
         Returns:
-            如果包含块级元素返回 True，否则返回 False
+            True 如果存在公式元素，否则 False
         """
-        block_tags = set(HEADING_TAGS) | set(LIST_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS) | set(BLOCKQUOTE_TAGS)
-        for child in element.descendants:
-            if isinstance(child, Tag) and child.name in block_tags:
+        for el in element.descendants:
+            if isinstance(el, Tag) and self._is_math_element(el):
                 return True
         return False
 
@@ -1368,8 +1390,8 @@ class BaseParser(ABC):
             tr_elements = table.find_all("tr", recursive=False)
 
         start_index = 0
-        if not thead and tr_elements:
-            # 第一行即表头行，解析粗体语义
+        if not thead and len(tr_elements) >= 2:
+            # 第一行即表头行，解析粗体语义（仅当行数 >= 2 时提升，否则所有行均为数据）
             first_tr = tr_elements[0]
             for td in first_tr.find_all(["th", "td"]):
                 headers.append(td.get_text(strip=True))
@@ -1407,7 +1429,7 @@ class BaseParser(ABC):
     @staticmethod
     def _strip_latex_delimiters(latex: str) -> str:
         """
-        去除 LaTeX 公式的边界符
+        去除 LaTeX 公式的边界符（成对匹配）
 
         Args:
             latex: LaTeX 公式字符串
@@ -1418,10 +1440,10 @@ class BaseParser(ABC):
         latex = latex.strip()
         if latex.startswith("\\[") and latex.endswith("\\]"):
             return latex[2:-2]
-        if latex.startswith("$$") and latex.endswith("$$"):
+        elif latex.startswith("$$") and latex.endswith("$$"):
             return latex[2:-2]
-        if latex.startswith("\\(") and latex.endswith("\\)"):
+        elif latex.startswith("\\(") and latex.endswith("\\)"):
             return latex[2:-2]
-        if latex.startswith("$") and latex.endswith("$"):
+        elif latex.startswith("$") and latex.endswith("$"):
             return latex[1:-1]
         return latex
