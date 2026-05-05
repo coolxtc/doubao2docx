@@ -32,6 +32,7 @@ INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
 
 # 用于 _has_inline_structure 快速判断的复合块级标签集合
+# 注意：这里仅包含 <picture> 块级图片元素，<img> 由子类 _is_image_element 动态识别。
 _INLINE_STRUCTURE_BLOCK_TAGS = set(IMAGE_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS)
 
 # =============================================================================
@@ -39,19 +40,12 @@ _INLINE_STRUCTURE_BLOCK_TAGS = set(IMAGE_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS
 # =============================================================================
 
 HTML_DIV = "div"
-HTML_SPAN = "span"
-HTML_UL = "ul"
-HTML_OL = "ol"
 HTML_LI = "li"
-HTML_P = "p"
-HTML_BR = "br"
 HTML_PRE = "pre"
 HTML_CODE = "code"
-HTML_TABLE = "table"
 HTML_PICTURE = "picture"
-HTML_BLOCKQUOTE = "blockquote"
-HTML_SECTION = "section"
-HTML_A = "a"
+HTML_UL = "ul"
+HTML_OL = "ol"
 
 # =============================================================================
 # Block / Inline 内容类型常量
@@ -80,13 +74,6 @@ INLINE_NON_TEXT_TYPES = (INLINE_LATEX, INLINE_IMAGE, INLINE_TABLE, INLINE_CODE)
 # LaTeX 公式语言标识
 LATEX_DISPLAY = "display"
 LATEX_INLINE = "inline"
-
-# =============================================================================
-# 类型别名
-# =============================================================================
-
-FlushFunc = Callable[[], None]  # flush 回调函数类型
-
 
 # =============================================================================
 # 数据类型
@@ -733,6 +720,25 @@ class BaseParser(ABC):
             if valid_items:
                 blocks.append(TextBlock(type=BLOCK_LIST_ITEM, content="", language=list_type, items=valid_items, level=level))
 
+    def _append_normalized_text(self, text: str, ctx: _WalkContext) -> None:
+        """
+        将文本按照选项规范化后追加到上下文累积文本中。
+
+        确保相邻单词间保持空格分隔（如 `<p>Hello<span>world</span></p>` 不会变成 "Helloworld"）。
+
+        Args:
+            text: 原始文本
+            ctx: 遍历上下文
+        """
+        if ctx.options.strip_nav_strings:
+            text = text.strip()
+            text = re.sub(r'\s+', ' ', text)
+        if not text:
+            return
+        if ctx.current_text and not ctx.current_text.endswith(' '):
+            ctx.current_text += ' '
+        ctx.current_text += text
+
     def _walk_inline_children(
         self,
         element: Tag,
@@ -771,16 +777,7 @@ class BaseParser(ABC):
             if isinstance(child, NavigableString):
                 if isinstance(child, Comment):
                     continue
-                text = str(child)
-                if ctx.options.strip_nav_strings:
-                    text = text.strip()
-                    # 将内部连续空白折叠为单个空格
-                    text = re.sub(r'\s+', ' ', text)
-                if text:
-                    # 相邻文本节点间需插入空格，避免 "Hello<span>world</span>" → "Helloworld"
-                    if ctx.current_text and not ctx.current_text.endswith(' '):
-                        ctx.current_text += ' '
-                    ctx.current_text += text
+                self._append_normalized_text(str(child), ctx)
             elif isinstance(child, Tag):
                 # 公式元素（动态判断）
                 if self._is_math_element(child):
@@ -1004,8 +1001,7 @@ class BaseParser(ABC):
     def _walk_default_handler(self, child: Tag, ctx: _WalkContext) -> None:
         """默认处理（其他标签）"""
         sub_text = child.get_text(strip=False)
-        if sub_text:
-            ctx.current_text += sub_text
+        self._append_normalized_text(sub_text, ctx)
 
     # -------------------------------------------------------------------------
     # 通用辅助 / 提取方法
