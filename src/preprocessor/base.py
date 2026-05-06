@@ -1323,30 +1323,36 @@ class BaseParser(ABC):
                 header_bold.append((th.name == "th") or (th.find(BOLD_TAGS) is not None))
 
         # 2. 收集所有数据行
-        if thead and header_row:
-            # thead 有效，从 tbody 收集数据行
-            tbody = table.find("tbody")
-            if tbody is not None:
-                tr_elements = tbody.find_all("tr", recursive=False)
-            else:
-                all_tr = table.find_all("tr", recursive=False)
-                tr_elements = [tr for tr in all_tr if tr.parent is not None and tr.parent.name != "thead"]
-            start_index = 0  # thead 已处理完，不需要跳过
-        else:
-            # 没有有效 thead，所有 tr 作为数据区域
-            tr_elements = table.find_all("tr", recursive=False)
-            start_index = 0
-            if len(tr_elements) >= 2:
-                # 第一行作为表头（仅当行数 >= 2 时提升）
-                first_tr = tr_elements[0]
-                for td in first_tr.find_all(["th", "td"]):
-                    headers.append(td.get_text(strip=True))
-                    is_bold = (td.name == "th") or (td.find(BOLD_TAGS) is not None)
-                    header_bold.append(is_bold)
-                start_index = 1
+        data_rows: list[Tag] = []
+
+        # 优先从 <tbody> 提取
+        tbody = table.find("tbody")
+        if tbody:
+            data_rows = tbody.find_all("tr", recursive=False)
+
+        # 若仍为空，尝试 <tfoot>
+        if not data_rows:
+            tfoot = table.find("tfoot")
+            if tfoot:
+                data_rows = tfoot.find_all("tr", recursive=False)
+
+        # 兜底：从 table 直接子级收集
+        if not data_rows:
+            all_direct_tr = table.find_all("tr", recursive=False)
+            if header_row is not None and header_row in all_direct_tr:
+                all_direct_tr.remove(header_row)
+            data_rows = all_direct_tr
+
+        # 没有显式表头但数据行足够，提升第一行为表头
+        if not headers and len(data_rows) >= 2:
+            first_tr = data_rows.pop(0)
+            for td in first_tr.find_all(["th", "td"]):
+                headers.append(td.get_text(strip=True))
+                is_bold = (td.name == "th") or (td.find(BOLD_TAGS) is not None)
+                header_bold.append(is_bold)
 
         # 收集数据行（暂存，稍后对齐）
-        for tr in tr_elements[start_index:]:
+        for tr in data_rows:
             row_data = []
             row_bold = []
             for td in tr.find_all(["th", "td"]):

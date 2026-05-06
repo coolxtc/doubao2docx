@@ -879,3 +879,192 @@ class TestPlatformSpecificInlineStructure:
             "lxml",
         )
         assert parser._has_inline_structure(soup.find("div")) is True
+
+
+# =============================================================================
+# 表格解析扩展测试（覆盖 thead/tbody/tfoot 标准结构）
+# =============================================================================
+
+class TestParseTableStandardStructure:
+    """覆盖标准 <thead>/<tbody> 表格结构的解析"""
+
+    def test_standard_thead_tbody_table(self):
+        """标准 thead+tbody 结构：数据行应完整保留"""
+        html = """
+        <table>
+          <thead><tr><th>Header1</th><th>Header2</th></tr></thead>
+          <tbody>
+            <tr><td>A1</td><td>B1</td></tr>
+            <tr><td>A2</td><td>B2</td></tr>
+          </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        assert table_data.headers == ["Header1", "Header2"]
+        assert table_data.rows == [["A1", "B1"], ["A2", "B2"]]
+        assert len(table_data.rows) == 2
+
+    def test_thead_tbody_tfoot_table(self):
+        """含 tbody 和 tfoot 的标准表格：优先从 tbody 提取，忽略 tfoot"""
+        html = """
+        <table>
+          <thead><tr><th>H1</th><th>H2</th></tr></thead>
+          <tbody>
+            <tr><td>D1</td><td>D2</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td>F1</td><td>F2</td></tr>
+          </tfoot>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        # tbody 存在时优先使用，tfoot 被忽略
+        assert table_data.rows == [["D1", "D2"]]
+
+    def test_tfoot_only_no_tbody(self):
+        """仅有 tfoot 无 tbody 的表格：从 tfoot 提取数据"""
+        html = """
+        <table>
+          <thead><tr><th>H1</th><th>H2</th></tr></thead>
+          <tfoot>
+            <tr><td>F1</td><td>F2</td></tr>
+          </tfoot>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        assert table_data.rows == [["F1", "F2"]]
+
+    def test_empty_tbody_fallback_to_direct_tr(self):
+        """tbody 存在但为空：回退到直接子级 tr"""
+        html = """
+        <table>
+          <thead><tr><th>H1</th><th>H2</th></tr></thead>
+          <tbody></tbody>
+          <tr><td>D1</td><td>D2</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        assert table_data.headers == ["H1", "H2"]
+        assert table_data.rows == [["D1", "D2"]]
+
+    def test_empty_tbody_fallback_to_tfoot(self):
+        """tbody 存在但为空：回退到 tfoot"""
+        html = """
+        <table>
+          <thead><tr><th>H1</th><th>H2</th></tr></thead>
+          <tbody></tbody>
+          <tfoot>
+            <tr><td>F1</td><td>F2</td></tr>
+          </tfoot>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        assert table_data.headers == ["H1", "H2"]
+        assert table_data.rows == [["F1", "F2"]]
+
+    def test_tbody_only_no_thead(self):
+        """仅有 tbody 的表格：若无表头且行数>=2，第一行提升为表头"""
+        html = """
+        <table>
+          <tbody>
+            <tr><td>R1C1</td><td>R1C2</td></tr>
+            <tr><td>R2C1</td><td>R2C2</td></tr>
+            <tr><td>R3C1</td><td>R3C2</td></tr>
+          </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        # 第一行提升为表头
+        assert table_data.headers == ["R1C1", "R1C2"]
+        # 剩余两行为数据
+        assert table_data.rows == [["R2C1", "R2C2"], ["R3C1", "R3C2"]]
+
+    def test_single_row_tbody_no_header_promotion(self):
+        """仅有一行数据的 tbody：表头扩展为空，数据行保留"""
+        html = """
+        <table>
+          <tbody>
+            <tr><td>Only</td><td>Row</td></tr>
+          </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        # 原代码行为：单行时 headers 扩展为空（与数据行列数对齐），rows 保留
+        assert table_data.headers == ["", ""]
+        assert table_data.rows == [["Only", "Row"]]
+
+    def test_direct_tr_children_no_tbody(self):
+        """无 tbody 但有直接 tr 子级的非规范表格：无表头时第一行提升为表头"""
+        html = """
+        <table>
+          <tr><td>D1</td><td>D2</td></tr>
+          <tr><td>D3</td><td>D4</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        # 第一行提升为表头，剩余行作为数据
+        assert table_data.headers == ["D1", "D2"]
+        assert table_data.rows == [["D3", "D4"]]
+
+    def test_thead_with_direct_tr_siblings(self):
+        """thead 存在但 tbody 缺失，数据行在 table 直接子级的非规范写法"""
+        html = """
+        <table>
+          <thead><tr><th>H1</th><th>H2</th></tr></thead>
+          <tr><td>D1</td><td>D2</td></tr>
+          <tr><td>D3</td><td>D4</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        assert table_data.headers == ["H1", "H2"]
+        assert table_data.rows == [["D1", "D2"], ["D3", "D4"]]
+
+    def test_empty_table_returns_table_data(self):
+        """空表格（有表头无数据行）返回带表头的 TableData，不返回 None"""
+        html = "<table><thead><tr><th>Only Header</th></tr></thead></table>"
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        # 有表头但无数据行时返回 TableData（空 rows），不返回 None
+        assert table_data is not None
+        assert table_data.headers == ["Only Header"]
+        assert table_data.rows == []
+        assert table_data.header_bold == [True]
+
+    def test_column_alignment_with_thead_tbody(self):
+        """标准结构下列对齐：表头列数小于数据行时扩展"""
+        html = """
+        <table>
+          <thead><tr><th>H</th></tr></thead>
+          <tbody>
+            <tr><td>A1</td><td>A2</td></tr>
+            <tr><td>B1</td><td>B2</td><td>B3</td></tr>
+          </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table_data = BaseParser._parse_table(soup.find("table"))
+        assert table_data is not None
+        # 表头应扩展至3列
+        assert table_data.headers == ["H", "", ""]
+        assert table_data.header_bold == [True, False, False]
+        # 数据行对齐
+        assert table_data.rows[0] == ["A1", "A2", ""]
+        assert table_data.rows[1] == ["B1", "B2", "B3"]
