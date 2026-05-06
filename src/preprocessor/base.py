@@ -414,6 +414,29 @@ class BaseParser(ABC):
         """判断代码块是否已展开（属性值为 'true'）"""
         return element.get(self.config.code_expanded_attr) == "true"
 
+    def _get_meaningful_children(self, element: Tag) -> list[PageElement]:
+        """
+        返回有意义（非注释、非空白文本）的子节点列表
+
+        用于判断"唯一子元素"场景，过滤掉干扰判断的空白和注释。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            有实质内容的子节点列表
+        """
+        result: list[PageElement] = []
+        for child in element.children:
+            if isinstance(child, Comment):
+                continue
+            if isinstance(child, NavigableString):
+                if str(child).strip():
+                    result.append(child)
+            elif isinstance(child, Tag):
+                result.append(child)
+        return result
+
     def _skip_whitespace_siblings(self, prev_sibling: PageElement | None) -> PageElement | None:
         """跳过连续的空白文本兄弟节点和注释节点"""
         while (prev_sibling is not None
@@ -577,20 +600,16 @@ class BaseParser(ABC):
             return
 
         # 查找单个 p 子元素（用于包裹简单段落）
-        p_child = None
-        for child in element.children:
-            if isinstance(child, Tag) and child.name in PARAGRAPH_TAGS:
-                if p_child is None:
-                    p_child = child
-                else:
-                    p_child = None
-                    break
+        # 过滤掉空白文本和注释节点，确保"唯一子节点"的判断准确
+        meaningful_children = self._get_meaningful_children(element)
 
-        # 单个 p 子元素：直接处理
-        if p_child:
-            self._process_element(p_child, blocks)
+        if (len(meaningful_children) == 1
+                and isinstance(meaningful_children[0], Tag)
+                and meaningful_children[0].name in PARAGRAPH_TAGS):
+            # 唯一有意义子节点是 <p>，直接处理该段落
+            self._process_element(meaningful_children[0], blocks)
         else:
-            # 其他情况：递归提取子元素
+            # 其他情况：递归提取所有块
             sub_blocks = self._extract_blocks(element)
             blocks.extend(sub_blocks)
 
