@@ -749,9 +749,9 @@ class TestCoverageImprovements:
         with patch.object(doc_builder.document, 'add_paragraph') as mock_add_para:
             mock_para = MagicMock()
             mock_add_para.return_value = mock_para
-            need_new_para, para, last_run, prev_latex = doc_builder._handle_inline_image_item("http://example.com/pic.png")
+            need_new_para, para, last_run, prev_latex = doc_builder._handle_inline_image_item("http://example.com/pic.png", level=1)
             assert need_new_para is True
-            assert para is None
+            assert para is mock_para  # 修改后：返回段落以便应用缩进
             assert prev_latex is False
             mock_para.add_run.assert_called()  # 至少调用了 add_run
 

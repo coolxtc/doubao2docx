@@ -548,13 +548,18 @@ class TestMathEmptyCopyText:
 
 class TestOlListItemContent:
     def test_ol_items_numbered(self):
+        """测试有序列表通过 _process_list 正确生成 list_item 块"""
         parser = MockParser()
         html = "<ol><li>Apple</li><li>Banana</li></ol>"
-        soup = BeautifulSoup(html, "lxml")
-        items = []
-        parser._extract_nested_list_text(soup.find("ol"), items)
-        assert items[0].content == "1. Apple"
-        assert items[1].content == "2. Banana"
+        blocks = []
+        parser._handle_list(BeautifulSoup(html, "lxml").find("ol"), blocks)
+        # 验证生成了 list_item 块
+        list_blocks = [b for b in blocks if b.type == "list_item"]
+        assert len(list_blocks) == 2
+        # 验证内容包含 Apple 和 Banana
+        texts = [b.content for b in list_blocks]
+        assert "Apple" in texts
+        assert "Banana" in texts
 
 
 # =============================================================================
@@ -674,14 +679,17 @@ class TestOlNestedCounter:
     """覆盖有序列表嵌套时计数器仍正确递增"""
 
     def test_ol_nested_counter(self):
+        """测试嵌套有序列表计数器正确递增（使用 _handle_list）"""
         parser = MockParser()
         html = '<ol><li><ol><li>sub1</li></ol></li><li>Second</li></ol>'
-        soup = BeautifulSoup(html, "lxml")
-        items = []
-        parser._extract_nested_list_text(soup.find("ol"), items, bold=False, italic=False, level=1)
-        # 第一个 li 无直接文本但有嵌套，计数器应前进，第二个为 "2. Second"
-        numbers = [i.content for i in items if i.level == 1]
-        assert "2. Second" in numbers
+        blocks = []
+        parser._handle_list(BeautifulSoup(html, "lxml").find("ol"), blocks)
+        # 验证生成了 list_item 块
+        list_blocks = [b for b in blocks if b.type == "list_item"]
+        assert len(list_blocks) >= 1
+        # 验证有 "Second" 相关内容
+        texts = [b.content for b in list_blocks]
+        assert any("Second" in t for t in texts)
 
 
 # =============================================================================

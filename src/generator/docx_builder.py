@@ -12,6 +12,7 @@ import requests
 
 from copy import deepcopy
 from docx import Document
+from docx.text.paragraph import Paragraph
 from lxml.etree import _Element as Element
 from docx.oxml.ns import qn
 from docx.oxml import parse_xml
@@ -283,8 +284,17 @@ class DocxBuilder:
                 for run in para.runs:
                     self._set_run_font(run)
 
-    def _handle_list_marker_item(self, item: InlineContent, level: int) -> None:
-        """处理带列表标记的文本项"""
+    def _handle_list_marker_item(self, item: InlineContent, level: int) -> Paragraph:
+        """
+        处理带列表标记的文本项，返回创建的段落供后续文本项复用
+
+        Args:
+            item: 内联文本项
+            level: 嵌套层级
+
+        Returns:
+            Paragraph: 创建的列表段落
+        """
         para = self.document.add_paragraph(style="List Bullet")
         run = para.add_run(item.content)
         self._set_run_font(run)
@@ -295,6 +305,7 @@ class DocxBuilder:
         item_level = getattr(item, 'level', level)
         if item_level > 0:
             para.paragraph_format.left_indent = Inches(item_level * 0.5)
+        return para
 
     def _handle_inline_text_item(self, para, item: InlineContent, last_run, last_was_break: bool, prev_was_latex: bool) -> tuple:
         """
@@ -340,12 +351,13 @@ class DocxBuilder:
                 last_run = run
         return last_run, last_was_break, False, False
 
-    def _handle_inline_image_item(self, url: str) -> tuple:
+    def _handle_inline_image_item(self, url: str, level: int = 0) -> tuple:
         """
         处理内联图片项
 
         Args:
             url: 图片 URL
+            level: 嵌套层级（用于缩进）
 
         Returns:
             tuple: (need_new_para, para, last_run, prev_was_latex)
@@ -359,6 +371,8 @@ class DocxBuilder:
                     temp_path = f.name
                 max_width = Inches(self.config.style_config.inline_image_width if self.config.style_config else 4.0)
                 para = self.document.add_paragraph()
+                if level > 0:
+                    para.paragraph_format.left_indent = Inches(level * 0.5)
                 para.add_run().add_picture(temp_path, width=max_width)
             except Exception:
                 self._record_image_failure(url)
@@ -367,16 +381,19 @@ class DocxBuilder:
                     os.unlink(temp_path)
         else:
             self._record_image_failure(url or "(空URL)")
-        return True, None, None, False
+            para = self.document.add_paragraph("[图片加载失败]")
+            if level > 0:
+                para.paragraph_format.left_indent = Inches(level * 0.5)
+        return True, para, None, False
 
-    def _handle_inline_table_item(self, item: InlineContent) -> tuple:
+    def _handle_inline_table_item(self, item: InlineContent, level: int = 0) -> tuple:
         """处理内联表格项"""
         self._add_table(item.data)
         return True, None, None, False
 
-    def _handle_inline_code_item(self, item: InlineContent) -> tuple:
+    def _handle_inline_code_item(self, item: InlineContent, level: int = 0) -> tuple:
         """处理内联代码块项"""
-        self._add_code_block(item.content)
+        self._add_code_block(item.content, level=level)
         return True, None, None, False
 
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
@@ -409,11 +426,16 @@ class DocxBuilder:
         prev_was_latex = False  # 上一个元素是否为公式
         need_new_para = False  # 标记是否需要在下一个可写内容前创建续写段落
         last_was_break = False  # 上一个添加的内容是否为换行符（用于合并连续换行）
+        current_item_level = level  # 初始层级
 
         for item in items:
-            # 有列表标记时，创建新的无序列表段落
+            # 更新当前层级（item 有 level 时）
+            if item.level > 0:
+                current_item_level = item.level
+
+            # 有列表标记时，创建新的无序列表段落，并复用给后续文本项
             if item.list_marker and item.type == "text":
-                self._handle_list_marker_item(item, level)
+                para = self._handle_list_marker_item(item, current_item_level)
                 last_run = None
                 prev_was_latex = False
                 need_new_para = False
@@ -424,10 +446,12 @@ class DocxBuilder:
             if item.type == "text":
                 if need_new_para or para is None:
                     if need_new_para:
-                        para = self._create_continuation_paragraph(list_type, level)
+                        para = self._create_continuation_paragraph(list_type, current_item_level)
                         need_new_para = False
                     else:
                         para = self.document.add_paragraph()
+                        if current_item_level > 0:
+                            para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
                     last_run = None
                     last_was_break = False
                 last_run, last_was_break, prev_was_latex, _ = self._handle_inline_text_item(
@@ -448,10 +472,12 @@ class DocxBuilder:
             if item.type == "latex":
                 if need_new_para or para is None:
                     if need_new_para:
-                        para = self._create_continuation_paragraph(list_type, level)
+                        para = self._create_continuation_paragraph(list_type, current_item_level)
                         need_new_para = False
                     else:
                         para = self.document.add_paragraph()
+                        if current_item_level > 0:
+                            para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
                     last_run = None
                     last_was_break = False
                 self._add_latex_to_paragraph(para, item.content, is_display=False, as_standalone=False)
@@ -461,18 +487,18 @@ class DocxBuilder:
 
             # 图片
             if item.type == "image" and item.image_url:
-                need_new_para, para, last_run, prev_was_latex = self._handle_inline_image_item(item.image_url)
+                need_new_para, para, last_run, prev_was_latex = self._handle_inline_image_item(item.image_url, current_item_level)
                 continue
 
             # 表格
             if item.type == "table":
-                need_new_para, para, last_run, _ = self._handle_inline_table_item(item)
+                need_new_para, para, last_run, _ = self._handle_inline_table_item(item, current_item_level)
                 prev_was_latex = False
                 continue
 
             # 代码块
             if item.type == "code":
-                need_new_para, para, last_run, _ = self._handle_inline_code_item(item)
+                need_new_para, para, last_run, _ = self._handle_inline_code_item(item, current_item_level)
                 prev_was_latex = False
                 continue
 
@@ -772,18 +798,21 @@ class DocxBuilder:
             return '\\text{' + '~' * len(spaces)
         return re.sub(r'\\text\{( +)', _replace_spaces, latex)
 
-    def _add_code_block(self, code: str, language: Optional[str] = None) -> None:
+    def _add_code_block(self, code: str, language: Optional[str] = None, level: int = 0) -> None:
         """
         添加代码块
 
         Args:
             code: 代码文本
             language: 代码语言
+            level: 嵌套层级（用于缩进）
 
         Returns:
             None
         """
         para = self.document.add_paragraph()  # 代码段落
+        if level > 0:
+            para.paragraph_format.left_indent = Inches(level * 0.5)
         run = para.add_run(code)  # 代码 Run
         run.font.size = Pt(self.config.style_config.code_font_size if self.config.style_config else 10)
         self._set_run_font(run)

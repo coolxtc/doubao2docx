@@ -995,12 +995,102 @@ class BaseParser(ABC):
             )
         )
 
+    @staticmethod
+    def _find_first_text_item(items: list[InlineContent]) -> Optional[InlineContent]:
+        """返回列表中第一个 INLINE_TEXT 项，若没有则返回 None"""
+        for item in items:
+            if item.type == INLINE_TEXT:
+                return item
+        return None
+
     def _walk_handle_list(self, child: Tag, ctx: _WalkContext) -> None:
-        """处理列表 (ul, ol)"""
-        if ctx.options.handle_nested_lists:
-            ctx.flush()
-            self._extract_nested_list_text(child, ctx.items, ctx.current_bold, ctx.current_italic, ctx.options.list_level + 1)
-        # else: 跳过
+        """处理列表 (ul, ol) - 完整解析每个 li 的内联内容"""
+        if not ctx.options.handle_nested_lists:
+            return
+
+        # 保存格式状态，flush 会重置 current_bold/italic
+        saved_bold = ctx.current_bold
+        saved_italic = ctx.current_italic
+        ctx.flush()
+
+        list_type = child.name  # "ul" 或 "ol"
+        current_level = ctx.options.list_level + 1
+        counter = 1
+
+        for li in child.find_all(LIST_ITEM_TAGS, recursive=False):
+            # 解析当前 li 的全部内联内容（允许更深层列表）
+            li_items = self._walk_inline_children(
+                li,
+                parent_bold=saved_bold,
+                parent_italic=saved_italic,
+                options=WalkOptions(
+                    handle_line_break_div=ctx.options.handle_line_break_div,
+                    parse_div_span_inline=ctx.options.parse_div_span_inline,
+                    strip_nav_strings=ctx.options.strip_nav_strings,
+                    reset_format_to_parent=False,
+                    handle_nested_lists=True,
+                    list_level=current_level,
+                ),
+            )
+
+            # 清理首尾无意义的纯空白/换行项
+            while li_items and li_items[0].type == INLINE_TEXT and not li_items[0].content.strip():
+                li_items.pop(0)
+            while li_items and li_items[-1].type == INLINE_TEXT and not li_items[-1].content.strip():
+                li_items.pop()
+
+            # 完全空的列表项也需创建占位符（保留项目符号）
+            if not li_items:
+                if list_type == HTML_UL:
+                    placeholder = InlineContent(
+                        type=INLINE_TEXT,
+                        content="",
+                        list_marker="•",
+                        level=current_level,
+                    )
+                else:  # HTML_OL
+                    # 有序列表占位符直接写入序号，list_marker 为 None（避免重复）
+                    placeholder = InlineContent(
+                        type=INLINE_TEXT,
+                        content=f"{counter}. ",
+                        level=current_level,
+                    )
+                    counter += 1
+                ctx.items.append(placeholder)
+                continue  # 跳过后续标记处理，避免重复
+
+            # 构造列表标记 / 序号
+            first_text = self._find_first_text_item(li_items)
+            if first_text is not None:
+                if list_type == HTML_UL:
+                    first_text.list_marker = "•"
+                    first_text.level = current_level
+                else:  # 有序列表
+                    prefix = f"{counter}. "
+                    first_text.content = prefix + (first_text.content or "")
+                    first_text.level = current_level
+                    counter += 1
+            else:
+                # 无文本项（如仅图片），创建占位文本承载标记
+                marker = "•" if list_type == HTML_UL else ""
+                placeholder_text = ""
+                if list_type == HTML_OL:
+                    placeholder_text = f"{counter}. "
+                    counter += 1
+                placeholder = InlineContent(
+                    type=INLINE_TEXT,
+                    content=placeholder_text,
+                    list_marker=marker if marker else None,
+                    level=current_level,
+                )
+                li_items.insert(0, placeholder)
+
+            # 为所有文本项统一设置层级，用于 docx_builder 的续写缩进
+            for item in li_items:
+                if item.type == INLINE_TEXT and item.level == 0:
+                    item.level = current_level
+
+            ctx.items.extend(li_items)
 
     def _walk_handle_inline_container(self, child: Tag, ctx: _WalkContext) -> None:
         """处理内联容器 div/span"""
@@ -1046,133 +1136,6 @@ class BaseParser(ABC):
         """默认处理（其他标签）"""
         sub_text = child.get_text(strip=False)
         self._append_normalized_text(sub_text, ctx)
-
-    # -------------------------------------------------------------------------
-    # 通用辅助 / 提取方法
-    # -------------------------------------------------------------------------
-
-    def _extract_nested_list_text(self, element: Tag, items: list[InlineContent], bold: bool = False, italic: bool = False, level: int = 1) -> None:
-        """
-        提取嵌套列表的文本内容
-
-        处理流程：
-        1. 遍历列表项 (li)，提取直接文本内容。
-        2. 对于无序列表 (ul)，使用 "•" 作为列表标记；对于有序列表 (ol)，使用序号。
-        3. 递归处理嵌套的 ul/ol 列表。
-
-        Args:
-            element: ul 或 ol 元素
-            items: 内联内容列表
-            bold: 加粗状态
-            italic: 斜体状态
-            level: 嵌套层级
-        """
-        counter = 1
-        li_elements = element.find_all(LIST_ITEM_TAGS, recursive=False)
-        for idx, child in enumerate(li_elements):
-            direct_text = self._get_direct_text(child)
-            list_marker = "•" if element.name == HTML_UL else None
-            has_nested_list = child.find(LIST_TAGS, recursive=False) is not None
-
-            if direct_text:
-                if element.name == HTML_UL:
-                    items.append(InlineContent(type=INLINE_TEXT, content=direct_text, bold=bold, italic=italic, list_marker=list_marker, level=level))
-                else:
-                    items.append(InlineContent(type=INLINE_TEXT, content=f"{counter}. {direct_text}", bold=bold, italic=italic, level=level))
-
-            if element.name == HTML_OL and (direct_text or has_nested_list):
-                counter += 1
-
-            nested_items = []
-            self._collect_nested_content_in_li(child, nested_items, bold, italic)
-            for ni in nested_items:
-                ni.list_marker = list_marker
-                ni.level = level
-            items.extend(nested_items)
-
-            nested = child.find(LIST_TAGS, recursive=False)
-            if nested:
-                self._extract_nested_list_text(nested, items, bold, italic, level + 1)
-
-    def _get_direct_text(self, element: Tag) -> str:
-        """
-        获取元素的直接文本（排除嵌套的 ul/ol）
-
-        递归提取元素的文本内容，但跳过内嵌的列表标签 (ul/ol)，避免重复处理。
-
-        Args:
-            element: HTML 元素
-
-        Returns:
-            直接文本字符串
-        """
-        texts = []
-        for child in element.children:
-            if isinstance(child, str):
-                if isinstance(child, Comment):
-                    continue
-                text = str(child).strip()
-                if text:
-                    texts.append(text)
-            elif isinstance(child, Tag) and child.name in LIST_TAGS:
-                continue
-            elif isinstance(child, Tag):
-                texts.append(self._get_direct_text(child))
-        return ' '.join(texts).strip()
-
-    def _collect_nested_content_in_li(self, li: Tag, items: list[InlineContent], bold: bool, italic: bool) -> None:
-        """
-        收集列表项中的深层嵌套内容块
-
-        Args:
-            li: li 元素
-            items: 内联内容列表
-            bold: 加粗状态
-            italic: 斜体状态
-        """
-        for pic in li.find_all(IMAGE_TAGS):
-            # 跳过嵌套列表内部的图片，避免重复提取
-            if self._inside_nested_list(pic, li):
-                continue
-            url = self._extract_image_url(pic)
-            if url:
-                items.append(InlineContent(type=INLINE_IMAGE, content="", image_url=url))
-
-        for table in li.find_all(TABLE_TAGS):
-            # 跳过嵌套列表内部的表格，避免重复提取
-            if self._inside_nested_list(table, li):
-                continue
-            table_data = self._parse_table(table)
-            if table_data:
-                items.append(InlineContent(type=INLINE_TABLE, content="", data=table_data, bold=bold, italic=italic))
-
-        for pre in li.find_all(CODE_TAGS):
-            # 跳过嵌套列表内部的代码块，避免重复提取
-            if self._inside_nested_list(pre, li):
-                continue
-            if self._is_code_expanded(pre):
-                continue
-            code_content = pre.get_text("\n", strip=True)
-            language = self._extract_code_language(pre)
-            items.append(InlineContent(type=INLINE_CODE, content=code_content, bold=bold, italic=italic, language=language))
-
-    def _inside_nested_list(self, tag: Tag, root_li: Tag) -> bool:
-        """
-        判断标签是否在 root_li 内某个嵌套列表 (ul/ol) 的子树中
-
-        Args:
-            tag: 待检查的标签
-            root_li: 根列表项元素
-
-        Returns:
-            True 如果 tag 处于 root_li 内部的嵌套列表中，否则 False
-        """
-        parent = tag.parent
-        while parent is not None and parent != root_li:
-            if isinstance(parent, Tag) and parent.name in LIST_TAGS:
-                return True
-            parent = parent.parent
-        return False
 
     def _has_inline_structure(self, element: Tag) -> bool:
         """
