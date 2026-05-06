@@ -159,7 +159,7 @@ class WalkOptions:
     strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
     reset_format_to_parent: bool = False  # flush 后重置为父级状态还是 False
     handle_nested_lists: bool = False  # 处理 ul/ol 嵌套列表还是跳过
-    list_level: int = 1  # 嵌套列表层级
+    list_level: int = 1  # 当前列表嵌套层级（1 表示第一层嵌套，0 表示顶层/无嵌套）
 
 
 @dataclass
@@ -299,7 +299,14 @@ class BaseParser(ABC):
             blocks.append(TextBlock(type=BLOCK_BLOCKQUOTE, content=text))
 
     def _handle_br(self, element: Tag, blocks: list[TextBlock]) -> None:
-        """处理换行标签 br"""
+        """
+        处理换行标签 br
+
+        决策逻辑：
+        - 如果上一个块是段落：将换行符追加到该段落末尾。
+        - 否则：创建一个独立的换行段落块（将孤立 <br> 视为段分隔，
+          而非行内换行，避免换行语义在无段落上下文中丢失）。
+        """
         if self._last_block_is_paragraph(blocks):
             blocks[-1].content += "\n"
         else:
@@ -1041,7 +1048,6 @@ class BaseParser(ABC):
 
         list_type = child.name  # "ul" 或 "ol"
         current_level = ctx.options.list_level + 1
-        counter = 1
 
         for li in child.find_all(LIST_ITEM_TAGS, recursive=False):
             # 解析当前 li 的全部内联内容（允许更深层列表）
@@ -1081,7 +1087,6 @@ class BaseParser(ABC):
                         list_marker="ol",
                         level=current_level,
                     )
-                    counter += 1
                 ctx.items.append(placeholder)
                 continue  # 跳过后续标记处理，避免重复
 
@@ -1094,7 +1099,6 @@ class BaseParser(ABC):
                 else:  # 有序列表：仅标记，不拼接序号
                     first_text.list_marker = "ol"
                     first_text.level = current_level
-                    counter += 1
             else:
                 # 无文本项（如仅图片），创建占位文本承载标记
                 marker = "•" if list_type == HTML_UL else "ol"
@@ -1104,8 +1108,6 @@ class BaseParser(ABC):
                     list_marker=marker if marker else None,
                     level=current_level,
                 )
-                if list_type == HTML_OL:
-                    counter += 1
                 li_items.insert(0, placeholder)
 
             # 为所有文本项统一设置层级，用于 docx_builder 的续写缩进
@@ -1196,6 +1198,9 @@ class BaseParser(ABC):
             if child.name in _INLINE_STRUCTURE_BLOCK_TAGS:
                 return True
             if child.name in PARAGRAPH_TAGS:
+                return True
+            # 列表标签（嵌套列表结构）
+            if child.name in LIST_TAGS:
                 return True
 
             # 2. 类名语义检测（div / span 携带语义 class）

@@ -727,7 +727,7 @@ class TestCoverageImprovements:
         """追加到现有段落的 Unicode 回退"""
         para = doc_builder.document.add_paragraph("prefix")
         with patch.object(doc_builder, '_convert_latex_content', return_value=(None, "β")):
-            doc_builder._add_latex_to_paragraph(para, "\\beta", is_display=False, as_standalone=False)
+            doc_builder._add_latex_to_paragraph(para, "\\beta", is_display=False)
             # 段落应包含 β
             assert "β" in para.text
 
@@ -770,10 +770,9 @@ class TestCoverageImprovements:
         with patch.object(doc_builder.document, 'add_paragraph') as mock_add_para:
             mock_para = MagicMock()
             mock_add_para.return_value = mock_para
-            need_new_para, para, last_run, prev_latex = doc_builder._handle_inline_image_item("http://example.com/pic.png", level=1)
+            need_new_para, para, last_run = doc_builder._handle_inline_image_item("http://example.com/pic.png", level=1)
             assert need_new_para is True
-            assert para is mock_para  # 修改后：返回段落以便应用缩进
-            assert prev_latex is False
+            assert para is mock_para  # 返回段落以便应用缩进
             mock_para.add_run.assert_called()  # 至少调用了 add_run
 
     # ---------- _convert_latex_content 内部逻辑 ----------
