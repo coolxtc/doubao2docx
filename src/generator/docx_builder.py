@@ -251,32 +251,32 @@ class DocxBuilder:
         level = getattr(block, 'level', 0)  # 嵌套层级
 
         if block.items:
-            # 包含内联内容的列表项
+            # 包含内联内容的列表项：为第一个文本项设置 list_marker（用于序号生成）
             if list_type == "ol":
-                # 切换列表类型或层级变化时重置计数器
+                # 切换列表类型或层级变化时重置计数器（后续在 _add_inline_content 中递增）
                 if self._last_list_level != level or self._last_list_type != "ol":
                     self._list_counter = 0
-                self._list_counter += 1
-                start_index = self._list_counter
                 self._last_list_type = "ol"
                 self._last_list_level = level
+                # 为第一个文本项设置 list_marker，让 _add_inline_content 识别有序列表
+                for item in block.items:
+                    if item.type == "text" and not item.list_marker:
+                        item.list_marker = "ol"
+                        break
             else:
-                start_index = 1
                 self._last_list_type = "ul"
                 self._last_list_level = level
-            self._add_inline_content(block.items, list_type, start_index, level)
+            self._add_inline_content(block.items, list_type, level)
         else:
-            # 纯文本列表项
+            # 纯文本列表项（无内联内容）
             if list_type == "ol":
-                # 切换列表类型或层级变化时重置计数器
-                if self._last_list_level != level or self._last_list_type != "ol":
-                    self._list_counter = 0
-                self._list_counter += 1
                 self._last_list_type = "ol"
                 self._last_list_level = level
-                para = self.document.add_paragraph()
-                run = para.add_run(f"{self._list_counter}. {block.content}")
-                self._set_run_font(run)
+                # 序号由 _add_inline_content 处理，纯文本内容通过占位符传递
+                placeholder_items = [
+                    InlineContent(type="text", content=block.content or "", list_marker="ol", level=level)
+                ]
+                self._add_inline_content(placeholder_items, list_type, level)
             else:
                 self._last_list_type = "ul"
                 self._last_list_level = level
@@ -396,7 +396,7 @@ class DocxBuilder:
         self._add_code_block(item.content, level=level)
         return True, None, None, False
 
-    def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, start_index: int = 1, level: int = 0) -> None:
+    def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, level: int = 0) -> None:
         """
         添加内联内容（文本和公式混合的段落）
 
@@ -418,7 +418,7 @@ class DocxBuilder:
             return
 
         para = None  # 当前段落，非列表情况下可能为 None
-        new_para = self._create_inline_paragraph(list_type, start_index, level)
+        new_para = self._create_inline_paragraph(list_type, level)
         if new_para is not None:
             para = new_para
 
@@ -433,9 +433,22 @@ class DocxBuilder:
             if item.level > 0:
                 current_item_level = item.level
 
-            # 有列表标记时，创建新的无序列表段落，并复用给后续文本项
+            # 有列表标记时，创建新的列表段落
             if item.list_marker and item.type == "text":
-                para = self._handle_list_marker_item(item, current_item_level)
+                if item.list_marker == "ol":  # 有序列表：自行生成序号
+                    self._list_counter += 1
+                    seq = self._list_counter
+                    para = self.document.add_paragraph()
+                    run = para.add_run(f"{seq}. {item.content}")
+                    self._set_run_font(run)
+                    if item.bold:
+                        run.font.bold = True
+                    if item.italic:
+                        run.font.italic = True
+                    if current_item_level > 0:
+                        para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
+                else:  # 无序列表：沿用原逻辑
+                    para = self._handle_list_marker_item(item, current_item_level)
                 last_run = None
                 prev_was_latex = False
                 need_new_para = False
@@ -502,26 +515,23 @@ class DocxBuilder:
                 prev_was_latex = False
                 continue
 
-    def _create_inline_paragraph(self, list_type: Optional[str], start_index: int, level: int):
+    def _create_inline_paragraph(self, list_type: Optional[str], level: int):
         """
-        创建内联段落并设置列表样式；非列表且无序号时返回 None 表示复用当前段落
+        创建内联段落并设置列表样式；非列表时返回 None 表示复用当前段落
+
+        注意：有序列表的序号生成已移至 _add_inline_content 内部，此处仅处理无序列表。
 
         Args:
             list_type: 列表类型（"ol" 或 "ul"）
-            start_index: 有序列表起始序号
             level: 嵌套层级
 
         Returns:
             Paragraph | None: 创建的段落对象，非列表情况返回 None
         """
-        if list_type == "ol":
-            para = self.document.add_paragraph()
-            run = para.add_run(f"{start_index}. ")
-            self._set_run_font(run)
-        elif list_type == "ul":
+        if list_type == "ul":
             para = self.document.add_paragraph(style="List Bullet")
         else:
-            # 非列表情况：返回 None，由调用方决定是否新建段落
+            # 有序列表：返回 None，序号由 _add_inline_content 在遇到 list_marker="ol" 时生成
             return None
         if level > 0:
             para.paragraph_format.left_indent = Inches(level * 0.5)

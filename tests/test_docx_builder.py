@@ -307,23 +307,36 @@ class TestAddListItem:
     """测试添加列表项"""
 
     def test_ordered_list_counter_increments(self, doc_builder):
+        """有序列表计数器在渲染时递增"""
         doc_builder._add_list_item(TextBlock(type="list_item", content="第一项", language="ol"))
-        assert doc_builder._list_counter == 1
         doc_builder._add_list_item(TextBlock(type="list_item", content="第二项", language="ol"))
-        assert doc_builder._list_counter == 2
+        # 计数器由 _add_inline_content 递增（渲染时）
+        # 验证段落包含序号（通过 list_marker="ol" 生成）
+        paras = doc_builder.document.paragraphs
+        texts = [p.text for p in paras]
+        assert any("1. 第一项" in t for t in texts)
+        assert any("2. 第二项" in t for t in texts)
 
     def test_ordered_list_resets_on_type_change(self, doc_builder):
+        """无序→有序切换时重置计数器"""
         doc_builder._add_list_item(TextBlock(type="list_item", content="无序", language="ul"))
         doc_builder._add_list_item(TextBlock(type="list_item", content="有序", language="ol"))
-        assert doc_builder._list_counter == 1
+        # 有序列表从1重新开始
+        paras = doc_builder.document.paragraphs
+        texts = [p.text for p in paras]
+        assert any("1. 有序" in t for t in texts)
 
     def test_ordered_list_resets_on_level_change(self, doc_builder):
+        """层级变化时重置计数器（level 相同则序号递增）"""
         block1 = TextBlock(type="list_item", content="一级", language="ol", level=0)
         doc_builder._add_list_item(block1)
-        assert doc_builder._list_counter == 1
         block2 = TextBlock(type="list_item", content="二级", language="ol", level=1)
         doc_builder._add_list_item(block2)
-        assert doc_builder._list_counter == 1
+        # 渲染后应有两个独立序号（不同 level 不重置，序号递增）
+        paras = doc_builder.document.paragraphs
+        texts = [p.text for p in paras]
+        assert any("1. 一级" in t for t in texts)
+        assert any("2. 二级" in t for t in texts)
 
     def test_unordered_list_item(self, doc_builder):
         doc_builder._add_list_item(TextBlock(type="list_item", content="项目", language="ul"))
@@ -332,12 +345,14 @@ class TestAddListItem:
         assert para.style.name == "List Bullet"
 
     def test_list_item_with_inline_items(self, doc_builder):
+        """带内联内容的有序列表项：序号应在渲染时生成"""
         items = [InlineContent(type="text", content="第一项", bold=True)]
         block = TextBlock(type="list_item", content="", language="ol", items=items)
         doc_builder._add_list_item(block)
-        assert doc_builder._list_counter == 1
         para = doc_builder.document.paragraphs[0]
-        assert "1. " in para.text or "第一项" in para.text
+        # 序号在 _add_inline_content 遇到 list_marker="ol" 时生成
+        assert "1. 第一项" in para.text
+        assert para.runs[0].font.bold is True
 
 
 # =============================================================================
@@ -587,21 +602,21 @@ class TestImageDownload:
 class TestCreateInlineParagraph:
     """测试列表段落创建"""
 
-    def test_ordered_paragraph_has_number(self, doc_builder):
-        para = doc_builder._create_inline_paragraph("ol", 3, 0)
-        assert para is not None
-        assert "3. " in para.text
+    def test_ordered_paragraph_returns_none(self, doc_builder):
+        """有序列表不再由 _create_inline_paragraph 生成序号，返回 None"""
+        para = doc_builder._create_inline_paragraph("ol", 0)
+        assert para is None
 
     def test_unordered_paragraph_uses_list_style(self, doc_builder):
-        para = doc_builder._create_inline_paragraph("ul", 1, 0)
+        para = doc_builder._create_inline_paragraph("ul", 0)
         assert para.style.name == "List Bullet"
 
     def test_non_list_returns_none(self, doc_builder):
-        para = doc_builder._create_inline_paragraph(None, 1, 0)
+        para = doc_builder._create_inline_paragraph(None, 0)
         assert para is None
 
     def test_level_adds_indent(self, doc_builder):
-        para = doc_builder._create_inline_paragraph("ul", 1, 2)
+        para = doc_builder._create_inline_paragraph("ul", 2)
         assert para.paragraph_format.left_indent is not None
         # 1英寸 = 914400 EMU，level * 0.5英寸 = 1英寸
         assert para.paragraph_format.left_indent == 914400

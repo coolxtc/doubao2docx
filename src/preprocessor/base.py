@@ -1074,11 +1074,11 @@ class BaseParser(ABC):
                         list_marker="•",
                         level=current_level,
                     )
-                else:  # HTML_OL
-                    # 有序列表占位符直接写入序号，list_marker 为 None（避免重复）
+                else:  # 有序列表：仅标记，不拼接序号
                     placeholder = InlineContent(
                         type=INLINE_TEXT,
-                        content=f"{counter}. ",
+                        content="",
+                        list_marker="ol",
                         level=current_level,
                     )
                     counter += 1
@@ -1091,24 +1091,21 @@ class BaseParser(ABC):
                 if list_type == HTML_UL:
                     first_text.list_marker = "•"
                     first_text.level = current_level
-                else:  # 有序列表
-                    prefix = f"{counter}. "
-                    first_text.content = prefix + (first_text.content or "")
+                else:  # 有序列表：仅标记，不拼接序号
+                    first_text.list_marker = "ol"
                     first_text.level = current_level
                     counter += 1
             else:
                 # 无文本项（如仅图片），创建占位文本承载标记
-                marker = "•" if list_type == HTML_UL else ""
-                placeholder_text = ""
-                if list_type == HTML_OL:
-                    placeholder_text = f"{counter}. "
-                    counter += 1
+                marker = "•" if list_type == HTML_UL else "ol"
                 placeholder = InlineContent(
                     type=INLINE_TEXT,
-                    content=placeholder_text,
+                    content="",
                     list_marker=marker if marker else None,
                     level=current_level,
                 )
+                if list_type == HTML_OL:
+                    counter += 1
                 li_items.insert(0, placeholder)
 
             # 为所有文本项统一设置层级，用于 docx_builder 的续写缩进
