@@ -694,6 +694,50 @@ class TestOlNestedCounter:
         texts = [b.content for b in list_blocks]
         assert any("Second" in t for t in texts)
 
+    def test_ol_list_marker_not_sequence_number(self):
+        """
+        验证有序列表解析器不再拼接序号：_walk_handle_list 为首文本项设置 list_marker="ol"。
+        仅当 li 包含嵌套列表（触发 handle_nested_lists）或复杂内联结构时才走 _walk_handle_list。
+        """
+        parser = MockParser()
+        # 含嵌套列表的复杂项会触发 _walk_handle_list
+        html = "<ol><li><strong>Bold</strong> text<ol><li>sub</li></ol></li></ol>"
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._handle_list(soup.find("ol"), blocks)
+        # 查找包含内联内容的 list_item
+        blocks_with_items = [b for b in blocks if b.type == "list_item" and b.items]
+        assert len(blocks_with_items) >= 1
+        # 检查 items 中的文本项是否有 list_marker="ol"（由 _walk_handle_list 设置）
+        all_text_items = [i for b in blocks_with_items for i in b.items if i.type == "text"]
+        ol_items = [i for i in all_text_items if i.list_marker == "ol"]
+        assert len(ol_items) >= 1, f"应有文本项的 list_marker='ol'，实际: {[i.list_marker for i in all_text_items]}"
+
+    def test_ol_no_double_numbering_in_complex_item(self):
+        """
+        验证有序列表项的 items.content 不包含序号前缀（无论走哪个解析路径）。
+        简单项（纯文本）走 content 字段，复杂项走 items，通过 _handle_list 入口覆盖两者。
+        """
+        parser = MockParser()
+        # 含嵌套列表的复杂项，走 _walk_handle_list
+        html = """
+        <ol>
+          <li><strong>Bold</strong> and <em>italic</em><ol><li>sub</li></ol></li>
+          <li>Plain item</li>
+        </ol>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._handle_list(soup.find("ol"), blocks)
+        list_blocks = [b for b in blocks if b.type == "list_item"]
+        assert len(list_blocks) == 2
+        for block in list_blocks:
+            if block.items:
+                for item in block.items:
+                    if item.type == "text":
+                        assert not item.content.startswith("1. "), \
+                            f"序号不应出现在 items.content 中，实际内容：{item.content!r}"
+
 
 # =============================================================================
 # 真实 HTML 文件集成测试

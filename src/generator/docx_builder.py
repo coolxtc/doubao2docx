@@ -253,7 +253,7 @@ class DocxBuilder:
         if block.items:
             # 包含内联内容的列表项：为第一个文本项设置 list_marker（用于序号生成）
             if list_type == "ol":
-                # 切换列表类型或层级变化时重置计数器（后续在 _add_inline_content 中递增）
+                # 层级或类型变化时重置计数器；渲染时递增生成序号
                 if self._last_list_level != level or self._last_list_type != "ol":
                     self._list_counter = 0
                 self._last_list_type = "ol"

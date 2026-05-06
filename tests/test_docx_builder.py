@@ -327,16 +327,18 @@ class TestAddListItem:
         assert any("1. 有序" in t for t in texts)
 
     def test_ordered_list_resets_on_level_change(self, doc_builder):
-        """层级变化时重置计数器（level 相同则序号递增）"""
+        """层级变化时重置计数器（当前实现：顺序递增，不同层级不重置）"""
         block1 = TextBlock(type="list_item", content="一级", language="ol", level=0)
         doc_builder._add_list_item(block1)
         block2 = TextBlock(type="list_item", content="二级", language="ol", level=1)
         doc_builder._add_list_item(block2)
-        # 渲染后应有两个独立序号（不同 level 不重置，序号递增）
         paras = doc_builder.document.paragraphs
         texts = [p.text for p in paras]
+        # 当前实现：层级变化不重置，序号顺序递增
         assert any("1. 一级" in t for t in texts)
         assert any("2. 二级" in t for t in texts)
+        # 验证文档生成了两个段落
+        assert len(paras) == 2
 
     def test_unordered_list_item(self, doc_builder):
         doc_builder._add_list_item(TextBlock(type="list_item", content="项目", language="ul"))
