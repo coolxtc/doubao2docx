@@ -1290,36 +1290,6 @@ class BaseParser(ABC):
     # 辅助方法
     # -------------------------------------------------------------------------
 
-    def _find_math_in_element(self, element: Tag) -> list[Tag]:
-        """
-        在元素中查找所有公式元素
-
-        Args:
-            element: HTML 元素
-
-        Returns:
-            公式元素列表
-        """
-        return [
-            el for el in element.descendants
-            if isinstance(el, Tag) and self._is_math_element(el)
-        ]
-
-    def _has_math_in_element(self, element: Tag) -> bool:
-        """
-        快速检查元素子孙中是否存在公式元素（短路求值）
-
-        Args:
-            element: HTML 元素
-
-        Returns:
-            True 如果存在公式元素，否则 False
-        """
-        for el in element.descendants:
-            if isinstance(el, Tag) and self._is_math_element(el):
-                return True
-        return False
-
     @staticmethod
     def _parse_table(table: Tag) -> Optional[TableData]:
         """
