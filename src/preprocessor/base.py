@@ -118,7 +118,8 @@ class InlineContent:
     italic: bool = False  # 是否斜体
     image_url: Optional[str] = None  # 图片 URL
     data: Any = None  # 附加数据（如 TableData）
-    list_marker: Optional[str] = None  # 列表标记（"•" 用于无序列表）
+    list_marker: Optional[str] = None  # 列表标记（"•" 用于无序列表，"ol" 表示有序）
+    list_start: Optional[int] = None  # 有序列表起始序号（仅当 list_marker="ol" 且为列表首项时有效）
     level: int = 0  # 嵌套层级（0 表示无嵌套或顶层）
     language: Optional[str] = None  # 代码语言（如 "python"）
 
@@ -141,6 +142,7 @@ class TextBlock:
     inline: bool = False  # 是否内联元素
     items: list[InlineContent] = field(default_factory=list)  # 内联内容列表
     level: int = 0  # 嵌套层级
+    list_start: Optional[int] = None  # 有序列表起始序号（仅 list_item 类型有效）
 
 
 @dataclass
@@ -700,11 +702,31 @@ class BaseParser(ABC):
             blocks: 内容块列表
             level: 嵌套层级
         """
+        # 提取有序列表的 start 属性（默认 1）
+        list_start = 1
+        if list_type == HTML_OL:
+            start_attr = element.get("start")
+            if start_attr is not None:
+                try:
+                    list_start = int(start_attr)
+                except ValueError:
+                    list_start = 1
+
         list_items = element.find_all(HTML_LI, recursive=False)
         for i, li in enumerate(list_items):
-            self._process_list_item(li, blocks, list_type, level)
+            is_first = (i == 0)
+            self._process_list_item(
+                li, blocks, list_type, level,
+                list_start=list_start if (list_type == HTML_OL and is_first) else None,
+                is_first=is_first
+            )
 
-    def _process_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str = "ul", level: int = 0) -> None:
+    def _process_list_item(
+        self, li: Tag, blocks: list[TextBlock],
+        list_type: str = "ul", level: int = 0,
+        list_start: Optional[int] = None,
+        is_first: bool = False
+    ) -> None:
         """
         处理单个列表项
 
@@ -718,19 +740,32 @@ class BaseParser(ABC):
             blocks: 内容块列表
             list_type: 列表类型 ("ul" 或 "ol")
             level: 嵌套层级
+            list_start: 有序列表的起始序号（仅用于该列表的第一个 li，其余为 None）
+            is_first: 是否为该列表的第一个 li
         """
         has_nested_list = li.find(LIST_TAGS, recursive=False)
         # 复用 _has_inline_structure 统一判断，支持 <a>, <u>, <small> 等所有内联格式标签
         if has_nested_list or self._has_inline_structure(li):
-            self._process_complex_list_item(li, blocks, list_type, level)
+            self._process_complex_list_item(li, blocks, list_type, level, list_start, is_first)
             return
 
         # 简单列表项：直接提取文本
         text = li.get_text(strip=True)
         if text:
-            blocks.append(TextBlock(type=BLOCK_LIST_ITEM, content=text, language=list_type, level=level))
+            blocks.append(TextBlock(
+                type=BLOCK_LIST_ITEM,
+                content=text,
+                language=list_type,
+                level=level,
+                list_start=list_start if list_type == "ol" else None
+            ))
 
-    def _process_complex_list_item(self, li: Tag, blocks: list[TextBlock], list_type: str, level: int = 0) -> None:
+    def _process_complex_list_item(
+        self, li: Tag, blocks: list[TextBlock],
+        list_type: str, level: int = 0,
+        list_start: Optional[int] = None,
+        is_first: bool = False
+    ) -> None:
         """
         处理复杂的列表项
 
@@ -739,6 +774,8 @@ class BaseParser(ABC):
             blocks: 内容块列表
             list_type: 列表类型
             level: 嵌套层级
+            list_start: 有序列表的起始序号（仅用于该列表的第一个 li）
+            is_first: 是否为该列表的第一个 li
         """
         items = self._walk_inline_children(
             li,
@@ -759,6 +796,24 @@ class BaseParser(ABC):
                 if item.type in INLINE_NON_TEXT_TYPES or item.content.strip() or item.content == "\n"
             ]
             if valid_items:
+                # 处理有序列表的 start 属性（仅对第一个 li）
+                if list_type == "ol" and is_first and list_start is not None:
+                    # 找到第一个未带 list_marker 的文本项
+                    for item in valid_items:
+                        if item.type == "text" and not item.list_marker:
+                            item.list_start = list_start
+                            break
+                    else:
+                        # 没有纯文本项，插入占位符
+                        placeholder = InlineContent(
+                            type="text",
+                            content="",
+                            list_marker="ol",
+                            level=level,
+                            list_start=list_start
+                        )
+                        valid_items.insert(0, placeholder)
+
                 blocks.append(TextBlock(type=BLOCK_LIST_ITEM, content="", language=list_type, items=valid_items, level=level))
 
     def _append_normalized_text(self, text: str, ctx: _WalkContext) -> None:
@@ -1049,7 +1104,19 @@ class BaseParser(ABC):
         list_type = child.name  # "ul" 或 "ol"
         current_level = ctx.options.list_level + 1
 
-        for li in child.find_all(LIST_ITEM_TAGS, recursive=False):
+        # 解析有序列表的起始序号（默认 1）
+        ol_start = 1
+        if list_type == HTML_OL:
+            start_attr = child.get("start")
+            if start_attr is not None:
+                try:
+                    ol_start = int(start_attr)
+                except ValueError:
+                    ol_start = 1
+
+        li_tags = child.find_all(LIST_ITEM_TAGS, recursive=False)
+        for idx, li in enumerate(li_tags):
+            is_first_li = (idx == 0)
             # 解析当前 li 的全部内联内容（允许更深层列表）
             li_items = self._walk_inline_children(
                 li,
@@ -1087,6 +1154,9 @@ class BaseParser(ABC):
                         list_marker="ol",
                         level=current_level,
                     )
+                    # 首个 li 设置 list_start（即使没有 start 属性也设为 1，保证独立列表编号重置）
+                    if is_first_li:
+                        placeholder.list_start = ol_start
                 ctx.items.append(placeholder)
                 continue  # 跳过后续标记处理，避免重复
 
@@ -1099,6 +1169,9 @@ class BaseParser(ABC):
                 else:  # 有序列表：仅标记，不拼接序号
                     first_text.list_marker = "ol"
                     first_text.level = current_level
+                    # 首个 li 设置 list_start
+                    if is_first_li:
+                        first_text.list_start = ol_start
             else:
                 # 无文本项（如仅图片），创建占位文本承载标记
                 marker = "•" if list_type == HTML_UL else "ol"
@@ -1108,6 +1181,9 @@ class BaseParser(ABC):
                     list_marker=marker if marker else None,
                     level=current_level,
                 )
+                # 首个 li 设置 list_start
+                if list_type == HTML_OL and is_first_li:
+                    placeholder.list_start = ol_start
                 li_items.insert(0, placeholder)
 
             # 为所有文本项统一设置层级，用于 docx_builder 的续写缩进

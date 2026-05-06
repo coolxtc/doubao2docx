@@ -264,10 +264,12 @@ class DocxBuilder:
 
                 # 为第一个文本项设置 list_marker，让 _add_inline_content 识别有序列表
                 marker_set = False
+                target_item = None
                 for item in block.items:
                     if item.type == "text" and not item.list_marker:
                         item.list_marker = "ol"
                         marker_set = True
+                        target_item = item
                         break
 
                 # 兜底：如果没有文本项能承载标记，创建占位符
@@ -279,6 +281,12 @@ class DocxBuilder:
                         level=level
                     )
                     block.items.insert(0, placeholder)
+                    target_item = placeholder
+
+                # 应用 list_start（如果存在），然后清除避免 _add_inline_content 重复重置
+                if target_item and target_item.list_start is not None:
+                    self._list_counter = target_item.list_start - 1
+                    target_item.list_start = None
             else:
                 self._last_list_type = "ul"
                 self._last_list_level = level
@@ -286,8 +294,16 @@ class DocxBuilder:
         else:
             # 纯文本列表项（无内联内容）
             if list_type == "ol":
+                # 如果层级或类型改变，重置计数器（与有 items 的分支保持一致）
+                if self._last_list_level != level or self._last_list_type != "ol":
+                    self._list_counter = 0
                 self._last_list_type = "ol"
                 self._last_list_level = level
+
+                # 应用 block 携带的 list_start（若有）
+                if block.list_start is not None:
+                    self._list_counter = block.list_start - 1
+
                 # 序号由 _add_inline_content 处理，纯文本内容通过占位符传递
                 placeholder_items = [
                     InlineContent(type="text", content=block.content or "", list_marker="ol", level=level)
@@ -450,6 +466,9 @@ class DocxBuilder:
             # 有列表标记时，创建新的列表段落
             if item.list_marker and item.type == "text":
                 if item.list_marker == "ol":  # 有序列表：自行生成序号
+                    # 兜底：如果 item 仍携带 list_start（未经过 _add_list_item 清除），则重置计数器
+                    if item.list_start is not None:
+                        self._list_counter = item.list_start - 1
                     self._list_counter += 1
                     seq = self._list_counter
                     para = self.document.add_paragraph()
