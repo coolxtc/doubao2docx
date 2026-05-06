@@ -586,13 +586,13 @@ class BaseParser(ABC):
                 blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
             return
 
-        # 图片包装器
+        # 图片包装器（通用，支持子类自定义图片元素）
         if self._has_any_class(element, [self.config.image_wrapper_class]):
-            pics = element.find_all(IMAGE_TAGS)
-            for pic in pics:
-                url = self._extract_image_url(pic)
-                if url:
-                    blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
+            for descendant in element.descendants:
+                if isinstance(descendant, Tag) and self._is_image_element(descendant):
+                    url = self._extract_image_url(descendant)
+                    if url:
+                        blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
             return
 
         # 段落容器
@@ -801,6 +801,10 @@ class BaseParser(ABC):
                 # 公式元素（动态判断）
                 if self._is_math_element(child):
                     self._walk_handle_math(child, ctx)
+                    continue
+                # 图片元素（动态判断，子类可通过 _is_image_element 定义）
+                if self._is_image_element(child):
+                    self._walk_handle_image(child, ctx)
                     continue
                 # 查表分发
                 handler = self._walk_handler_map.get(child.name, self._walk_default_handler)
@@ -1188,6 +1192,10 @@ class BaseParser(ABC):
 
             # 4. 公式元素检测
             if self._is_math_element(child):
+                return True
+
+            # 5. 图片元素检测（子类可扩展 <img> 等）
+            if self._is_image_element(child):
                 return True
 
         return False
