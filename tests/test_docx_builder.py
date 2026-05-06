@@ -214,13 +214,17 @@ class TestAddTable:
         cell_para = table.cell(1, 1).paragraphs[0]
         assert any(run.font.bold for run in cell_para.runs)
 
-    def test_add_empty_table_is_ignored(self, doc_builder):
-        """空表格不应生成表格"""
+    def test_add_table_without_headers_generates_placeholder(self, doc_builder):
+        """表头为空但存在数据行时，自动生成列号表头"""
         initial_count = len(doc_builder.document.tables)
         doc_builder._add_table(TableData(headers=[], rows=[]))
         assert len(doc_builder.document.tables) == initial_count
         doc_builder._add_table(TableData(headers=[], rows=[["a", "b"]]))
-        assert len(doc_builder.document.tables) == initial_count
+        # 应生成带占位表头的表格
+        assert len(doc_builder.document.tables) == initial_count + 1
+        table = doc_builder.document.tables[-1]
+        assert table.rows[0].cells[0].text == "列1"
+        assert table.rows[0].cells[1].text == "列2"
 
 
 # =============================================================================

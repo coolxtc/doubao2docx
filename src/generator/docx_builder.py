@@ -832,7 +832,14 @@ class DocxBuilder:
         Returns:
             None
         """
-        if not table_data or not table_data.headers:
+        if not table_data:
+            return
+        # 兜底：表头为空但存在数据行时，自动生成列号表头
+        if not table_data.headers and table_data.rows:
+            cols = len(table_data.rows[0]) if table_data.rows else 0
+            table_data.headers = [f"列{i+1}" for i in range(cols)]
+            table_data.header_bold = [False] * cols
+        if not table_data.headers:
             return
 
         cols = len(table_data.headers)  # 列数

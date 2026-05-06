@@ -294,6 +294,8 @@ class BaseParser(ABC):
         """处理换行标签 br"""
         if blocks and blocks[-1].type == BLOCK_PARAGRAPH:
             blocks[-1].content += "\n"
+        else:
+            blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="\n"))
 
     def _handle_picture(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理图片标签 picture"""
@@ -881,7 +883,14 @@ class BaseParser(ABC):
         ctx.items.append(InlineContent(type=INLINE_LATEX, content=latex, is_display=is_display))
 
     def _walk_handle_format(self, child: Tag, ctx: _WalkContext, *, set_bold: bool, set_italic: bool) -> None:
-        """统一处理加粗/斜体标签的内联遍历"""
+        """
+        统一处理加粗/斜体标签的内联遍历。
+
+        将当前累积文本 flush 后递归遍历子节点。
+        子节点继承叠加后的格式状态：若本标签设置了格式（set_bold=True），
+        则无论外部状态如何，子节点均获得该格式；否则继续沿用外部状态。
+        例如 <b>bold <em>both</em></b> 中，em 内部会同时继承外层的加粗。
+        """
         ctx.flush()
         ctx.items.extend(
             self._walk_inline_children(
@@ -942,11 +951,11 @@ class BaseParser(ABC):
         if prev is None:
             return True
         if isinstance(prev, Tag):
-            # 连续的空 line-break div（自身无文本）：插入换行
+            # 连续的空 line-break div：跳过插入换行，避免多余空行
             if (prev.name in INLINE_CONTAINER_TAGS
                     and self._has_any_class(prev, self.config.line_break_classes)
                     and not prev.get_text(strip=True)):
-                return True
+                return False
             # 列表标签后：不插入
             if prev.name in LIST_TAGS:
                 return False

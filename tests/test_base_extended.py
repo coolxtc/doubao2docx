@@ -459,12 +459,15 @@ class TestWithRealHTML:
 # =============================================================================
 
 class TestHandleBrAsBlock:
-    def test_br_alone_does_not_add_block(self):
+    def test_br_alone_creates_paragraph(self):
+        """单独的 <br> 应创建换行段落"""
         parser = MockParser()
         soup = BeautifulSoup("<br/>", "lxml")
         blocks = []
         parser._process_element(soup.find("br"), blocks)
-        assert len(blocks) == 0
+        assert len(blocks) == 1
+        assert blocks[0].type == "paragraph"
+        assert blocks[0].content == "\n"
 
     def test_br_after_paragraph_adds_newline(self):
         parser = MockParser()
