@@ -30,6 +30,7 @@ SECTION_TAGS = ("section",)  # 区域标签（单元素元组）
 INLINE_TAGS = ("strong", "em", "span", "a", "b", "i", "u", "small", "del", "mark")  # 所有内联格式标签
 INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
+INLINE_NEUTRAL_TAGS = ("a", "u", "small", "del", "mark")  # 中性内联标签（不改变粗体/斜体状态）
 
 # 用于 _has_inline_structure 快速判断的复合块级标签集合
 # 注意：这里仅包含 <picture> 块级图片元素，<img> 由子类 _is_image_element 动态识别。
@@ -861,6 +862,10 @@ class BaseParser(ABC):
         for tag in INLINE_CONTAINER_TAGS:
             h[tag] = self._walk_handle_inline_container
 
+        # 中性内联标签（不改变粗体/斜体状态）
+        for tag in INLINE_NEUTRAL_TAGS:
+            h[tag] = self._walk_handle_inline_generic
+
         return h
 
     def _walk_handle_math(self, child: Tag, ctx: _WalkContext) -> None:
@@ -1012,6 +1017,27 @@ class BaseParser(ABC):
         ctx.items.extend(
             self._walk_inline_children(
                 child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
+                options=ctx.options,
+            )
+        )
+
+    def _walk_handle_inline_generic(self, child: Tag, ctx: _WalkContext) -> None:
+        """
+        处理不改变格式状态的通用内联标签 (a, u, small, del, mark 等)
+
+        将当前累积的文本 flush，然后递归遍历子节点，
+        继承当前的粗体/斜体状态，不引入额外格式变更。
+
+        Args:
+            child: 内联标签元素
+            ctx: 遍历上下文
+        """
+        ctx.flush()
+        ctx.items.extend(
+            self._walk_inline_children(
+                child,
+                parent_bold=ctx.current_bold,
+                parent_italic=ctx.current_italic,
                 options=ctx.options,
             )
         )
