@@ -32,8 +32,8 @@ INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
 INLINE_NEUTRAL_TAGS = ("a", "u", "small", "del", "mark")  # 中性内联标签（不改变粗体/斜体状态）
 
-# 用于 _has_inline_structure 快速判断的复合块级标签集合
-# 注意：这里仅包含 <picture> 块级图片元素，<img> 由子类 _is_image_element 动态识别。
+# 用于 _has_inline_structure 快速判断的复合块级标签集合（标签名硬匹配）
+# 注：图片元素（如 <img>）不再仅依赖此集合，而是由 _is_image_element 动态检测。
 _INLINE_STRUCTURE_BLOCK_TAGS = set(IMAGE_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS)
 
 # =============================================================================
@@ -123,12 +123,20 @@ class InlineContent:
     language: Optional[str] = None  # 代码语言（如 "python"）
 
 
+# TextBlock 字段语义说明：
+#   - type: 块类型：paragraph/latex/code/heading/list_item/table/blockquote/image
+#   - language: 根据块类型承载不同含义：
+#       heading -> 标题级别 (str: "1"~"6")
+#       code -> 编程语言标识 (str: "python", "language-plaintext")
+#       list_item -> 列表类型 (str: "ul" | "ol")
+#       latex -> 公式类型 (str: "display" | "inline")
+#       其他类型通常为 None
 @dataclass
 class TextBlock:
     """文本块"""
-    type: str  # 块类型：paragraph/latex/code/heading/list_item/table/blockquote/image
+    type: str  # 块类型
     content: str  # 文本内容
-    language: Optional[str] = None  # 代码语言或标题级别
+    language: Optional[str] = None  # 用途见上方语义说明
     data: Any = None  # 附加数据（如 TableData）
     inline: bool = False  # 是否内联元素
     items: list[InlineContent] = field(default_factory=list)  # 内联内容列表
@@ -146,7 +154,7 @@ class ParsedPage:
 @dataclass(frozen=True)
 class WalkOptions:
     """遍历策略配置（不可变，遍历过程中配置不应改变）"""
-    handle_line_break_div: bool = True  # 处理 line-break-class div 还是直接添加换行
+    handle_line_break_div: bool = True  # True: 根据上下文智能判断是否在 line-break div 处插入换行；False: 忽略其换行语义，当作普通内联容器递归解析
     parse_div_span_inline: bool = True  # 递归解析 div/span 内联内容还是仅提取图片
     strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
     reset_format_to_parent: bool = False  # flush 后重置为父级状态还是 False
@@ -292,7 +300,7 @@ class BaseParser(ABC):
 
     def _handle_br(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理换行标签 br"""
-        if blocks and blocks[-1].type == BLOCK_PARAGRAPH:
+        if self._last_block_is_paragraph(blocks):
             blocks[-1].content += "\n"
         else:
             blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="\n"))
@@ -417,6 +425,11 @@ class BaseParser(ABC):
         """判断代码块是否已展开（属性值为 'true'）"""
         return element.get(self.config.code_expanded_attr) == "true"
 
+    @staticmethod
+    def _last_block_is_paragraph(blocks: list[TextBlock]) -> bool:
+        """判断 blocks 最后一个元素的类型是否为段落"""
+        return len(blocks) > 0 and blocks[-1].type == BLOCK_PARAGRAPH
+
     def _get_meaningful_children(self, element: Tag) -> list[PageElement]:
         """
         返回有意义（非注释、非空白文本）的子节点列表
@@ -535,7 +548,7 @@ class BaseParser(ABC):
 
         text = element.get_text(strip=True)
         if text:
-            if blocks and blocks[-1].type == BLOCK_PARAGRAPH:
+            if self._last_block_is_paragraph(blocks):
                 blocks[-1].content += " " + text
             else:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
@@ -557,7 +570,7 @@ class BaseParser(ABC):
         """
         # line-break div：块级换行符处理
         if self._has_any_class(element, self.config.line_break_classes):
-            if blocks and blocks[-1].type == BLOCK_PARAGRAPH:
+            if self._last_block_is_paragraph(blocks):
                 blocks[-1].content += "\n"
             else:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content="\n"))
@@ -921,10 +934,10 @@ class BaseParser(ABC):
         决策逻辑：
         | 前一个兄弟类型          | 条件              | 是否插入换行 |
         |------------------------|-------------------|-------------|
-        | 空 line-break div      | 无文本            | 是          |
+        | 空 line-break div      | 无文本            | 否（折叠连续空行）|
         | 列表标签 (ul/ol)       | 任何情况          | 否          |
         | 其他 Tag / NavigableString | 任何情况        | 是          |
-        | None (第一个子元素)   | -                 | 是          |
+        | None (第一个子元素)    | -                 | 是          |
         """
         # handle_line_break_div=False 或第一个子元素：直接添加换行
         if not ctx.options.handle_line_break_div or child.previous_sibling is None:
