@@ -46,15 +46,21 @@ class ChatData:
     messages: list[ChatMessage] = field(default_factory=list)  # 消息列表
     raw_html: str = ""  # 原始 HTML
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, include_raw_html: bool = False) -> dict[str, Any]:
         """
         转换为字典格式
+
+        Args:
+            include_raw_html: 是否包含原始 HTML
 
         Returns:
             dict[str, Any]: 聊天记录字典
         """
-        return {
+        result: dict[str, Any] = {
             "url": self.url,
             "title": self.title,
             "messages": [msg.to_dict() for msg in self.messages],
         }
+        if include_raw_html:
+            result["raw_html"] = self.raw_html
+        return result

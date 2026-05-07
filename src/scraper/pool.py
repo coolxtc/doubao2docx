@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -75,8 +76,8 @@ class BrowserPool:
             raise RuntimeError("浏览器池已关闭，无法获取资源")
 
         # 浏览器未初始化
-        if self._manager is None or self._manager.browser is None:
-            raise RuntimeError("浏览器未初始化")
+        if self._manager is None or self._manager.context is None:
+            raise RuntimeError("浏览器上下文未初始化")
 
         # 懒创建信号量
         if self._semaphore is None:
@@ -85,7 +86,7 @@ class BrowserPool:
         await self._semaphore.acquire()
 
         try:
-            page = await self._manager.browser.new_page()
+            page = await self._manager.context.new_page()
             return page
         except Exception as e:
             self._semaphore.release()
@@ -108,6 +109,29 @@ class BrowserPool:
                 await page.close()
             except Exception as e:
                 logger.debug(f"关闭页面时出错: {e}")
+
+    @asynccontextmanager
+    async def page_context(self, concurrency: int = 5):
+        """
+        异步上下文管理器：安全获取/归还页面
+
+        确保异常时也能正确释放信号量和关闭页面。
+
+        Args:
+            concurrency: 允许的最大并发数
+
+        Yields:
+            Page: 可用的页面
+
+        Example:
+            async with pool.page_context(5) as page:
+                await page.goto(url)
+        """
+        page = await self.acquire(concurrency)
+        try:
+            yield page
+        finally:
+            await self.release(page)
 
     async def close(self) -> None:
         """关闭池并清理资源"""

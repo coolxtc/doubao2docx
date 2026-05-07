@@ -1,6 +1,7 @@
 """浏览器生命周期管理"""
 
 import logging
+import random
 from typing import TYPE_CHECKING, Any
 
 from ..config import CrawlerConfig, get_config
@@ -33,7 +34,10 @@ class BrowserManager:
             config: 爬虫配置，None 时自动从全局配置获取
         """
         self.config: CrawlerConfig = config or get_config().crawler  # 爬虫配置
-        self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(anti_detect_level)  # 反爬中间件
+        self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(
+            anti_detect_level,
+            user_agents=self.config.user_agents
+        )  # 反爬中间件（直接传入 UA 列表，避免重复获取配置）
         self.browser: "Browser | None" = None  # Playwright 浏览器实例
         self.context: "BrowserContext | None" = None  # Playwright 浏览器上下文
         self.playwright: "Any" = None  # Playwright 实例
@@ -67,7 +71,10 @@ class BrowserManager:
             )
         else:
             raise RuntimeError("无法启动 Chromium 浏览器")
-        await self.anti_detect.apply(self.context)
+        # 生成统一 UA（HTTP 头和 JS 注入使用同一个，避免特征矛盾）
+        ua_list = self.anti_detect.user_agents
+        selected_ua = random.choice(ua_list) if ua_list else None
+        await self.anti_detect.apply(self.context, ua=selected_ua)
 
     async def close(self) -> None:
         """关闭浏览器并释放资源"""

@@ -1,5 +1,6 @@
 """豆包爬虫核心类"""
 
+import logging
 import random
 import re
 from typing import TYPE_CHECKING, Any, Callable
@@ -15,6 +16,8 @@ from .steps import FetchStep
 if TYPE_CHECKING:
     from playwright.async_api import Page
 
+logger = logging.getLogger(__name__)
+
 
 class DoubaoSpider:
     """
@@ -23,7 +26,7 @@ class DoubaoSpider:
     支持异步上下文管理器协议。
     """
 
-    DOUBAO_URL_PATTERN: str = r"https?://(?:www\.)?doubao\.com/thread/[\w-]+"
+    DOUBAO_URL_PATTERN: str = r"https?://(?:www\.)?doubao\.com/thread/[^?\s#]+"
 
     def __init__(
         self,
@@ -152,17 +155,27 @@ class DoubaoSpider:
                 return chat_data
 
             # 已知错误重试（CrawlerError）
-            except CrawlerError:
+            except CrawlerError as e:
+                logger.warning(f"爬取失败 (尝试 {attempt+1}/{max_retries}): {e}")
                 if attempt == max_retries - 1:  # 最后一次重试
                     raise
+                # 非外部页面：关闭旧页面并重建
+                if not self._external_page and self.browser_mgr:
+                    await page.close()
+                    page = await self.browser_mgr.new_page()
                 # 指数退避 + 随机抖动
                 wait_time = (2 ** attempt) + random.randint(500, 1500)
                 await page.wait_for_timeout(wait_time)
 
             # 其他异常重试
             except Exception as e:
+                logger.warning(f"未知错误 (尝试 {attempt+1}/{max_retries}): {e}")
                 if attempt == max_retries - 1:  # 最后一次重试
                     raise CrawlerError(f"爬取失败: {e}")
+                # 非外部页面：关闭旧页面并重建
+                if not self._external_page and self.browser_mgr:
+                    await page.close()
+                    page = await self.browser_mgr.new_page()
                 # 指数退避 + 随机抖动
                 wait_time = (2 ** attempt) + random.randint(500, 1500)
                 await page.wait_for_timeout(wait_time)

@@ -93,12 +93,12 @@ class TestBrowserPoolAcquire:
     async def test_acquire_success(self):
         """获取页面成功"""
         mock_manager = AsyncMock()
-        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
         mock_page = AsyncMock()
         mock_semaphore = AsyncMock()
 
-        mock_manager.browser = mock_browser
-        mock_browser.new_page.return_value = mock_page
+        mock_manager.context = mock_context
+        mock_context.new_page.return_value = mock_page
 
         mock_config = MagicMock()
         mock_config.crawler = MagicMock()
@@ -142,7 +142,7 @@ class TestBrowserPoolAcquire:
             pool._manager = None
             pool._closed = False
 
-            with pytest.raises(RuntimeError, match="浏览器未初始化"):
+            with pytest.raises(RuntimeError, match="浏览器上下文未初始化"):
                 await pool.acquire()
 
 
@@ -303,12 +303,12 @@ class TestBrowserPoolSemaphore:
     async def test_lazy_semaphore_creation(self):
         """懒创建信号量"""
         mock_manager = AsyncMock()
-        mock_browser = AsyncMock()
+        mock_context = AsyncMock()
         mock_page = AsyncMock()
         mock_semaphore = AsyncMock()
 
-        mock_manager.browser = mock_browser
-        mock_browser.new_page.return_value = mock_page
+        mock_manager.context = mock_context
+        mock_context.new_page.return_value = mock_page
 
         mock_config = MagicMock()
         mock_config.crawler = MagicMock()

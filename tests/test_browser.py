@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 from typing import Any
 
 from src.scraper.browser import BrowserManager
+from src.scraper.anti_detect import AntiDetectMiddleware
 
 
 class TestBrowserManagerInit:
@@ -16,10 +17,13 @@ class TestBrowserManagerInit:
 
     def test_init_with_default_config(self):
         """默认配置初始化"""
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = ["Mozilla/5.0"]
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
 
@@ -29,9 +33,11 @@ class TestBrowserManagerInit:
 
     def test_init_with_custom_config(self):
         """自定义配置初始化"""
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
 
             custom_config = MagicMock()
@@ -56,10 +62,15 @@ class TestBrowserManagerStart:
         mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
         mock_browser.new_context = AsyncMock(return_value=mock_context)
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = ["Mozilla/5.0"]
             mock_get_config.return_value = mock_config
+            mock_anti_detect = MagicMock(spec=AntiDetectMiddleware)
+            mock_anti_detect.user_agents = ["Mozilla/5.0"]
+            mock_factory.return_value = mock_anti_detect
 
             with patch("playwright.async_api.async_playwright",
                     return_value=mock_async_playwright):
@@ -81,10 +92,13 @@ class TestBrowserManagerStart:
         mock_playwright.chromium = MagicMock()
         mock_playwright.chromium.launch = AsyncMock(return_value=None)
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             with patch("playwright.async_api.async_playwright",
                     return_value=mock_async_playwright):
@@ -105,10 +119,13 @@ class TestBrowserManagerClose:
         mock_browser = AsyncMock()
         mock_context = AsyncMock()
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.playwright = mock_playwright
@@ -129,10 +146,13 @@ class TestBrowserManagerClose:
         mock_context = AsyncMock()
         mock_context.close.side_effect = Exception("context error")
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.playwright = mock_playwright
@@ -151,10 +171,13 @@ class TestBrowserManagerClose:
 
         mock_context = AsyncMock()
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.playwright = mock_playwright
@@ -173,10 +196,13 @@ class TestBrowserManagerClose:
         mock_browser = AsyncMock()
         mock_context = AsyncMock()
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.playwright = mock_playwright
@@ -198,10 +224,13 @@ class TestBrowserManagerNewPage:
 
         mock_context.new_page.return_value = mock_page
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.context = mock_context
@@ -214,10 +243,13 @@ class TestBrowserManagerNewPage:
     @pytest.mark.asyncio
     async def test_new_page_no_context(self):
         """无上下文异常"""
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_factory.return_value = MagicMock(spec=AntiDetectMiddleware)
 
             manager = BrowserManager()
             manager.context = None
@@ -242,10 +274,15 @@ class TestBrowserManagerContextManager:
         mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
         mock_browser.new_context = AsyncMock(return_value=mock_context)
 
-        with patch("src.scraper.browser.get_config") as mock_get_config:
+        with patch("src.scraper.browser.get_config") as mock_get_config, \
+             patch("src.scraper.browser.create_anti_detect_middleware") as mock_factory:
             mock_config = MagicMock()
             mock_config.crawler = MagicMock()
+            mock_config.crawler.user_agents = []
             mock_get_config.return_value = mock_config
+            mock_anti_detect = MagicMock(spec=AntiDetectMiddleware)
+            mock_anti_detect.user_agents = []
+            mock_factory.return_value = mock_anti_detect
 
             with patch("playwright.async_api.async_playwright",
                     return_value=mock_async_playwright):

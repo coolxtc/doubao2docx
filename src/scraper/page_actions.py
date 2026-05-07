@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from playwright.async_api import Page
 
 from ..config import CrawlerConfig
+from .steps import FetchStep
 
 SCROLL_TO_TOP_JS = "window.scrollTo(0, 0)"
 SCROLL_TO_BOTTOM_JS = "window.scrollTo(0, document.body.scrollHeight)"
@@ -92,7 +93,7 @@ class PageActions:
         await page.evaluate(SCROLL_TO_TOP_JS)
 
         if progress_callback:
-            progress_callback("加载图片")
+            progress_callback(FetchStep.LOADING_IMAGES.value)
         imgs = await page.query_selector_all("picture img, img[class*='image']")
         for img in imgs:
             await img.scroll_into_view_if_needed()
@@ -101,7 +102,7 @@ class PageActions:
         await page.evaluate(SCROLL_TO_TOP_JS)
 
         if progress_callback:
-            progress_callback("展开代码")
+            progress_callback(FetchStep.EXPANDING_CODE.value)
         await page.evaluate(CLICK_EXPAND_BUTTONS_JS)
         await page.evaluate(INJECT_EXPANDED_CODE_JS)
         await page.wait_for_timeout(base_wait)
