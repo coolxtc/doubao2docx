@@ -811,23 +811,46 @@ class BaseParser(ABC):
                 if item.type in INLINE_NON_TEXT_TYPES or item.content.strip() or item.content == "\n"
             ]
             if valid_items:
-                # 处理有序列表的 start 属性（仅对第一个 li）
-                if list_type == "ol" and is_first and list_start is not None:
-                    # 找到第一个未带 list_marker 的文本项
-                    for item in valid_items:
-                        if item.type == "text" and not item.list_marker:
-                            item.list_start = list_start
-                            break
-                    else:
-                        # 没有纯文本项，插入占位符
+                # 清理首尾无意义的纯空白/换行项（与 _walk_handle_list 保持一致）
+                while valid_items and valid_items[0].type == INLINE_TEXT and not valid_items[0].content.strip():
+                    valid_items.pop(0)
+                while valid_items and valid_items[-1].type == INLINE_TEXT and not valid_items[-1].content.strip():
+                    valid_items.pop()
+
+                # 确定标记符号：有序列表用 "ol"，无序列表用 "•"
+                marker = "ol" if list_type == "ol" else ("•" if list_type == "ul" else None)
+
+                if marker:
+                    # 清理后无有效项，创建纯占位符保留项目符号
+                    if not valid_items:
                         placeholder = InlineContent(
-                            type="text",
+                            type=INLINE_TEXT,
                             content="",
-                            list_marker="ol",
+                            list_marker=marker,
                             level=level,
-                            list_start=list_start
                         )
-                        valid_items.insert(0, placeholder)
+                        if marker == "ol" and is_first:
+                            placeholder.list_start = list_start if list_start is not None else 1
+                        valid_items = [placeholder]
+                    else:
+                        # 检查第一个元素：文本直接赋予标记，非文本则插入占位符
+                        first = valid_items[0]
+                        if first.type == INLINE_TEXT:
+                            # 第一个就是文本，直接赋予标记
+                            first.list_marker = marker
+                            if marker == "ol" and is_first:
+                                first.list_start = list_start if list_start is not None else 1
+                        else:
+                            # 第一个不是文本，插入占位符承载标记
+                            placeholder = InlineContent(
+                                type=INLINE_TEXT,
+                                content="",
+                                list_marker=marker,
+                                level=level,
+                            )
+                            if marker == "ol" and is_first:
+                                placeholder.list_start = list_start if list_start is not None else 1
+                            valid_items.insert(0, placeholder)
 
                 blocks.append(TextBlock(type=BLOCK_LIST_ITEM, content="", language=list_type, items=valid_items, level=level))
 
@@ -1167,28 +1190,27 @@ class BaseParser(ABC):
                 ctx.items.append(placeholder)
                 continue  # 跳过后续标记处理，避免重复
 
-            # 构造列表标记 / 序号
-            first_text = self._find_first_text_item(li_items)
-            if first_text is not None:
+            # 构造列表标记 / 序号：检查第一个元素是否为文本
+            # 确保标记始终与第一个元素绑定（若首元素非文本则插入占位符）
+            if li_items and li_items[0].type == INLINE_TEXT:
+                first_text = li_items[0]
                 if list_type == HTML_UL:
                     first_text.list_marker = "•"
                     first_text.level = current_level
                 else:  # 有序列表：仅标记，不拼接序号
                     first_text.list_marker = "ol"
                     first_text.level = current_level
-                    # 首个 li 设置 list_start
                     if is_first_li:
                         first_text.list_start = ol_start
             else:
-                # 无文本项（如仅图片），创建占位文本承载标记
+                # 第一个不是文本，插入占位符承载标记
                 marker = "•" if list_type == HTML_UL else "ol"
                 placeholder = InlineContent(
                     type=INLINE_TEXT,
                     content="",
-                    list_marker=marker if marker else None,
+                    list_marker=marker,
                     level=current_level,
                 )
-                # 首个 li 设置 list_start
                 if list_type == HTML_OL and is_first_li:
                     placeholder.list_start = ol_start
                 li_items.insert(0, placeholder)

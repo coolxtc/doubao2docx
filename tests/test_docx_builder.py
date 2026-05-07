@@ -326,14 +326,23 @@ class TestAddListItem:
         assert any("1. 有序" in t for t in texts)
 
     def test_ordered_list_resets_on_level_change(self, doc_builder):
-        """层级变化时重置计数器（不同层级独立有序列表各自从 1 开始）"""
+        """嵌套层级变化时：解析器为新嵌套列表首项设置 list_start=1，实现独立编号"""
+        # block1: 普通有序列表，list_start 由解析器设置
         block1 = TextBlock(type="list_item", content="一级", language="ol", level=0)
+        # 模拟解析器行为：首个列表项设置 list_start=1
+        items1 = [InlineContent(type="text", content="一级", list_marker="ol", list_start=1)]
+        block1.items = items1
         doc_builder._add_list_item(block1)
-        block2 = TextBlock(type="list_item", content="二级", language="ol", level=1)
+
+        # block2: 嵌套有序列表，level=1 表示进入新嵌套层级
+        # 模拟解析器行为：新嵌套列表的首项也需要 list_start=1
+        items2 = [InlineContent(type="text", content="二级", list_marker="ol", level=1, list_start=1)]
+        block2 = TextBlock(type="list_item", content="二级", language="ol", level=1, items=items2)
         doc_builder._add_list_item(block2)
+
         paras = doc_builder.document.paragraphs
         texts = [p.text for p in paras]
-        # 不同层级独立编号，各自重置为 1
+        # 不同嵌套层级的有序列表各自独立编号
         assert any("1. 一级" in t for t in texts)
         assert any("1. 二级" in t for t in texts)
         # 验证文档生成了两个段落
@@ -346,12 +355,12 @@ class TestAddListItem:
         assert para.style.name == "List Bullet"
 
     def test_list_item_with_inline_items(self, doc_builder):
-        """带内联内容的有序列表项：序号应在渲染时生成"""
-        items = [InlineContent(type="text", content="第一项", bold=True)]
+        """带内联内容的有序列表项：解析器已标记 list_marker，生成器渲染序号"""
+        # 模拟解析器行为：设置 list_marker="ol"
+        items = [InlineContent(type="text", content="第一项", bold=True, list_marker="ol")]
         block = TextBlock(type="list_item", content="", language="ol", items=items)
         doc_builder._add_list_item(block)
         para = doc_builder.document.paragraphs[0]
-        # 序号在 _add_inline_content 遇到 list_marker="ol" 时生成
         assert "1. 第一项" in para.text
         assert para.runs[0].font.bold is True
 
@@ -364,8 +373,9 @@ class TestAddListItem:
         assert para.text.startswith("5. ")
 
     def test_ordered_list_start_with_complex_items(self, doc_builder):
-        """复杂列表项（含内联内容）通过 InlineContent.list_start 指定起始序号"""
-        items = [InlineContent(type="text", content="复杂项", bold=True, list_start=3)]
+        """复杂列表项（含内联内容）：解析器设置 list_marker 和 list_start"""
+        # 模拟解析器行为：设置 list_marker="ol" 和 list_start
+        items = [InlineContent(type="text", content="复杂项", bold=True, list_marker="ol", list_start=3)]
         block = TextBlock(type="list_item", content="", language="ol", items=items)
         doc_builder._add_list_item(block)
         para = doc_builder.document.paragraphs[0]
@@ -625,15 +635,18 @@ class TestCreateInlineParagraph:
         assert para is None
 
     def test_unordered_paragraph_uses_list_style(self, doc_builder):
+        """无序列表不预创建空段落，由 list_marker 处理器创建"""
         para = doc_builder._create_inline_paragraph("ul", 0)
-        assert para.style.name == "List Bullet"
+        # 无序/有序列表均不预创建空段落
+        assert para is None
 
     def test_non_list_returns_none(self, doc_builder):
         para = doc_builder._create_inline_paragraph(None, 0)
         assert para is None
 
     def test_level_adds_indent(self, doc_builder):
-        para = doc_builder._create_inline_paragraph("ul", 2)
+        """无序列表续写段落应使用 List Bullet 样式"""
+        para = doc_builder._create_continuation_paragraph("ul", 2)
         assert para.paragraph_format.left_indent is not None
         # 1英寸 = 914400 EMU，level * 0.5英寸 = 1英寸
         assert para.paragraph_format.left_indent == 914400

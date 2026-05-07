@@ -254,39 +254,12 @@ class DocxBuilder:
         level = getattr(block, 'level', 0)  # 嵌套层级
 
         if block.items:
-            # 包含内联内容的列表项：为第一个文本项设置 list_marker（用于序号生成）
+            # 包含内联内容的列表项
             if list_type == "ol":
-                # 层级或类型变化时重置计数器；渲染时递增生成序号
-                if self._last_list_level != level or self._last_list_type != "ol":
-                    self._list_counter = 0
+                # 记录状态，由解析器携带的 list_start 驱动序号重置
                 self._last_list_type = "ol"
                 self._last_list_level = level
-
-                # 为第一个文本项设置 list_marker，让 _add_inline_content 识别有序列表
-                marker_set = False
-                target_item = None
-                for item in block.items:
-                    if item.type == "text" and not item.list_marker:
-                        item.list_marker = "ol"
-                        marker_set = True
-                        target_item = item
-                        break
-
-                # 兜底：如果没有文本项能承载标记，创建占位符
-                if not marker_set:
-                    placeholder = InlineContent(
-                        type="text",
-                        content="",
-                        list_marker="ol",
-                        level=level
-                    )
-                    block.items.insert(0, placeholder)
-                    target_item = placeholder
-
-                # 应用 list_start（如果存在），然后清除避免 _add_inline_content 重复重置
-                if target_item and target_item.list_start is not None:
-                    self._list_counter = target_item.list_start - 1
-                    target_item.list_start = None
+                # 解析器已保证有序列表项携带 list_marker 和 list_start，直接传递即可
             else:
                 self._last_list_type = "ul"
                 self._last_list_level = level
@@ -294,21 +267,20 @@ class DocxBuilder:
         else:
             # 纯文本列表项（无内联内容）
             if list_type == "ol":
-                # 如果层级或类型改变，重置计数器（与有 items 的分支保持一致）
-                if self._last_list_level != level or self._last_list_type != "ol":
-                    self._list_counter = 0
+                # 记录状态，由解析器携带的 list_start 驱动序号重置
                 self._last_list_type = "ol"
                 self._last_list_level = level
 
-                # 应用 block 携带的 list_start（若有）
+                # 构造带标记的占位符，并传入 list_start
+                placeholder = InlineContent(
+                    type="text",
+                    content=block.content or "",
+                    list_marker="ol",
+                    level=level
+                )
                 if block.list_start is not None:
-                    self._list_counter = block.list_start - 1
-
-                # 序号由 _add_inline_content 处理，纯文本内容通过占位符传递
-                placeholder_items = [
-                    InlineContent(type="text", content=block.content or "", list_marker="ol", level=level)
-                ]
-                self._add_inline_content(placeholder_items, list_type, level)
+                    placeholder.list_start = block.list_start
+                self._add_inline_content([placeholder], list_type, level)
             else:
                 self._last_list_type = "ul"
                 self._last_list_level = level
@@ -510,9 +482,13 @@ class DocxBuilder:
 
             # 展示公式（块级）
             if item.type == "latex" and item.is_display:
-                self._add_latex(item.content, is_display=True)
+                if list_type is not None:
+                    # 在列表上下文里，块级公式也放到带列表样式的续写段落中，避免分离
+                    para = self._create_continuation_paragraph(list_type, current_item_level)
+                    self._add_latex_to_paragraph(para, item.content, is_display=False)
+                else:
+                    self._add_latex(item.content, is_display=True)
                 need_new_para = True
-                para = None
                 last_run = None
                 continue
 
@@ -549,29 +525,24 @@ class DocxBuilder:
 
     def _create_inline_paragraph(self, list_type: Optional[str], level: int):
         """
-        创建内联段落并设置列表样式；非列表时返回 None 表示复用当前段落
-
-        注意：有序列表的序号生成已移至 _add_inline_content 内部，此处仅处理无序列表。
+        创建内联段落；列表类型（有序/无序）均不预创建空段落，
+        由 list_marker 处理器（_handle_list_marker_item）自行创建。
 
         Args:
             list_type: 列表类型（"ol" 或 "ul"）
             level: 嵌套层级
 
         Returns:
-            Paragraph | None: 创建的段落对象，非列表情况返回 None
+            Paragraph | None: 始终返回 None，由后续标记处理创建段落
         """
+        return None
+
+    def _create_continuation_paragraph(self, list_type: Optional[str], level: int):
+        """创建列表项内部块级元素后的续写段落"""
         if list_type == "ul":
             para = self.document.add_paragraph(style="List Bullet")
         else:
-            # 有序列表：返回 None，序号由 _add_inline_content 在遇到 list_marker="ol" 时生成
-            return None
-        if level > 0:
-            para.paragraph_format.left_indent = Inches(level * 0.5)
-        return para
-
-    def _create_continuation_paragraph(self, list_type: Optional[str], level: int):
-        """创建列表项内部块级元素后的续写段落（不添加序号，仅保留缩进）"""
-        para = self.document.add_paragraph()
+            para = self.document.add_paragraph()
         if level > 0:
             para.paragraph_format.left_indent = Inches(level * 0.5)
         return para
