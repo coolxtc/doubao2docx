@@ -529,10 +529,27 @@ class TestHelpers:
         assert urls == ["url1", "url2"]
 
     def test_compensate_text_latex_replaces_spaces(self, doc_builder):
+        # 多个前导空格 → 全部替换为 ~
         result = doc_builder._compensate_text_latex(r"\text{   hello}")
-        assert r"\text{~~~hello" in result
+        assert result == r"\text{~~~hello}"
+        # 仅空格（前导空格替换为 ~）
         result2 = doc_builder._compensate_text_latex(r"\text{ }")
-        assert r"\text{~}" in result2
+        assert result2 == r"\text{~}"
+        # 无 \text 命令 → 原样返回
+        result3 = doc_builder._compensate_text_latex(r"x^2 + y^2")
+        assert result3 == r"x^2 + y^2"
+        # 无前导空格 → 原样返回
+        result4 = doc_builder._compensate_text_latex(r"\text{hello}")
+        assert result4 == r"\text{hello}"
+        # 多个 \text 命令
+        result5 = doc_builder._compensate_text_latex(r"\text{ a} and \text{  b}")
+        assert result5 == r"\text{~a} and \text{~~b}"
+        # 混合内容且有前导空格
+        result6 = doc_builder._compensate_text_latex(r"x = \text{  some text} + y")
+        assert result6 == r"x = \text{~~some text} + y"
+        # 仅有空格
+        result7 = doc_builder._compensate_text_latex(r"\text{   }")
+        assert result7 == r"\text{~~~}"
 
     def test_is_image_content_type(self, doc_builder):
         assert DocxBuilder._is_image_content_type("image/png") is True

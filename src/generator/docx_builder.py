@@ -833,7 +833,11 @@ class DocxBuilder:
 
     def _compensate_text_latex(self, latex: str) -> str:
         """
-        补偿 \\text{} 中的空格丢失问题，将所有前导空格替换为 ~
+        补偿 \\text{} 中的空格丢失问题，
+        将 \\text{...} 内部的开头连续空格替换为 ~。
+
+        注意：本函数采用非贪婪匹配，不支持 \\text{} 内部嵌套花括号的场景；
+        若遇到复杂嵌套，该 \\text{} 命令将被保留原样（不处理）。
 
         Args:
             latex: LaTeX 公式文本
@@ -842,10 +846,16 @@ class DocxBuilder:
             str: 处理后的 LaTeX 文本
         """
         def _replace_spaces(match):
-            """将连续空格替换为对应数量的 ~"""
-            spaces = match.group(1)
-            return '\\text{' + '~' * len(spaces)
-        return re.sub(r'\\text\{( +)', _replace_spaces, latex)
+            body = match.group(1)          # \text{...} 内部内容
+            # 仅替换开头的连续空格
+            new_body = re.sub(r'^ +', lambda m: '~' * len(m.group(0)), body)
+            return '\\text{' + new_body + '}'
+
+        # 非贪婪匹配，若匹配失败则保持原样
+        try:
+            return re.sub(r'\\text\{(.*?)\}', _replace_spaces, latex)
+        except re.error:
+            return latex
 
     @staticmethod
     def _set_code_font(run) -> None:
