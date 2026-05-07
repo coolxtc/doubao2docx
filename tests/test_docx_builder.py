@@ -875,7 +875,7 @@ class TestCoverageImprovements:
     @patch("src.generator.docx_builder.Document")
     @patch("os.path.exists")
     def test_latex_to_omml_success_with_stderr(self, mock_exists, mock_doc_class, mock_run, doc_builder):
-        """pandoc 成功但有警告信息应打印"""
+        """pandoc 成功但有警告信息应记录日志"""
         mock_exists.return_value = True
         fake_doc = MagicMock()
         fake_doc.paragraphs = []
@@ -884,10 +884,10 @@ class TestCoverageImprovements:
         mock_result.returncode = 0
         mock_result.stderr = "warning message"
         mock_run.return_value = mock_result
-        with patch("builtins.print") as mock_print:
+        with patch.object(doc_builder, '_logger') as mock_logger:
             result = doc_builder._latex_to_omml("x", False)
             assert result is None  # 无公式段落
-            mock_print.assert_called_once()
+            mock_logger.warning.assert_called_once()
 
     @patch("subprocess.run")
     @patch("os.path.exists")

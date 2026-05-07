@@ -481,8 +481,8 @@ class DocxBuilder:
                         run.font.bold = True
                     if item.italic:
                         run.font.italic = True
-                    if current_item_level > 0:
-                        para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
+                    if lvl > 0:
+                        para.paragraph_format.left_indent = Inches(lvl * 0.5)
                 else:  # 无序列表：沿用原逻辑
                     para = self._handle_list_marker_item(item, current_item_level)
                 last_run = None
@@ -765,7 +765,7 @@ class DocxBuilder:
                         self._set_math_chinese_font(math_el, self.config.font_name)
                         return math_el
             if result.stderr:
-                print(f"pandoc警告: {result.stderr[:200]}")
+                self._logger.warning(f"pandoc警告: {result.stderr[:200]}")
         except Exception as e:
             raise ExportError(f"Pandoc转换失败: {e}") from e
         finally:
@@ -1082,6 +1082,7 @@ class DocxBuilder:
         """
         image_data = self._download_image(url)
         if image_data is None:
+            self._record_image_failure(url)
             self._add_paragraph("[图片加载失败]")
             return
 

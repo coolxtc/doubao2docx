@@ -161,7 +161,6 @@ class WalkOptions:
     """遍历策略配置（不可变，遍历过程中配置不应改变）"""
     handle_line_break_div: bool = True  # True: 根据上下文智能判断是否在 line-break div 处插入换行；False: 忽略其换行语义，当作普通内联容器递归解析
     parse_div_span_inline: bool = True  # 递归解析 div/span 内联内容还是仅提取图片
-    strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
     reset_format_to_parent: bool = True  # flush 后重置为父级状态
     handle_nested_lists: bool = False  # 处理 ul/ol 嵌套列表还是跳过
     list_level: int = 1  # 当前列表嵌套层级（1 表示第一层嵌套，0 表示顶层/无嵌套）
@@ -185,12 +184,11 @@ class _WalkContext:
 
     def flush(self) -> None:
         """将累积的文本 flush 到 items 列表"""
-        # 检查是否有实际内容（非全空白），但保留原始格式化的 current_text
-        # （首部无空格，尾部可能有空格，由 _append_normalized_text 保证）
+        # 检查是否有实际内容（非全空白），去除前导空格保留尾部空格
         if self.current_text.strip():
             self.items.append(InlineContent(
                 type=INLINE_TEXT,
-                content=self.current_text,  # 保留可能存在的尾部空格
+                content=self.current_text.lstrip(),  # 去除首部多余空白
                 bold=self.current_bold,
                 italic=self.current_italic
             ))
@@ -829,7 +827,6 @@ class BaseParser(ABC):
             options=WalkOptions(
                 handle_line_break_div=True,
                 parse_div_span_inline=True,
-                strip_nav_strings=True,
                 reset_format_to_parent=False,
                 handle_nested_lists=True,
                 list_level=level,
@@ -894,17 +891,12 @@ class BaseParser(ABC):
             text: 原始文本
             ctx: 遍历上下文
         """
-        if ctx.options.strip_nav_strings:
-            # 将连续空白压缩为单空格，但只去除首部空白，保留尾部空格
-            # （用于分隔跨标签的单词，如 "Hello <b>world</b>"）
-            text = re.sub(r'\s+', ' ', text)
-            if text.startswith(' '):
-                text = text[1:]
-        else:
-            text = re.sub(r'\s+', ' ', text)
+        # 压缩连续空白为单空格，统一处理（保留首尾空格用于分隔）
+        text = re.sub(r'\s+', ' ', text)
         if not text:
             return
-        if ctx.current_text and not ctx.current_text.endswith(' '):
+        # 若前一文本不留空格，且当前文本不以空格开头，则补充一个空格
+        if ctx.current_text and not ctx.current_text.endswith(' ') and not text.startswith(' '):
             ctx.current_text += ' '
         ctx.current_text += text
 
@@ -1185,7 +1177,6 @@ class BaseParser(ABC):
                 options=WalkOptions(
                     handle_line_break_div=ctx.options.handle_line_break_div,
                     parse_div_span_inline=ctx.options.parse_div_span_inline,
-                    strip_nav_strings=ctx.options.strip_nav_strings,
                     reset_format_to_parent=False,
                     handle_nested_lists=True,
                     list_level=current_level,
@@ -1381,7 +1372,6 @@ class BaseParser(ABC):
             options=WalkOptions(
                 handle_line_break_div=True,  # 启用智能换行，保留段落内显式换行
                 parse_div_span_inline=True,  # 允许解析 div/span 内联内容
-                strip_nav_strings=True,  # 规范化空白
                 reset_format_to_parent=False,
                 handle_nested_lists=False,
             ),
@@ -1528,9 +1518,10 @@ class BaseParser(ABC):
         rows = []
         cell_bold = []
         for i, row in enumerate(raw_rows_data):
+            # 对齐列数：创建新列表避免原地修改输入数据
             if len(row) < max_cols:
-                row.extend([""] * (max_cols - len(row)))
-                raw_rows_bold[i].extend([False] * (max_cols - len(raw_rows_bold[i])))
+                row = row + [""] * (max_cols - len(row))
+                raw_rows_bold[i] = raw_rows_bold[i] + [False] * (max_cols - len(raw_rows_bold[i]))
             rows.append(row)
             cell_bold.append(raw_rows_bold[i])
 

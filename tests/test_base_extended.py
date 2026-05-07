@@ -364,7 +364,6 @@ class TestExtractMethods:
             options=WalkOptions(
                 handle_line_break_div=False,
                 parse_div_span_inline=False,
-                strip_nav_strings=True,
                 reset_format_to_parent=False,
                 handle_nested_lists=False,
                 list_level=1,
@@ -384,7 +383,6 @@ class TestExtractMethods:
             options=WalkOptions(
                 handle_line_break_div=False,
                 parse_div_span_inline=False,
-                strip_nav_strings=True,
                 reset_format_to_parent=False,
                 handle_nested_lists=False,
                 list_level=1,
@@ -635,7 +633,6 @@ class TestWalkInlineChildrenMissing:
             options=WalkOptions(
                 handle_nested_lists=True,
                 parse_div_span_inline=False,
-                strip_nav_strings=False,
                 reset_format_to_parent=False,
             ),
         )
