@@ -182,11 +182,12 @@ class _WalkContext:
 
     def flush(self) -> None:
         """将累积的文本 flush 到 items 列表"""
-        stripped = self.current_text.strip()
-        if stripped:
+        # 检查是否有实际内容（非全空白），但保留原始格式化的 current_text
+        # （首部无空格，尾部可能有空格，由 _append_normalized_text 保证）
+        if self.current_text.strip():
             self.items.append(InlineContent(
                 type=INLINE_TEXT,
-                content=stripped,
+                content=self.current_text,  # 保留可能存在的尾部空格
                 bold=self.current_bold,
                 italic=self.current_italic
             ))
@@ -827,7 +828,12 @@ class BaseParser(ABC):
             ctx: 遍历上下文
         """
         if ctx.options.strip_nav_strings:
-            text = text.strip()
+            # 将连续空白压缩为单空格，但只去除首部空白，保留尾部空格
+            # （用于分隔跨标签的单词，如 "Hello <b>world</b>"）
+            text = re.sub(r'\s+', ' ', text)
+            if text.startswith(' '):
+                text = text[1:]
+        else:
             text = re.sub(r'\s+', ' ', text)
         if not text:
             return
@@ -993,6 +999,9 @@ class BaseParser(ABC):
         """
         处理 line-break-class div
 
+        注意：此方法仅在 handle_line_break_div=True 时被调用。
+        False 的情况由 _walk_handle_inline_container 统一处理为普通容器递归。
+
         决策逻辑：
         | 前一个兄弟类型          | 条件              | 是否插入换行 |
         |------------------------|-------------------|-------------|
@@ -1001,8 +1010,8 @@ class BaseParser(ABC):
         | 其他 Tag / NavigableString | 任何情况        | 是          |
         | None (第一个子元素)    | -                 | 是          |
         """
-        # handle_line_break_div=False 或第一个子元素：直接添加换行
-        if not ctx.options.handle_line_break_div or child.previous_sibling is None:
+        # 第一个子元素：直接添加换行
+        if child.previous_sibling is None:
             ctx.flush()
             ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
             return
@@ -1195,10 +1204,13 @@ class BaseParser(ABC):
 
     def _walk_handle_inline_container(self, child: Tag, ctx: _WalkContext) -> None:
         """处理内联容器 div/span"""
-        # 优先检查是否为 line-break div
+        # 只有明确要求处理 line-break 时才走专用逻辑
+        # handle_line_break_div=False：忽略 line-break 语义，当作普通容器递归解析
         if self._has_any_class(child, self.config.line_break_classes):
-            self._walk_handle_line_break_div(child, ctx)
-            return
+            if ctx.options.handle_line_break_div:
+                self._walk_handle_line_break_div(child, ctx)
+                return
+            # 否则：忽略 line-break 语义，继续执行后续普通容器递归
 
         if not ctx.options.parse_div_span_inline:
             return  # 不解析内联内容
@@ -1338,7 +1350,7 @@ class BaseParser(ABC):
             parent_bold=False,
             parent_italic=False,
             options=WalkOptions(
-                handle_line_break_div=False,  # 直接添加换行，不过滤
+                handle_line_break_div=True,  # 启用智能换行，保留段落内显式换行
                 parse_div_span_inline=True,  # 允许解析 div/span 内联内容
                 strip_nav_strings=True,  # 规范化空白
                 reset_format_to_parent=False,
@@ -1364,7 +1376,7 @@ class BaseParser(ABC):
             parent_bold=bold,
             parent_italic=italic,
             options=WalkOptions(
-                handle_line_break_div=False,
+                handle_line_break_div=True,
                 handle_nested_lists=False,
                 list_level=1,
             ),
