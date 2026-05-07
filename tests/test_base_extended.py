@@ -338,7 +338,7 @@ class TestProcessList:
         parser = MockParser()
         soup = BeautifulSoup("<li><strong>Bold</strong> normal</li>", "lxml")
         blocks = []
-        parser._process_list_item(soup.find("li"), blocks, "ul", 1)
+        parser._process_list_item(soup.find("li"), blocks, "ul", 1, list_start=None, is_first=False)
         bold = [i for i in blocks[0].items if i.bold]
         assert len(bold) >= 1
 
@@ -564,6 +564,31 @@ class TestOlListItemContent:
         assert "Apple" in texts
         assert "Banana" in texts
 
+    def test_ordered_list_start_attribute(self):
+        """<ol start="5"> 解析后首项 TextBlock 的 list_start 应为 5，第二项为 None"""
+        parser = MockParser()
+        html = '<ol start="5"><li>First</li><li>Second</li></ol>'
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._process_list(soup.find("ol"), "ol", blocks)
+        assert len(blocks) == 2
+        assert blocks[0].list_start == 5
+        assert blocks[1].list_start is None
+
+    def test_nested_ordered_list_start(self):
+        """嵌套 <ol start="3"> 应在 items 中产生 list_marker="ol" 且 list_start=3 的项"""
+        parser = MockParser()
+        html = "<ol><li>Item<ol start='3'><li>Sub</li></ol></li></ol>"
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._handle_list(soup.find("ol"), blocks)
+        # 顶层复杂列表项存在
+        complex_li = [b for b in blocks if b.type == "list_item" and b.items]
+        assert len(complex_li) >= 1
+        # 在其 items 中查找携带 list_start=3 的项
+        sub_ol_items = [i for i in complex_li[0].items if i.list_marker == "ol" and i.list_start == 3]
+        assert len(sub_ol_items) >= 1
+
 
 # =============================================================================
 # 精准打击覆盖率缺失行的新增测试（修正 HTML 嵌套限制）
@@ -626,7 +651,7 @@ class TestListItemHasPreTable:
         html = '<li>desc <pre>sudo apt update</pre></li>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_list_item(soup.find("li"), blocks, "ul", 1)
+        parser._process_list_item(soup.find("li"), blocks, "ul", 1, list_start=None, is_first=False)
         code_items = [i for i in blocks[0].items if i.type == "code"]
         assert len(code_items) == 1
 
@@ -635,7 +660,7 @@ class TestListItemHasPreTable:
         html = '<li>desc <table><tr><td>1</td></tr></table></li>'
         soup = BeautifulSoup(html, "lxml")
         blocks = []
-        parser._process_list_item(soup.find("li"), blocks, "ul", 1)
+        parser._process_list_item(soup.find("li"), blocks, "ul", 1, list_start=None, is_first=False)
         table_items = [i for i in blocks[0].items if i.type == "table"]
         assert len(table_items) == 1
 

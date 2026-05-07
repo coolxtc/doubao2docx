@@ -170,14 +170,13 @@ class TestAddCodeBlock:
 
     def test_code_block_font_size(self, doc_builder):
         """
-        代码块字号：_set_run_font 会在设置 code_font_size 后再次调用，
-        最终字号为默认的 font_size（12pt）
+        代码块字号：使用配置中的 code_font_size（10pt = 127000 EMU）
         """
         doc_builder._add_code_block("some code")
         para = doc_builder.document.paragraphs[0]
         for run in para.runs:
-            # 12pt = 152400 EMU
-            assert run.font.size == Pt(12)
+            # 10pt = 127000 EMU（配置中的 code_font_size）
+            assert run.font.size == Pt(10)
 
 
 # =============================================================================
@@ -327,16 +326,16 @@ class TestAddListItem:
         assert any("1. 有序" in t for t in texts)
 
     def test_ordered_list_resets_on_level_change(self, doc_builder):
-        """层级变化时重置计数器（当前实现：顺序递增，不同层级不重置）"""
+        """层级变化时重置计数器（不同层级独立有序列表各自从 1 开始）"""
         block1 = TextBlock(type="list_item", content="一级", language="ol", level=0)
         doc_builder._add_list_item(block1)
         block2 = TextBlock(type="list_item", content="二级", language="ol", level=1)
         doc_builder._add_list_item(block2)
         paras = doc_builder.document.paragraphs
         texts = [p.text for p in paras]
-        # 当前实现：层级变化不重置，序号顺序递增
+        # 不同层级独立编号，各自重置为 1
         assert any("1. 一级" in t for t in texts)
-        assert any("2. 二级" in t for t in texts)
+        assert any("1. 二级" in t for t in texts)
         # 验证文档生成了两个段落
         assert len(paras) == 2
 
@@ -355,6 +354,22 @@ class TestAddListItem:
         # 序号在 _add_inline_content 遇到 list_marker="ol" 时生成
         assert "1. 第一项" in para.text
         assert para.runs[0].font.bold is True
+
+    def test_ordered_list_start_attribute(self, doc_builder):
+        """简单有序列表项通过 TextBlock.list_start 指定起始序号"""
+        doc_builder._add_list_item(
+            TextBlock(type="list_item", content="第五项", language="ol", list_start=5)
+        )
+        para = doc_builder.document.paragraphs[0]
+        assert para.text.startswith("5. ")
+
+    def test_ordered_list_start_with_complex_items(self, doc_builder):
+        """复杂列表项（含内联内容）通过 InlineContent.list_start 指定起始序号"""
+        items = [InlineContent(type="text", content="复杂项", bold=True, list_start=3)]
+        block = TextBlock(type="list_item", content="", language="ol", items=items)
+        doc_builder._add_list_item(block)
+        para = doc_builder.document.paragraphs[0]
+        assert "3. 复杂项" in para.text
 
 
 # =============================================================================
