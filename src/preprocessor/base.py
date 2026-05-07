@@ -70,9 +70,10 @@ INLINE_LATEX = "latex"
 INLINE_IMAGE = "image"
 INLINE_TABLE = "table"
 INLINE_CODE = "code"
+INLINE_CODE_INLINE = "inline_code"   # 行内代码（区别于块级 pre）
 
 # 复合类型元组（用于过滤非文本内联项）
-INLINE_NON_TEXT_TYPES = (INLINE_LATEX, INLINE_IMAGE, INLINE_TABLE, INLINE_CODE)
+INLINE_NON_TEXT_TYPES = (INLINE_LATEX, INLINE_IMAGE, INLINE_TABLE, INLINE_CODE, INLINE_CODE_INLINE)
 
 # LaTeX 公式语言标识
 LATEX_DISPLAY = "display"
@@ -282,7 +283,7 @@ class BaseParser(ABC):
         """处理预格式化代码块标签 pre"""
         if self._is_code_expanded(element):
             return
-        code = element.get_text("\n", strip=True)
+        code = element.get_text("\n", strip=False).strip('\n')
         language = self._extract_code_language(element)
         blocks.append(TextBlock(type=BLOCK_CODE, content=code, language=language))
 
@@ -581,7 +582,7 @@ class BaseParser(ABC):
         if self._is_code_button(element):
             expanded_pre = element.find(HTML_PRE, attrs={self.config.code_expanded_attr: "true"})
             if expanded_pre:
-                code = expanded_pre.get_text("\n", strip=True)
+                code = expanded_pre.get_text("\n", strip=False).strip('\n')
                 blocks.append(TextBlock(type=BLOCK_CODE, content=code, language="language-plaintext"))
             return
 
@@ -657,13 +658,13 @@ class BaseParser(ABC):
 
         # 优先从 pre 标签提取代码
         if pre_elem:
-            code_content = pre_elem.get_text("\n", strip=True)
+            code_content = pre_elem.get_text("\n", strip=False).strip('\n')
         # 其次从 code 标签提取
         elif code_elem:
-            code_content = code_elem.get_text("\n", strip=True)
+            code_content = code_elem.get_text("\n", strip=False).strip('\n')
         # 最后从元素自身提取
         else:
-            code_content = element.get_text("\n", strip=True)
+            code_content = element.get_text("\n", strip=False).strip('\n')
             if code_content.startswith("plaintext"):
                 code_content = code_content[len("plaintext"):].lstrip("\n")
 
@@ -1082,7 +1083,7 @@ class BaseParser(ABC):
         # 仅当代码未展开时处理
         if not self._is_code_expanded(child):
             ctx.flush()
-            code_content = child.get_text("\n", strip=True)
+            code_content = child.get_text("\n", strip=False).strip('\n')
             language = self._extract_code_language(child)
             ctx.items.append(InlineContent(type=INLINE_CODE, content=code_content,
                                bold=ctx.current_bold, italic=ctx.current_italic,
@@ -1093,7 +1094,7 @@ class BaseParser(ABC):
         ctx.flush()
         code_content = child.get_text()  # 保留内部空格，不 strip
         ctx.items.append(InlineContent(
-            type=INLINE_CODE,
+            type=INLINE_CODE_INLINE,
             content=code_content,
             bold=ctx.current_bold,
             italic=ctx.current_italic,
@@ -1120,10 +1121,10 @@ class BaseParser(ABC):
     def _walk_handle_list(self, child: Tag, ctx: _WalkContext) -> None:
         """处理列表 (ul, ol) - 完整解析每个 li 的内联内容"""
         if not ctx.options.handle_nested_lists:
-            logger.warning(
-                "段落内遇到嵌套列表 <%s>，但 handle_nested_lists=False，列表将被跳过。",
-                child.name
-            )
+            # 不解析嵌套列表结构，但保留纯文本避免信息丢失
+            text = child.get_text()
+            if text.strip():
+                self._append_normalized_text(text, ctx)
             return
 
         # 保存格式状态，flush 会重置 current_bold/italic

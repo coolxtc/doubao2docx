@@ -19,7 +19,6 @@ from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 
 from ..preprocessor import TextBlock, InlineContent
-from ..preprocessor.base import BaseParser as _BaseParser
 from ..config import DocumentStyleConfig, get_config
 from ..exceptions import ExportError
 from .latex_converter import LaTeXConverter
@@ -133,6 +132,18 @@ class DocxBuilder:
         for run in para.runs:
             self._set_run_font(run)
 
+    def _add_error_paragraph(self, text: str = "[内容解析失败]") -> None:
+        """
+        添加错误提示段落（红色字体）
+
+        Args:
+            text: 错误提示文本
+        """
+        para = self.document.add_paragraph()
+        run = para.add_run(text)
+        run.font.color.rgb = RGBColor(0xFF, 0x00, 0x00)  # 红色
+        self._set_run_font(run)
+
     def build_blocks(
         self,
         title: str,
@@ -172,7 +183,11 @@ class DocxBuilder:
                     run.font.color.rgb = RGBColor(0, 0, 0)
                     self._set_run_font(run)
 
-            self._add_text_block(block)
+            try:
+                self._add_text_block(block)
+            except Exception:
+                self._logger.exception(f"处理内容块失败 (type={block.type})")
+                self._add_error_paragraph()
 
         footer_mark = self._config.document_style.footer_mark
         if footer_mark:
@@ -399,6 +414,16 @@ class DocxBuilder:
         self._add_code_block(item.content, level=level)
         return True, None, None
 
+    def _add_inline_code_run(self, para, item: InlineContent) -> None:
+        """在当前段落中添加行内代码 run（等宽字体）"""
+        run = para.add_run(item.content)
+        run.font.size = Pt(self.config.style_config.code_font_size if self.config.style_config else 10)
+        self._set_code_font(run)
+        if item.bold:
+            run.font.bold = True
+        if item.italic:
+            run.font.italic = True
+
     def _add_inline_content(self, items: list[InlineContent], list_type: Optional[str] = None, level: int = 0) -> None:
         """
         添加内联内容（文本和公式混合的段落）
@@ -467,12 +492,12 @@ class DocxBuilder:
             if item.type == "text":
                 if need_new_para or para is None:
                     if need_new_para:
-                        para = self._create_continuation_paragraph(list_type, current_item_level)
+                        para = self._create_continuation_paragraph(list_type, level)
                         need_new_para = False
                     else:
                         para = self.document.add_paragraph()
-                        if current_item_level > 0:
-                            para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
+                        if level > 0:
+                            para.paragraph_format.left_indent = Inches(level * 0.5)
                     last_run = None
                     last_was_break = False
                 last_run, last_was_break, _ = self._handle_inline_text_item(
@@ -484,7 +509,7 @@ class DocxBuilder:
             if item.type == "latex" and item.is_display:
                 if list_type is not None:
                     # 在列表上下文里，块级公式也放到带列表样式的续写段落中，避免分离
-                    para = self._create_continuation_paragraph(list_type, current_item_level)
+                    para = self._create_continuation_paragraph(list_type, level)
                     self._add_latex_to_paragraph(para, item.content, is_display=False)
                 else:
                     self._add_latex(item.content, is_display=True)
@@ -496,12 +521,12 @@ class DocxBuilder:
             if item.type == "latex":
                 if need_new_para or para is None:
                     if need_new_para:
-                        para = self._create_continuation_paragraph(list_type, current_item_level)
+                        para = self._create_continuation_paragraph(list_type, level)
                         need_new_para = False
                     else:
                         para = self.document.add_paragraph()
-                        if current_item_level > 0:
-                            para.paragraph_format.left_indent = Inches(current_item_level * 0.5)
+                        if level > 0:
+                            para.paragraph_format.left_indent = Inches(level * 0.5)
                     last_run = None
                     last_was_break = False
                 self._add_latex_to_paragraph(para, item.content, is_display=False)
@@ -516,6 +541,22 @@ class DocxBuilder:
             # 表格
             if item.type == "table":
                 need_new_para, para, last_run = self._handle_inline_table_item(item, current_item_level)
+                continue
+
+            # 行内代码
+            if item.type == "inline_code":
+                if need_new_para or para is None:
+                    if need_new_para:
+                        para = self._create_continuation_paragraph(list_type, level)
+                        need_new_para = False
+                    else:
+                        para = self.document.add_paragraph()
+                        if level > 0:
+                            para.paragraph_format.left_indent = Inches(level * 0.5)
+                    last_run = None
+                    last_was_break = False
+                self._add_inline_code_run(para, item)
+                last_run = None  # 避免后续文本追加到代码 run 上
                 continue
 
             # 代码块
@@ -621,7 +662,6 @@ class DocxBuilder:
         if not latex.strip():
             return
 
-        latex = _BaseParser._strip_latex_delimiters(latex)
         omml, unicode_text = self._convert_latex_content(latex, is_display)
 
         if omml is not None:
@@ -654,7 +694,6 @@ class DocxBuilder:
         if not latex.strip():
             return
 
-        latex = _BaseParser._strip_latex_delimiters(latex)
         omml, unicode_text = self._convert_latex_content(latex, is_display)
 
         if omml is not None:
@@ -806,6 +845,26 @@ class DocxBuilder:
             return '\\text{' + '~' * len(spaces)
         return re.sub(r'\\text\{( +)', _replace_spaces, latex)
 
+    @staticmethod
+    def _set_code_font(run) -> None:
+        """
+        为代码 run 设置等宽字体（西文 Courier New，东亚 SimSun）
+
+        Args:
+            run: docx Run 对象
+        """
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is None:
+            rFonts = parse_xml(
+                '<w:rFonts xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>'
+            )
+            rPr.append(rFonts)
+        rFonts.set(qn('w:ascii'), 'Courier New')
+        rFonts.set(qn('w:hAnsi'), 'Courier New')
+        rFonts.set(qn('w:eastAsia'), 'SimSun')
+        run.font.name = "Courier New"
+
     def _add_code_block(self, code: str, language: Optional[str] = None, level: int = 0) -> None:
         """
         添加代码块（使用 Courier New + 宋体 保证等宽对齐）
@@ -815,14 +874,7 @@ class DocxBuilder:
             para.paragraph_format.left_indent = Inches(level * 0.5)
         run = para.add_run(code)
         run.font.size = Pt(self.config.style_config.code_font_size if self.config.style_config else 10)
-
-        # 西文等宽字体
-        run.font.name = "Courier New"
-        # 东亚字体设为宋体（SimSun），保证中文也为等宽，且系统一定自带
-        try:
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
-        except (AttributeError, TypeError):
-            pass
+        self._set_code_font(run)
 
         # 添加灰色背景
         pPr = para._element.get_or_add_pPr()
