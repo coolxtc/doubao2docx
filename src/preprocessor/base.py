@@ -613,9 +613,23 @@ class BaseParser(ABC):
 
         # 图片包装器（通用，支持子类自定义图片元素）
         if self._has_any_class(element, [self.config.image_wrapper_class]):
-            for descendant in element.descendants:
-                if isinstance(descendant, Tag) and self._is_image_element(descendant):
-                    url = self._extract_image_url(descendant)
+            # 收集所有图片后代，过滤只保留无图片祖先的最外层图片
+            image_elements = [
+                d for d in element.descendants
+                if isinstance(d, Tag) and self._is_image_element(d)
+            ]
+            if image_elements:
+                outermost = []
+                for img in image_elements:
+                    # 检查所有祖先中是否有其他图片元素（表明当前是内层嵌套）
+                    has_image_ancestor = any(
+                        ancestor in image_elements for ancestor in img.parents
+                        if isinstance(ancestor, Tag)
+                    )
+                    if not has_image_ancestor:
+                        outermost.append(img)
+                for img in outermost:
+                    url = self._extract_image_url(img)
                     if url:
                         blocks.append(TextBlock(type=BLOCK_IMAGE, content=url))
             return
