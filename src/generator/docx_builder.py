@@ -472,7 +472,11 @@ class DocxBuilder:
                     self._list_counter += 1
                     seq = self._list_counter
                     para = self.document.add_paragraph()
-                    run = para.add_run(f"{seq}. {item.content}")
+                    # 判断内容是否为空（去除空白后）
+                    if item.content.strip():
+                        run = para.add_run(f"{seq}. {item.content}")
+                    else:
+                        run = para.add_run(f"{seq}.")
                     self._set_run_font(run)
                     if item.bold:
                         run.font.bold = True

@@ -1117,6 +1117,10 @@ class BaseParser(ABC):
     def _walk_handle_list(self, child: Tag, ctx: _WalkContext) -> None:
         """处理列表 (ul, ol) - 完整解析每个 li 的内联内容"""
         if not ctx.options.handle_nested_lists:
+            logger.warning(
+                "段落内遇到嵌套列表 <%s>，但 handle_nested_lists=False，列表将被跳过。",
+                child.name
+            )
             return
 
         # 保存格式状态，flush 会重置 current_bold/italic
