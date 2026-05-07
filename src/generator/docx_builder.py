@@ -64,7 +64,7 @@ class DocxBuilder:
         # 列表状态追踪（用于有序列表序号连续性）
         self._last_list_type: str | None = None  # 上一个列表类型（"ul" 或 "ol"）
         self._last_list_level: int = 0  # 上一个列表的嵌套层级
-        self._list_counter: int = 0  # 有序列表当前序号
+        self._list_counters: dict[int, int] = {}  # 有序列表计数器，key 为 level，value 为当前序号
 
         # 图片下载失败追踪
         self._image_failure_count: int = 0  # 失败图片数量
@@ -164,7 +164,7 @@ class DocxBuilder:
         self._add_title(title)
 
         # 重置列表状态
-        self._list_counter = 0
+        self._list_counters = {}
         self._last_list_type = None
         self._last_list_level = 0
 
@@ -174,7 +174,7 @@ class DocxBuilder:
             if role != current_role:
                 current_role = role
                 # 角色切换时重置列表状态，确保每条消息的列表序号独立
-                self._list_counter = 0
+                self._list_counters = {}
                 self._last_list_type = None
                 self._last_list_level = 0
                 role_label = "用户" if role == "user" else "豆包"
@@ -231,7 +231,7 @@ class DocxBuilder:
                 # 标题意味着新的逻辑分组，重置列表状态
                 self._last_list_type = None
                 self._last_list_level = 0
-                self._list_counter = 0
+                self._list_counters = {}
         # 简单列表（已废弃，列表均以 list_item 形式处理）
         elif block.type == "list":
             pass
@@ -463,11 +463,13 @@ class DocxBuilder:
             # 有列表标记时，创建新的列表段落
             if item.list_marker and item.type == "text":
                 if item.list_marker == "ol":  # 有序列表：自行生成序号
-                    # 兜底：如果 item 仍携带 list_start（未经过 _add_list_item 清除），则重置计数器
-                    if item.list_start is not None:
-                        self._list_counter = item.list_start - 1
-                    self._list_counter += 1
-                    seq = self._list_counter
+                    # 有序列表：使用层级独立的计数器
+                    lvl = getattr(item, 'level', level)  # 使用 item.level 或参数 level
+                    if lvl not in self._list_counters or item.list_start is not None:
+                        # 该层级首次出现或需要重置
+                        self._list_counters[lvl] = (item.list_start or 1) - 1
+                    self._list_counters[lvl] += 1
+                    seq = self._list_counters[lvl]
                     para = self.document.add_paragraph()
                     # 判断内容是否为空（去除空白后）
                     if item.content.strip():

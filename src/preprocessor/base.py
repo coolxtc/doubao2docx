@@ -162,7 +162,7 @@ class WalkOptions:
     handle_line_break_div: bool = True  # True: 根据上下文智能判断是否在 line-break div 处插入换行；False: 忽略其换行语义，当作普通内联容器递归解析
     parse_div_span_inline: bool = True  # 递归解析 div/span 内联内容还是仅提取图片
     strip_nav_strings: bool = True  # 对 NavigableString 是否先 strip
-    reset_format_to_parent: bool = False  # flush 后重置为父级状态还是 False
+    reset_format_to_parent: bool = True  # flush 后重置为父级状态
     handle_nested_lists: bool = False  # 处理 ul/ol 嵌套列表还是跳过
     list_level: int = 1  # 当前列表嵌套层级（1 表示第一层嵌套，0 表示顶层/无嵌套）
 
@@ -555,6 +555,31 @@ class BaseParser(ABC):
             else:
                 blocks.append(TextBlock(type=BLOCK_PARAGRAPH, content=text))
 
+    def _is_pure_inline_container(self, element: Tag) -> bool:
+        """
+        检查元素是否仅包含内联内容（无块级元素、无列表、无表格等）。
+        块级标签集与 _handle_div_or_section 的逻辑对应。
+
+        Args:
+            element: HTML 元素
+
+        Returns:
+            True 如果元素仅包含内联内容，无块级后代
+        """
+        block_tags = {
+            'p', 'div', 'section', 'table', 'ul', 'ol', 'pre',
+            'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+        }
+        # 检查直接子级即可，无需深度遍历
+        for child in element.children:
+            if isinstance(child, Tag):
+                if child.name in block_tags:
+                    return False
+                # 公式元素应作为独立公式块处理，不视为纯内联
+                if self._is_math_element(child):
+                    return False
+        return True
+
     def _handle_div_or_section(self, element: Tag, blocks: list[TextBlock]) -> None:
         """
         处理 div 或 section 元素
@@ -641,9 +666,13 @@ class BaseParser(ABC):
             # 唯一有意义子节点是 <p>，直接处理该段落
             self._process_element(meaningful_children[0], blocks)
         else:
-            # 其他情况：递归提取所有块
-            sub_blocks = self._extract_blocks(element)
-            blocks.extend(sub_blocks)
+            # 纯内联容器：作为内联段落处理，避免割裂
+            if self._is_pure_inline_container(element):
+                self._process_paragraph(element, blocks)
+            else:
+                # 其他情况：递归提取所有块
+                sub_blocks = self._extract_blocks(element)
+                blocks.extend(sub_blocks)
 
     def _process_code_container(self, element: Tag, blocks: list[TextBlock]) -> None:
         """

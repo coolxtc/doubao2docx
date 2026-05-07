@@ -92,7 +92,7 @@ class TestDocxBuilderInit:
         """默认初始化后，核心属性应存在且列表计数器归零"""
         assert doc_builder.document is not None
         assert doc_builder.latex_converter is not None
-        assert doc_builder._list_counter == 0
+        assert doc_builder._list_counters == {}
         assert doc_builder._last_list_type is None
         assert doc_builder._last_list_level == 0
 
@@ -267,12 +267,12 @@ class TestAddTextBlock:
         assert any("print('test')" in p.text for p in doc_builder.document.paragraphs)
 
     def test_heading_block_resets_list_state(self, doc_builder):
-        doc_builder._list_counter = 5
+        doc_builder._list_counters = {0: 5}
         doc_builder._last_list_type = "ol"
         doc_builder._last_list_level = 0
         block = TextBlock(type="heading", content="新章节", language="2")
         doc_builder._add_text_block(block)
-        assert doc_builder._list_counter == 0
+        assert doc_builder._list_counters == {}
         assert doc_builder._last_list_type is None
         assert doc_builder._last_list_level == 0
 
@@ -511,7 +511,7 @@ class TestBuildBlocks:
             ("user", TextBlock(type="list_item", content="有序项", language="ol")),
         ]
         doc_builder.build_blocks("标题", blocks, temp_docx_path)
-        assert doc_builder._list_counter == 1
+        assert doc_builder._list_counters.get(0) == 1
 
 
 # =============================================================================
