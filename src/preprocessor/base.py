@@ -32,8 +32,10 @@ INLINE_CODE_TAGS = ("code",)  # 内联代码标签（区别于块级 pre）
 LIST_ITEM_TAGS = ("li",)  # 列表项标签（单元素元组）
 INLINE_NEUTRAL_TAGS = ("a", "u", "small", "del", "mark")  # 中性内联标签（不改变粗体/斜体状态）
 
-# 用于 _has_inline_structure 快速判断的复合块级标签集合（标签名硬匹配）
-# 注：图片元素（如 <img>）不再仅依赖此集合，而是由 _is_image_element 动态检测。
+# 内联结构检测用的块级元素集合（标签名硬匹配）
+# 当段落/列表项内出现这些标签时，视为复杂内容，需要内联解析。
+# 注意：此集合仅用于 _has_inline_structure 的硬匹配快速通道；
+# 图片元素的检测同时依赖 _is_image_element 动态判断以支持子类扩展。
 _INLINE_STRUCTURE_BLOCK_TAGS = set(IMAGE_TAGS) | set(TABLE_TAGS) | set(CODE_TAGS)
 
 # =============================================================================
@@ -223,52 +225,41 @@ class BaseParser(ABC):
         """构建标签名 → 处理方法的映射字典（幂等，可重复调用）"""
         h: dict[str, Callable[[Tag, list[TextBlock]], None]] = {}
 
-        # 表格
-        for tag in TABLE_TAGS:
-            h[tag] = self._handle_table
-
-        # 标题 h1 - h6
-        for tag in HEADING_TAGS:
-            h[tag] = self._handle_heading
-
-        # 列表 ul / ol
-        for tag in LIST_TAGS:
-            h[tag] = self._handle_list
-
-        # 段落 p
-        for tag in PARAGRAPH_TAGS:
-            h[tag] = self._process_paragraph  # 签名一致，直接复用
-
-        # 预格式化代码块 pre
-        for tag in CODE_TAGS:
-            h[tag] = self._handle_pre
-
-        # 引用 blockquote
-        for tag in BLOCKQUOTE_TAGS:
-            h[tag] = self._handle_blockquote
-
-        # 换行 br
-        for tag in BREAK_TAGS:
-            h[tag] = self._handle_br
-
-        # 图片 picture
-        for tag in IMAGE_TAGS:
-            h[tag] = self._handle_picture
-
-        # div / section
-        h[HTML_DIV] = self._handle_div_or_section  # 签名一致，直接复用
-        for tag in SECTION_TAGS:
-            h[tag] = self._handle_div_or_section
-
-        # 所有内联格式标签
-        for tag in INLINE_TAGS:
-            h[tag] = self._handle_inline
-
+        mapping: list[tuple[tuple[str, ...], Callable[[Tag, list[TextBlock]], None]]] = [
+            (TABLE_TAGS, self._handle_table),
+            (HEADING_TAGS, self._handle_heading),
+            (LIST_TAGS, self._handle_list),
+            (PARAGRAPH_TAGS, self._process_paragraph),
+            (CODE_TAGS, self._handle_pre),
+            (BLOCKQUOTE_TAGS, self._handle_blockquote),
+            (BREAK_TAGS, self._handle_br),
+            (IMAGE_TAGS, self._handle_picture),
+            (SECTION_TAGS, self._handle_div_or_section),
+            (INLINE_TAGS, self._handle_inline),
+        ]
+        h[HTML_DIV] = self._handle_div_or_section  # 单独注册，div 不在 INLINE_TAGS 中
+        self._register_handlers(h, mapping)
         self._tag_handlers = h
 
     # -------------------------------------------------------------------------
-    # 块级标签处理（由 _tag_handlers 分发）
+    # 块级标签处理（由 _tag_handlers 分派）
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _register_handlers(
+        target: dict[str, Callable[..., None]],
+        mapping: list[tuple[tuple[str, ...], Callable[..., None]]],
+    ) -> None:
+        """
+        将 (标签组, 处理器) 对批量注册到目标字典中
+
+        Args:
+            target: 目标映射字典
+            mapping: (标签组元组, 处理器) 列表
+        """
+        for tags, handler in mapping:
+            for tag in tags:
+                target[tag] = handler
 
     def _handle_table(self, element: Tag, blocks: list[TextBlock]) -> None:
         """处理表格标签"""
@@ -927,54 +918,34 @@ class BaseParser(ABC):
         """
         构建标签名 → 处理方法的映射字典
 
+        注意：IMAGE_TAGS 的注册作为"文档化/备选"角色。
+        在 _walk_inline_children 中，动态 _is_image_element 检测优先于此处注册。
+        当子类的 _is_image_element 对 <picture> 返回 True 时，此处映射不会被执行。
+
         Returns:
             标签名到处理方法的映射字典
         """
         h: dict[str, Callable[[Tag, _WalkContext], None]] = {}
 
-        # 加粗标签
-        for tag in BOLD_TAGS:
-            h[tag] = self._walk_handle_bold
+        # 批量注册处理器
+        mapping: list[tuple[tuple[str, ...], Callable[[Tag, _WalkContext], None]]] = [
+            (BOLD_TAGS, self._walk_handle_bold),
+            (ITALIC_TAGS, self._walk_handle_italic),
+            (BREAK_TAGS, self._walk_handle_br),
+            (TABLE_TAGS, self._walk_handle_table),
+            (CODE_TAGS, self._walk_handle_code),
+            (INLINE_CODE_TAGS, self._walk_handle_inline_code),
+            (PARAGRAPH_TAGS, self._walk_handle_paragraph),
+            (LIST_TAGS, self._walk_handle_list),
+            (INLINE_CONTAINER_TAGS, self._walk_handle_inline_container),
+            # 中性内联标签：不改变格式状态，委托给 _walk_handle_format（set_bold=False, set_italic=False）
+            (INLINE_NEUTRAL_TAGS, lambda child, ctx: self._walk_handle_format(child, ctx, set_bold=False, set_italic=False)),
+        ]
+        self._register_handlers(h, mapping)
 
-        # 斜体标签
-        for tag in ITALIC_TAGS:
-            h[tag] = self._walk_handle_italic
-
-        # 换行标签
-        for tag in BREAK_TAGS:
-            h[tag] = self._walk_handle_br
-
-        # 图片元素
+        # 图片元素：作为文档化/备选注册（实际由 _is_image_element 动态检测优先）
         for tag in IMAGE_TAGS:
             h[tag] = self._walk_handle_image
-
-        # 表格元素
-        for tag in TABLE_TAGS:
-            h[tag] = self._walk_handle_table
-
-        # 代码块
-        for tag in CODE_TAGS:
-            h[tag] = self._walk_handle_code
-
-        # 内联代码
-        for tag in INLINE_CODE_TAGS:
-            h[tag] = self._walk_handle_inline_code
-
-        # 段落容器
-        for tag in PARAGRAPH_TAGS:
-            h[tag] = self._walk_handle_paragraph
-
-        # 列表
-        for tag in LIST_TAGS:
-            h[tag] = self._walk_handle_list
-
-        # 内联容器 div/span
-        for tag in INLINE_CONTAINER_TAGS:
-            h[tag] = self._walk_handle_inline_container
-
-        # 中性内联标签（不改变粗体/斜体状态）
-        for tag in INLINE_NEUTRAL_TAGS:
-            h[tag] = self._walk_handle_inline_generic
 
         return h
 
@@ -1247,27 +1218,6 @@ class BaseParser(ABC):
         ctx.items.extend(
             self._walk_inline_children(
                 child, parent_bold=ctx.current_bold, parent_italic=ctx.current_italic,
-                options=ctx.options,
-            )
-        )
-
-    def _walk_handle_inline_generic(self, child: Tag, ctx: _WalkContext) -> None:
-        """
-        处理不改变格式状态的通用内联标签 (a, u, small, del, mark 等)
-
-        将当前累积的文本 flush，然后递归遍历子节点，
-        继承当前的粗体/斜体状态，不引入额外格式变更。
-
-        Args:
-            child: 内联标签元素
-            ctx: 遍历上下文
-        """
-        ctx.flush()
-        ctx.items.extend(
-            self._walk_inline_children(
-                child,
-                parent_bold=ctx.current_bold,
-                parent_italic=ctx.current_italic,
                 options=ctx.options,
             )
         )
