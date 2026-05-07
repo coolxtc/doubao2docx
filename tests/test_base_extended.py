@@ -685,6 +685,24 @@ class TestCodeLanguageFilters:
         parser._process_element(soup.find("pre"), blocks)
         assert blocks[0].language == "language-python"
 
+    def test_code_language_takes_first_language_class(self):
+        """验证存在多个 language-* 类名时，返回第一个"""
+        parser = MockParser()
+        html = '<pre><code class="language-js language-ts">const x = 1</code></pre>'
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._process_element(soup.find("pre"), blocks)
+        assert blocks[0].language == "language-js"
+
+    def test_code_language_fallback_without_language_class(self):
+        """验证无 language-* 时回退为非 hljs 类名拼接"""
+        parser = MockParser()
+        html = '<pre><code class="hljs some-lang">code</code></pre>'
+        soup = BeautifulSoup(html, "lxml")
+        blocks = []
+        parser._process_element(soup.find("pre"), blocks)
+        assert blocks[0].language == "some-lang"
+
 
 class TestParseTableCellBold:
     """覆盖表格解析中 cell_bold 标记（使用 thead 明确区分）"""

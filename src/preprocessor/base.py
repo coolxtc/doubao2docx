@@ -685,17 +685,26 @@ class BaseParser(ABC):
         """
         从代码块元素中提取编程语言标识
 
+        优先级：
+        1. <code> 子元素 class 中的第一个 language-* 类名
+        2. <code> 子元素 class 中所有非 hljs 类名拼接
+        3. 容器 class 含 "plaintext" → "language-plaintext"
+        4. 默认 "text"
+
         Args:
             element: 代码块根元素（pre 或代码容器）
 
         Returns:
             语言标识字符串，如 "python"、"language-plaintext"，默认 "text"
         """
-        # 优先从 <code> 子元素的 class 中提取（如 "language-python"）
         code_elem = element.find(HTML_CODE)
         if code_elem:
             classes = code_elem.get("class") or []
-            # 过滤掉 highlight.js 的通用类名 "hljs"
+            # 优先查找 language-* 类名，返回第一个匹配项
+            for cls in classes:
+                if cls.startswith("language-"):
+                    return cls
+            # 回退：合并所有非 hljs 类名
             lang = " ".join(c for c in classes if c != "hljs")
             if lang:
                 return lang
