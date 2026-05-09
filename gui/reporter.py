@@ -1,5 +1,6 @@
 """Flet 进度报告器实现"""
 
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 import flet as ft
@@ -21,10 +22,16 @@ class FletReporter(ProgressReporter):
         data_table: ft.DataTable,
         page: ft.Page,
         log_callback: Optional[Callable[[str], None]] = None,
+        base_path: Optional[Path] = None,
+        file_opener: Optional[Callable[[Path], None]] = None,
     ) -> None:
         self.table = data_table
         self.page = page
         self.log_callback = log_callback
+        # 导出目录根路径（用于拼接完整文件路径）
+        self.base_path = base_path
+        # 打开文件的回调函数
+        self.file_opener = file_opener
         self._rows: dict[int, ft.DataRow] = {}
 
     def add_task(self, task_index: int, url_tag: str) -> Any:
@@ -78,7 +85,25 @@ class FletReporter(ProgressReporter):
         row.cells[1].content.content = self._build_progress_text(step)
         row.cells[2].content.content.value = status
         row.cells[3].content.content.value = f"{elapsed:.1f}s" if elapsed else ""
-        row.cells[4].content.content.value = result
+
+        # 结果列：根据完成状态切换显示模式
+        if step >= TOTAL_STEPS and result:
+            full_path = (self.base_path / result) if self.base_path else Path(result)
+            open_btn = ft.IconButton(
+                icon=ft.Icons.FOLDER_OPEN,
+                icon_size=14,
+                tooltip="在文件夹中打开",
+                on_click=lambda e, p=full_path: self.file_opener(p) if self.file_opener else None,
+            )
+            result_text = ft.Text(result, size=12)
+            row.cells[4].content.content = ft.Row(
+                [open_btn, result_text],
+                spacing=4,
+                alignment=ft.MainAxisAlignment.START,
+            )
+        else:
+            # 未完成或 result 为空 → 普通文本
+            row.cells[4].content.content = ft.Text(result)
         self.page.update()
 
     def _build_progress_text(self, step: int) -> ft.Text:

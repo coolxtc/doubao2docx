@@ -386,14 +386,23 @@ class MainPage(ft.Column):
         # 隐藏结果卡片
         self.result_card.visible = False
 
-        self.reporter = FletReporter(self.progress_table, self._page, log_callback=self._add_log)
+        dir_str = self.dir_text.value.rstrip("/\\")
+        output_dir = Path(dir_str if dir_str else "data")
+        # 导出子目录（用于拼接文件完整路径）
+        export_subdir = output_dir / "export" / datetime.now().strftime("%y%m%d")
+
+        # 只创建一次 reporter
+        self.reporter = FletReporter(
+            self.progress_table,
+            self._page,
+            log_callback=self._add_log,
+            base_path=export_subdir,
+            file_opener=self._open_exported_file,
+        )
         self.reporter.start()
         for i, url in enumerate(urls, 1):
             tag = _get_url_tag(url)
             self.reporter.add_task(i, tag)
-
-        dir_str = self.dir_text.value.rstrip("/\\")
-        output_dir = Path(dir_str if dir_str else "data")
 
         try:
             report = await fetch_and_export_batch(
@@ -443,3 +452,33 @@ class MainPage(ft.Column):
             subprocess.run(["explorer", str(folder)])
         else:
             subprocess.run(["xdg-open", str(folder)])
+
+    def _open_exported_file(self, path: Path) -> None:
+        """
+        打开导出的文件，如果文件不存在则打开上级文件夹
+
+        Args:
+            path: 文件完整路径
+        """
+        file_path = Path(path).resolve()
+        if file_path.exists():
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.run(["open", str(file_path)])
+            elif system == "Windows":
+                subprocess.run(["explorer", "/select,", str(file_path)])
+            else:
+                subprocess.run(["xdg-open", str(file_path)])
+        elif file_path.parent.exists():
+            # 文件不存在但文件夹存在：打开文件夹
+            folder = file_path.parent
+            system = platform.system()
+            if system == "Darwin":
+                subprocess.run(["open", str(folder)])
+            elif system == "Windows":
+                subprocess.run(["explorer", str(folder)])
+            else:
+                subprocess.run(["xdg-open", str(folder)])
+        else:
+            # 文件夹也不存在：静默忽略
+            pass
