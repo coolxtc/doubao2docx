@@ -19,6 +19,7 @@ class ExportResult:
     filename: Optional[str] = None  # 文件名
     file_path: Optional[str] = None  # 文件路径
     error_message: Optional[str] = None  # 错误信息
+    image_failure_count: int = 0  # 图片下载失败数量
 
 
 @dataclass

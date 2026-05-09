@@ -19,9 +19,14 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
 ]
+gui = [
+    "flet>=0.85.0",
+    "flet-desktop>=0.85.0",
+]
 
 [project.scripts]
 doubao-export = "src.cli:main"
+doubao-export-gui = "gui.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

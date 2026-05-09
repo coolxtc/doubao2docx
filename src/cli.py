@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -31,6 +31,16 @@ THREAD_ID_PATTERN = re.compile(r'/thread/([a-zA-Z0-9]+)')
 
 # 全局任务管理器（用于进度回调）
 _task_manager: "TaskManager | None" = None
+
+
+@runtime_checkable
+class ProgressReporter(Protocol):
+    """进度报告者协议，CI 和 GUI 均需实现此协议"""
+    def add_task(self, task_index: int, url_tag: str) -> Any: ...
+    def update(self, task_index: int, step: int, status: str, result: str = "", elapsed: float = 0.0) -> None: ...
+    def log_warning(self, msg: str) -> None: ...
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
 
 
 def _get_url_tag(url: str) -> str:
@@ -178,6 +188,10 @@ class TaskManager:
             self._live.stop()
             self._live = None
 
+    def log_warning(self, msg: str) -> None:
+        """实现 ProgressReporter 协议的日志警告方法"""
+        print(f"⚠️ {msg}")
+
     def print_all(self) -> None:
         """打印所有任务状态（非交互式终端）"""
         if not self._is_interactive:
@@ -193,6 +207,7 @@ async def fetch_and_export_single(
     total: int = 1,
     namer: Optional["DocNamer"] = None,
     external_page: "Page | None" = None,
+    reporter: Optional[ProgressReporter] = None,
 ) -> tuple[str, bool, str, Optional[str], int, str]:
     """
     单个 URL 的导出流程
@@ -205,6 +220,7 @@ async def fetch_and_export_single(
         total: 总任务数
         namer: 文档命名器（共享实例）
         external_page: 外部页面（浏览器池复用）
+        reporter: 进度报告者（可选）
 
     Returns:
         (url, success, filename, file_path, latex_fallback_count, title) 元组
@@ -219,16 +235,20 @@ async def fetch_and_export_single(
     def on_progress(step: str) -> None:
         """爬虫进度回调"""
         step_value = step.value if isinstance(step, FetchStep) else step
-        if _task_manager and step_value in FETCH_STEP_NAMES:
-            elapsed = time.time() - total_start
-            step_idx = FETCH_STEP_NAMES[step_value]
+        elapsed = time.time() - total_start
+        step_idx = FETCH_STEP_NAMES.get(step_value, -1)
+        if reporter:
+            reporter.update(task_index, step_idx, step_value, elapsed=elapsed)
+        elif _task_manager and step_value in FETCH_STEP_NAMES:
             _task_manager.update(task_index, step_idx, step_value, elapsed=elapsed)
 
     def update_step(name: str) -> None:
         """更新解析/生成步骤"""
-        if _task_manager and name in FETCH_STEP_NAMES:
-            elapsed = time.time() - total_start
-            step_idx = FETCH_STEP_NAMES[name]
+        elapsed = time.time() - total_start
+        step_idx = FETCH_STEP_NAMES.get(name, -1)
+        if reporter:
+            reporter.update(task_index, step_idx, name, elapsed=elapsed)
+        elif _task_manager and name in FETCH_STEP_NAMES:
             _task_manager.update(task_index, step_idx, name, elapsed=elapsed)
 
     try:
@@ -279,7 +299,11 @@ async def fetch_and_export_single(
         fail_count, fail_urls = builder.get_image_failures()
         if fail_count > 0:
             doc_title = chat_data.title[:20] + "..." if len(chat_data.title) > 20 else chat_data.title
-            print(f"{tag} ⚠️ 图片下载失败: {doc_title} ({fail_count}张)")
+            warning_msg = f"图片下载失败: {doc_title} ({fail_count}张)"
+            if reporter:
+                reporter.log_warning(warning_msg)
+            else:
+                print(f"{tag} ⚠️ {warning_msg}")
             for url in fail_urls[:3]:
                 print(f"    {url[:60]}...")
             if fail_count > 3:
@@ -287,7 +311,9 @@ async def fetch_and_export_single(
 
         # 完成
         elapsed = time.time() - total_start
-        if _task_manager:
+        if reporter:
+            reporter.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
+        elif _task_manager:
             _task_manager.update(task_index, 10, "导出完成", f"{filename_base}.docx", elapsed=elapsed)
 
         return url, True, f"{filename_base}.docx", str(output_path), total_fallback, chat_data.title
@@ -297,14 +323,18 @@ async def fetch_and_export_single(
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         error_type = type(e).__name__.replace("Error", "")
         print(f"{tag} [✗] {error_type}失败: {display_msg}")
-        if _task_manager:
+        if reporter:
+            reporter.update(task_index, 10, "导出失败", error_msg[:50])
+        elif _task_manager:
             _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
     except Exception as e:
         error_msg = str(e)
         display_msg = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
         print(f"{tag} [✗] 失败: {display_msg}")
-        if _task_manager:
+        if reporter:
+            reporter.update(task_index, 10, "导出失败", error_msg[:50])
+        elif _task_manager:
             _task_manager.update(task_index, 10, "导出失败", error_msg[:50])
         raise
 
@@ -314,6 +344,7 @@ async def fetch_and_export_batch(
     output_dir: Path,
     anti_detect_level: str = "medium",
     concurrency: int = 5,
+    reporter: Optional[ProgressReporter] = None,
 ) -> BatchReport:
     """
     批量导出多个 URL
@@ -323,6 +354,7 @@ async def fetch_and_export_batch(
         output_dir: 输出目录
         anti_detect_level: 反爬级别
         concurrency: 并发数
+        reporter: 进度报告者（可选）
 
     Returns:
         BatchReport: 包含成功/失败统计的报告
@@ -331,7 +363,7 @@ async def fetch_and_export_batch(
     total = len(urls)
 
     # 初始化文档命名器
-    index_file = Path("data/link_index.json")
+    index_file = output_dir / "link_index.json"
     namer = DocNamer(index_file)
     namer.cleanup_old_entries()
 
@@ -365,7 +397,7 @@ async def fetch_and_export_batch(
             page = await pool.acquire(concurrency)
             return await fetch_and_export_single(
                 url, output_dir, anti_detect_level, task_index, total, namer,
-                external_page=page
+                external_page=page, reporter=reporter
             )
         except Exception as e:
             return (url, False, str(e), None, 0, "")
