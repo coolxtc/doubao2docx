@@ -39,12 +39,11 @@ class FletReporter(ProgressReporter):
         tag_display = url_tag if len(url_tag) <= 20 else "..." + url_tag[-17:]
         row = ft.DataRow(
             cells=[
-                ft.DataCell(ft.Text(str(task_index))),
-                ft.DataCell(ft.Text(tag_display, tooltip=url_tag)),
-                ft.DataCell(ft.Text("○" * TOTAL_STEPS)),
-                ft.DataCell(ft.Text("等待中")),
-                ft.DataCell(ft.Text("")),
-                ft.DataCell(ft.Text("")),
+                ft.DataCell(ft.Container(ft.Text(f"{task_index}-{tag_display}", tooltip=url_tag), width=140)),
+                ft.DataCell(ft.Container(ft.Text("○" * TOTAL_STEPS), width=90)),
+                ft.DataCell(ft.Container(ft.Text("等待中"), width=70)),
+                ft.DataCell(ft.Container(ft.Text(""), width=40)),
+                ft.DataCell(ft.Container(ft.Text(""), width=500)),
             ]
         )
         self.table.rows.append(row)
@@ -82,10 +81,10 @@ class FletReporter(ProgressReporter):
             # 已完成：全 ●
             dots = "●" * TOTAL_STEPS
 
-        row.cells[2].content.value = dots
-        row.cells[3].content.value = status
-        row.cells[4].content.value = f"{elapsed:.1f}s" if elapsed else ""
-        row.cells[5].content.value = result
+        row.cells[1].content.content.value = dots
+        row.cells[2].content.content.value = status
+        row.cells[3].content.content.value = f"{elapsed:.1f}s" if elapsed else ""
+        row.cells[4].content.content.value = result
         self.page.update()
 
     def log_warning(self, msg: str) -> None:

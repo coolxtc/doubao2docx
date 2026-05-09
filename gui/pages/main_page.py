@@ -45,8 +45,10 @@ class MainPage(ft.Column):
             filled=True,
             fill_color=SURFACE,
             text_style=ft.TextStyle(size=14),
-            content_padding=ft.Padding(left=16, right=16, top=12, bottom=12),
+            content_padding=ft.Padding(left=12, right=12, top=30, bottom=10),
+            margin=ft.Margin(top=6),
             expand=True,   # 添加这一行
+            autofocus=True,
         )
 
         # ---------- 设置控件（不直接放入布局，将通过底部表展示） ----------
@@ -89,15 +91,24 @@ class MainPage(ft.Column):
             ),
         )
 
-        # ---------- 进度表格 ----------
+        # ---------- 进度表格（固定列宽，最后列自适应） ----------
         self.progress_table = ft.DataTable(
             columns=[
-                ft.DataColumn(ft.Text("#", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("任务", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("进度", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("状态", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("耗时", weight=ft.FontWeight.BOLD)),
-                ft.DataColumn(ft.Text("结果", weight=ft.FontWeight.BOLD)),
+                ft.DataColumn(
+                    ft.Container(ft.Text("#", weight=ft.FontWeight.BOLD), width=140)
+                ),
+                ft.DataColumn(
+                    ft.Container(ft.Text("进度", weight=ft.FontWeight.BOLD), width=90)
+                ),
+                ft.DataColumn(
+                    ft.Container(ft.Text("状态", weight=ft.FontWeight.BOLD), width=70)
+                ),
+                ft.DataColumn(
+                    ft.Container(ft.Text("耗时", weight=ft.FontWeight.BOLD), width=40)
+                ),
+                ft.DataColumn(
+                    ft.Container(ft.Text("结果", weight=ft.FontWeight.BOLD), width=500)
+                ),
             ],
             rows=[],
             heading_row_color=ft.Colors.GREY_200,
@@ -159,22 +170,33 @@ class MainPage(ft.Column):
         )
 
         # ---------- 导出按钮 ----------
+        # 正常状态的内容
+        self.export_btn_normal_content = ft.Row(
+            [
+                ft.Icon(ft.Icons.PLAY_ARROW, color=ft.Colors.WHITE, size=18),
+                ft.Text("开始导出", color=ft.Colors.WHITE, size=14, weight=ft.FontWeight.W_600),
+            ],
+            spacing=8,
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
+        # 导出中状态的内容
+        self.export_btn_working_content = ft.Row(
+            [
+                ft.ProgressRing(width=16, height=16, stroke_width=2, color=ft.Colors.WHITE),
+                ft.Text("导出中...", color=ft.Colors.WHITE, size=14, weight=ft.FontWeight.W_600),
+            ],
+            spacing=8,
+            alignment=ft.MainAxisAlignment.CENTER,
+        )
         self.export_btn = ft.FilledButton(
-            "开始导出",
-            icon=ft.Icons.PLAY_ARROW,
+            content=self.export_btn_normal_content,
             on_click=self._start_export,
             style=ft.ButtonStyle(
                 shape=ft.RoundedRectangleBorder(radius=12),
                 bgcolor=PRIMARY,
-                color=ft.Colors.WHITE,
                 padding=ft.Padding(left=24, right=24, top=12, bottom=12),
                 elevation=2,
             ),
-        )
-        self.status_text = ft.Text(
-            "就绪",
-            size=12,
-            color=ft.Colors.GREY_500,
         )
 
         # ---------- 布局组装 ----------
@@ -255,13 +277,6 @@ class MainPage(ft.Column):
                     content=ft.Column(
                         spacing=16,
                         controls=[
-                            ft.Row(
-                                [
-                                    ft.Container(expand=True),
-                                    self.status_text,
-                                ],
-                                alignment=ft.MainAxisAlignment.END,
-                            ),
                             ft.Container(
                                 content=ft.Column(
                                     [
@@ -362,9 +377,11 @@ class MainPage(ft.Column):
             self._page.update()
             return
 
+        # 切换到导出中状态
+        self.export_btn.content = self.export_btn_working_content
+        self.export_btn.style.bgcolor = ft.Colors.GREY_500
         self.export_btn.disabled = True
-        self.status_text.value = "导出中..."
-        self.status_text.update()
+        self.export_btn.update()
 
         # 隐藏结果卡片
         self.result_card.visible = False
@@ -397,9 +414,11 @@ class MainPage(ft.Column):
             self._add_log(f"错误: {ex}")
         finally:
             self.reporter.stop()
+            # 恢复按钮
+            self.export_btn.content = self.export_btn_normal_content
+            self.export_btn.style.bgcolor = PRIMARY
             self.export_btn.disabled = False
-            self.status_text.value = "就绪"
-            self.status_text.update()
+            self.export_btn.update()
             self._page.update()
 
     async def _pick_directory(self, e):
