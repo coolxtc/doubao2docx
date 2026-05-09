@@ -5,7 +5,7 @@ from gui.app import main_app
 
 def main():
     """GUI 入口函数，供 pyproject.toml scripts 调用"""
-    ft.app(target=main_app, view=ft.FLET_APP)
+    ft.run(main_app)   # 直接传入 main_app
 
 
 if __name__ == "__main__":

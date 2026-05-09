@@ -24,6 +24,3 @@ async def main_app(page: ft.Page) -> None:
 
     # 退出清理
     page.on_close = lambda _: windows_compat_cleanup()
-
-
-ft.app(target=main_app)

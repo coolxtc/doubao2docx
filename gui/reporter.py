@@ -37,10 +37,12 @@ class FletReporter(ProgressReporter):
         """
         # 截取 URL 标识（取最后一部分）
         tag_display = url_tag if len(url_tag) <= 20 else "..." + url_tag[-17:]
+        # 初始进度：灰色全圆
+        init_progress = ft.Text("○" * TOTAL_STEPS, color=ft.Colors.GREY, size=13)
         row = ft.DataRow(
             cells=[
-                ft.DataCell(ft.Container(ft.Text(f"{task_index}-{tag_display}", tooltip=url_tag), width=140)),
-                ft.DataCell(ft.Container(ft.Text("○" * TOTAL_STEPS), width=90)),
+                ft.DataCell(ft.Container(ft.Text(f"[{task_index}]{tag_display}", tooltip=url_tag), width=150)),
+                ft.DataCell(ft.Container(init_progress, width=90)),
                 ft.DataCell(ft.Container(ft.Text("等待中"), width=70)),
                 ft.DataCell(ft.Container(ft.Text(""), width=40)),
                 ft.DataCell(ft.Container(ft.Text(""), width=500)),
@@ -72,20 +74,28 @@ class FletReporter(ProgressReporter):
         if not row:
             return
 
-        # step 应该对应 FetchStep 索引（0-5），超过 TOTAL_STEPS 表示完成
-        done = min(step, TOTAL_STEPS)
-        if step < TOTAL_STEPS:
-            # 进行中：已完成 ● + 当前 → + 未完成 ○
-            dots = "●" * done + "→" + "○" * (TOTAL_STEPS - done - 1)
-        else:
-            # 已完成：全 ●
-            dots = "●" * TOTAL_STEPS
-
-        row.cells[1].content.content.value = dots
+        # 构建彩色进度文本
+        row.cells[1].content.content = self._build_progress_text(step)
         row.cells[2].content.content.value = status
         row.cells[3].content.content.value = f"{elapsed:.1f}s" if elapsed else ""
         row.cells[4].content.content.value = result
         self.page.update()
+
+    def _build_progress_text(self, step: int) -> ft.Text:
+        """根据当前步骤构建彩色进度文本"""
+        done = min(step, TOTAL_STEPS)
+        spans = []
+        for _ in range(done):
+            spans.append(ft.TextSpan("●", style=ft.TextStyle(color=ft.Colors.GREEN_600)))
+        if step < TOTAL_STEPS:
+            spans.append(ft.TextSpan("→", style=ft.TextStyle(color=ft.Colors.AMBER)))
+            for _ in range(TOTAL_STEPS - done - 1):
+                spans.append(ft.TextSpan("○", style=ft.TextStyle(color=ft.Colors.GREY_400)))
+        else:
+            # 已完成：全绿
+            for _ in range(TOTAL_STEPS - done):
+                spans.append(ft.TextSpan("●", style=ft.TextStyle(color=ft.Colors.GREEN_600)))
+        return ft.Text(spans=spans, size=13)
 
     def log_warning(self, msg: str) -> None:
         """

@@ -95,7 +95,7 @@ class MainPage(ft.Column):
         self.progress_table = ft.DataTable(
             columns=[
                 ft.DataColumn(
-                    ft.Container(ft.Text("#", weight=ft.FontWeight.BOLD), width=140)
+                    ft.Container(ft.Text("#", weight=ft.FontWeight.BOLD), width=150)
                 ),
                 ft.DataColumn(
                     ft.Container(ft.Text("进度", weight=ft.FontWeight.BOLD), width=90)
