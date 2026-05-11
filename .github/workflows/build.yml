@@ -38,7 +38,7 @@ jobs:
       - name: 打包应用
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "data;data" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" 2>&1
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" 2>&1
 
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
@@ -70,12 +70,12 @@ jobs:
           mkdir -p pandoc
           curl -L -o pandoc.zip https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-x86_64-macOS.zip
           unzip pandoc.zip -d pandoc_temp
-          mv pandoc_temp/pandoc pandoc/pandoc
+          mv pandoc_temp/pandoc-*/bin/pandoc pandoc/pandoc
           chmod +x pandoc/pandoc
 
       - name: 打包应用
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "data:data" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc" 2>&1
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc" 2>&1
 
       - name: 上传 macOS 产物
         uses: actions/upload-artifact@v4
