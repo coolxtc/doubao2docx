@@ -1,8 +1,8 @@
 # AGENTS.md - Doubao Export
 
-**Generated:** 2026-04-29
-**Commit:** 89d380f
-**Branch:** feat/base代码优化
+**Generated:** 2026-05-11
+**Commit:** 975e346
+**Branch:** master
 
 豆包聊天记录导出工具：爬取 → 解析 → 生成 Word。
 
