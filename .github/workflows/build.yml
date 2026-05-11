@@ -21,11 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: download Playwright Chromium
-        shell: pwsh
-        run: |
-          $env:PLAYWRIGHT_BROWSERS_PATH = "${{ github.workspace }}\playwright_browsers"
-          playwright install chromium
+      # 不再下载 Playwright 浏览器（应用启动时自动下载）
 
       - name: download Pandoc (Windows)
         shell: pwsh
@@ -38,7 +34,7 @@ jobs:
       - name: build exe
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" 2>&1
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc;pandoc" 2>&1
 
       - name: upload dist
         uses: actions/upload-artifact@v4
@@ -60,10 +56,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: download Playwright Chromium
-        run: |
-          export PLAYWRIGHT_BROWSERS_PATH="${{ github.workspace }}/playwright_browsers"
-          playwright install chromium
+      # 不再下载 Playwright 浏览器
 
       - name: download Pandoc (macOS)
         run: |
@@ -74,12 +67,11 @@ jobs:
           chmod +x pandoc/pandoc
 
       - name: build app
-        # 移除了禁止签名的环境变量，让 PyInstaller 自动完成 ad-hoc 签名
         run: |
-          flet pack gui/__main__.py \
-            --name DoubaoExport \
-            --onedir \
-            --add-data "config.yaml:." \
-            --add-data "src:src" \
-            --add-data "playwright_browsers:playwright_browsers" \
-            --add-data "pandoc:pandoc"
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "pandoc:pandoc" 2>&1
+
+      - name: upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: DoubaoExport-macOS
+          path: dist/
