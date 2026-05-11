@@ -92,7 +92,7 @@ class FletReporter(ProgressReporter):
             open_btn = ft.IconButton(
                 icon=ft.Icons.FOLDER_OPEN,
                 icon_size=14,
-                tooltip="在文件夹中打开",
+                tooltip="打开文档",
                 on_click=lambda e, p=full_path: self.file_opener(p) if self.file_opener else None,
             )
             result_text = ft.Text(result, size=12)

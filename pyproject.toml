@@ -23,6 +23,7 @@ gui = [
     "flet>=0.85.0",
     "flet-desktop>=0.85.0",
 ]
+packaging = ["pyinstaller"]
 
 [project.scripts]
 doubao-export = "src.cli:main"

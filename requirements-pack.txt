@@ -1,0 +1,12 @@
+# requirements-pack.txt
+pyinstaller
+flet>=0.85.0
+flet-desktop>=0.85.0
+playwright>=1.40.0
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+pyyaml>=6.0
+rich>=13.0
+requests>=2.31.0
+Pillow

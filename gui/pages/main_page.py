@@ -36,7 +36,7 @@ class MainPage(ft.Column):
         # ---------- URL 输入区 ----------
         self.url_field = ft.TextField(
             label="豆包链接（每行一个）",
-            hint_text="https://www.doubao.com/chat/...",
+            hint_text="请输入豆包链接来导出，换行输入支持多个链接同时导出",
             multiline=True,
             min_lines=3,
             max_lines=8,
@@ -370,6 +370,7 @@ class MainPage(ft.Column):
         self.log_area.update()
 
     async def _start_export(self, e: ft.ControlEvent) -> None:
+        self._add_log("开始导出按钮被点击")
 
         urls = [u.strip() for u in self.url_field.value.splitlines() if u.strip()]
         if not urls:
@@ -421,6 +422,8 @@ class MainPage(ft.Column):
         except Exception as ex:
             self.result_text.value = f"❌ 导出失败: {ex}"
             self._add_log(f"错误: {ex}")
+            self._page.snack_bar = ft.SnackBar(ft.Text(f"导出失败: {ex}"))
+            self._page.update()
         finally:
             self.reporter.stop()
             # 恢复按钮

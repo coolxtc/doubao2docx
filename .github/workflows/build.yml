@@ -1,0 +1,59 @@
+name: Build and Release
+
+# 当推送到 main 分支或创建版本标签(v*)时触发
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+
+jobs:
+  # 任务1: 为Windows打包
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-pack.txt
+          playwright install chromium
+      
+      - name: 打包应用
+        run: |
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "data;data" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" --icon assets/icon.ico
+      
+      - name: 上传Windows产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: DoubaoExport-Windows
+          path: dist/
+
+  # 任务2: 为macOS打包
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-pack.txt
+          playwright install chromium
+      
+      - name: 打包应用
+        run: |
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "data:data" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc" --icon assets/icon.png
+      
+      - name: 上传macOS产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: DoubaoExport-macOS
+          path: dist/
