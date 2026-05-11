@@ -16,18 +16,18 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: 安装依赖
+      - name: install requirements
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: 下载 Playwright Chromium
+      - name: download Playwright Chromium
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = "${{ github.workspace }}\playwright_browsers"
           playwright install chromium
 
-      - name: 下载 Pandoc (Windows)
+      - name: download Pandoc (Windows)
         shell: pwsh
         run: |
           mkdir pandoc
@@ -35,12 +35,12 @@ jobs:
           7z x pandoc.zip -opandoc_temp -y
           Get-ChildItem -Path pandoc_temp -Recurse -Filter pandoc.exe | Move-Item -Destination pandoc\pandoc.exe
 
-      - name: 打包应用
+      - name: build exe
         shell: pwsh
         run: |
           flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" 2>&1
 
-      - name: 上传 Windows 产物
+      - name: upload dist
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-Windows
@@ -55,17 +55,17 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 安装依赖
+      - name: install requirements
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: 下载 Playwright Chromium
+      - name: download Playwright Chromium
         run: |
           export PLAYWRIGHT_BROWSERS_PATH="${{ github.workspace }}/playwright_browsers"
           playwright install chromium
 
-      - name: 下载 Pandoc (macOS)
+      - name: download Pandoc (macOS)
         run: |
           mkdir -p pandoc
           curl -L -o pandoc.zip https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-x86_64-macOS.zip
@@ -73,11 +73,22 @@ jobs:
           mv pandoc_temp/pandoc-*/bin/pandoc pandoc/pandoc
           chmod +x pandoc/pandoc
 
-      - name: 打包应用
+      # 新增加的步骤：移除Chromium浏览器的签名
+      - name: remove chromium signature
+        run: |
+          # 移除Chromium主程序的签名
+          codesign --remove-signature playwright_browsers/chromium-*/chrome-mac/Google\ Chrome\ for\ Testing.app/Contents/MacOS/Google\ Chrome\ for\ Testing || true
+          # 也可以遍历移除所有浏览器的签名以清除其他潜在的签名冲突
+          find playwright_browsers -name "*.dylib" -exec codesign --remove-signature {} \; 2>/dev/null || true
+          find playwright_browsers -name "*.app" -exec codesign --remove-signature {} \; 2>/dev/null || true
+
+      - name: build app
+        env:
+          PYINSTALLER_CODESIGN_IDENTITY: "" # 禁止PyInstaller进行签名
         run: |
           flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc" 2>&1
 
-      - name: 上传 macOS 产物
+      - name: upload dist
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-macOS
