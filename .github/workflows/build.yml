@@ -1,6 +1,5 @@
 name: Build and Release
 
-# 当推送到 main 分支或创建版本标签(v*)时触发
 on:
   push:
     branches: [ master ]
@@ -21,13 +20,27 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
+
+      - name: 下载 Playwright Chromium
+        run: |
+          $env:PLAYWRIGHT_BROWSERS_PATH = "$env:GITHUB_WORKSPACE\playwright_browsers"
           playwright install chromium
+        shell: pwsh
+
+      - name: 下载 Pandoc (Windows)
+        run: |
+          mkdir pandoc
+          curl -L -o pandoc.zip https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-windows-x86_64.zip
+          7z x pandoc.zip -opandoc_temp
+          move pandoc_temp\pandoc-*\pandoc.exe pandoc\
+        shell: pwsh
 
       - name: 打包应用
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "data;data" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc"
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "data;data" --add-data "playwright_browsers;playwright_browsers" --add-data "pandoc;pandoc" 2>&1
+        shell: pwsh
 
-      - name: 上传Windows产物
+      - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-Windows
@@ -46,13 +59,26 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
+
+      - name: 下载 Playwright Chromium
+        run: |
+          export PLAYWRIGHT_BROWSERS_PATH="$GITHUB_WORKSPACE/playwright_browsers"
           playwright install chromium
+
+      - name: 下载 Pandoc (macOS)
+        run: |
+          mkdir -p pandoc
+          curl -L -o pandoc.pkg https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-x86_64-macOS.pkg
+          # 提取 pkg 中的可执行文件
+          pkgutil --expand-full pandoc.pkg pandoc_extracted
+          cp pandoc_extracted/pandoc-*/bin/pandoc pandoc/pandoc
+          chmod +x pandoc/pandoc
 
       - name: 打包应用
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "data:data" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc"
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "data:data" --add-data "playwright_browsers:playwright_browsers" --add-data "pandoc:pandoc" 2>&1
 
-      - name: 上传macOS产物
+      - name: 上传 macOS 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-macOS
