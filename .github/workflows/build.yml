@@ -44,7 +44,7 @@ jobs:
 
   # 任务2: 为macOS打包
   build-macos:
-    runs-on: macos-latest
+    runs-on: macos-13   # <-- 改为 Intel 运行器
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
