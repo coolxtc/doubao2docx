@@ -26,14 +26,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("doubao.gui")
 
-
 def _get_app_root() -> Path:
-    """获取应用根目录（打包后为可执行文件所在目录）"""
     if getattr(sys, 'frozen', False):
-        return Path(sys.executable).parent
+        # PyInstaller 打包后，所有通过 --add-data 添加的资源都解压到此目录
+        return Path(sys._MEIPASS)
     else:
         return Path(__file__).resolve().parent.parent
-
 
 def _setup_builtin_resources():
     """配置内置 Pandoc 和 Playwright 浏览器的路径"""
