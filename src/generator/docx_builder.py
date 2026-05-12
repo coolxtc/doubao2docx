@@ -752,7 +752,7 @@ class DocxBuilder:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     startupinfo=startupinfo,
-                    creationflags=subprocess.DETACHED_PROCESS,
+                    creationflags=subprocess.CREATE_NO_WINDOW,  # 关键：不创建新窗口
                     text=True,
                 )
             else:

@@ -14,15 +14,20 @@ from src.utils import windows_compat_setup, windows_compat_cleanup
 from gui.pages.main_page import MainPage
 from gui import config_manager
 
-def hide_console():
-    """在 Windows 上释放控制台窗口（解决 subprocess 弹窗问题）"""
+def setup_hidden_console():
+    """在 Windows 上分配一个隐藏的控制台，供子进程共享（解决 pandoc 弹窗问题）"""
     if sys.platform == "win32":
         try:
-            # 释放当前进程的控制台
             kernel32 = ctypes.WinDLL('kernel32')
-            kernel32.FreeConsole()
+            # 分配一个控制台（若已存在则失败，但后续仍可工作）
+            if kernel32.AllocConsole():
+                # 获取控制台窗口句柄并隐藏
+                console_hwnd = kernel32.GetConsoleWindow()
+                if console_hwnd:
+                    user32 = ctypes.WinDLL('user32')
+                    user32.ShowWindow(console_hwnd, 0)  # SW_HIDE
         except Exception:
-            pass  # 如果本来就没有控制台，忽略错误
+            pass  # 即使失败，也不影响 GUI 运行
 
 # ----- 日志配置：写入 ~/.doubao_export/doubao_export.log -----
 config_manager.CONFIG_DIR.mkdir(parents=True, exist_ok=True)  # 确保目录存在
@@ -39,7 +44,13 @@ logger = logging.getLogger("doubao.gui")
 
 def _get_app_root() -> Path:
     if getattr(sys, 'frozen', False):
-        # PyInstaller 打包后，所有通过 --add-data 添加的资源都解压到此目录
+        # 优先从 exe 所在目录查找资源（目录模式或手动复制）
+        exe_dir = Path(sys.executable).parent
+        # 如果 exe 同目录下存在 pandoc 或 playwright_browsers，说明是目录模式，直接使用
+        if (exe_dir / ("pandoc.exe" if sys.platform == "win32" else "pandoc")).exists() or \
+           (exe_dir / "playwright_browsers").exists():
+            return exe_dir
+        # 否则回退到 PyInstaller 的临时解压目录（可能包含通过 --add-data 打包的资源）
         return Path(sys._MEIPASS)
     else:
         return Path(__file__).resolve().parent.parent
@@ -71,7 +82,7 @@ def _setup_builtin_resources():
 
 async def main_app(page: ft.Page):
     logger.info("应用启动")
-    hide_console()  # 必须在任何 subprocess 调用之前执行
+    setup_hidden_console()  # 必须在任何 subprocess 调用之前执行
 
     os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)  # 清除可能干扰的环境变量
 

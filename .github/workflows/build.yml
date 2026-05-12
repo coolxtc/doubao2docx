@@ -37,14 +37,18 @@ jobs:
       - name: 打包并内置资源 (Windows)
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc.exe;." --add-data "playwright_browsers;playwright_browsers" 2>&1
-          
-      - name: 上传 Windows 产物
+          # 打包为目录模式，不添加大资源，保持 exe 苗条
+          flet pack gui/__main__.py --name DoubaoExport --onedir --add-data "config.yaml;." --add-data "src;src"
+          # 将 pandoc.exe 和 playwright_browsers 复制到 dist\DoubaoExport 目录
+          Copy-Item -Path .\pandoc.exe -Destination dist\DoubaoExport\
+          Copy-Item -Recurse -Path .\playwright_browsers -Destination dist\DoubaoExport\
+
+      - name: 上传 Windows 产物（打包整个目录）
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-Windows
-          path: dist/
-
+          path: dist/DoubaoExport/   # 上传目录，而不是 dist/
+          
   # 任务2: 为macOS打包
   build-macos:
     runs-on: macos-26-intel   # Intel Mac 构建（兼容性更好）
