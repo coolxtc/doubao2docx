@@ -1,5 +1,6 @@
 """Flet 应用初始化（最终内置版）"""
 
+import ctypes
 import os
 import sys
 import shutil
@@ -12,6 +13,16 @@ import flet as ft
 from src.utils import windows_compat_setup, windows_compat_cleanup
 from gui.pages.main_page import MainPage
 from gui import config_manager
+
+def hide_console():
+    """在 Windows 上释放控制台窗口（解决 subprocess 弹窗问题）"""
+    if sys.platform == "win32":
+        try:
+            # 释放当前进程的控制台
+            kernel32 = ctypes.WinDLL('kernel32')
+            kernel32.FreeConsole()
+        except Exception:
+            pass  # 如果本来就没有控制台，忽略错误
 
 # ----- 日志配置：写入 ~/.doubao_export/doubao_export.log -----
 config_manager.CONFIG_DIR.mkdir(parents=True, exist_ok=True)  # 确保目录存在
@@ -60,6 +71,8 @@ def _setup_builtin_resources():
 
 async def main_app(page: ft.Page):
     logger.info("应用启动")
+    hide_console()  # 必须在任何 subprocess 调用之前执行
+
     os.environ.pop("PLAYWRIGHT_BROWSERS_PATH", None)  # 清除可能干扰的环境变量
 
     has_builtin = _setup_builtin_resources()
