@@ -9,7 +9,13 @@
 ## 运行命令
 
 ```bash
-pip install -e . && playwright install chromium
+pip install -e ".[gui]" && playwright install chromium
+
+# 图形界面
+python3 -m gui                          # GUI 入口
+pip install -e . && doubao-export-gui   # 安装后
+
+# 命令行
 python3 -m src.cli <豆包链接>        # 主入口
 pip install -e . && doubao-export <url> # 安装后
 ```
@@ -19,13 +25,19 @@ pip install -e . && doubao-export <url> # 安装后
 ```
 doubao-export/
 ├── src/
-│   ├── cli.py              # 主入口 + TaskManager + asyncio
+│   ├── cli.py              # 命令行入口 + TaskManager + asyncio
 │   ├── config.py           # 配置加载（YAML → dataclass）
 │   ├── exceptions.py       # CrawlerError / ParseError / ExportError
 │   ├── utils.py            # Windows 兼容性
 │   ├── scraper/            # Playwright 爬虫层
 │   ├── preprocessor/       # BeautifulSoup 解析层
 │   └── generator/          # python-docx 生成层
+├── gui/                    # Flet 图形界面
+│   ├── __main__.py         # GUI 入口（含跨平台单实例锁）
+│   ├── app.py              # Flet 应用初始化
+│   ├── pages/              # 界面页面
+│   ├── config_manager.py   # GUI 配置管理
+│   └── reporter.py         # Flet 进度报告器
 ├── config.yaml              # 运行时配置（无默认值）
 ├── data/                   # 导出数据目录
 └── pyproject.toml          # 项目元数据
@@ -40,6 +52,7 @@ doubao-export/
 | 修改文档 | `src/generator/` | `DocxBuilder`, `DocNamer` |
 | 修改配置 | `config.yaml` | — |
 | 修改入口 | `src/cli.py` | argparse, TaskManager |
+| 修改 GUI | `gui/` | `MainPage`, `FletReporter`, `config_manager` |
 
 ## 核心设计模式
 
@@ -236,6 +249,9 @@ else:
 - pyproject.toml 无 linter/formatter 配置，依赖 AGENTS.md 约定
 - scraper 模块支持 `external_page` 注入（BrowserPool 复用）
 - preprocessor 使用钩子方法（`_is_*()`, `_extract_*()`）支持多平台
+- GUI 入口：`python3 -m gui`，安装命令：`pip install -e ".[gui]"`
+- GUI 入口脚本：`gui/__main__.py`，含跨平台单实例锁
+- GUI 依赖 Flet 框架，通过 `config_manager` 管理配置和日志
 
 ## 测试
 

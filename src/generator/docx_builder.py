@@ -3,8 +3,9 @@
 import logging
 import os
 import re
+import subprocess
+import sys
 import tempfile
-import pypandoc
 
 from copy import deepcopy
 from dataclasses import dataclass
@@ -717,30 +718,62 @@ class DocxBuilder:
                 self._set_run_font(run)
 
     def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
-        """使用 pypandoc 将 LaTeX 转换为 OMML，完全无弹窗"""
+        """使用 pandoc 将 LaTeX 转换为 OMML，完全无弹窗"""
         deps_ok, _ = self.latex_converter.check_dependencies()
         if not deps_ok:
             return None
 
-        # 块级公式使用 $$...$$
         if is_display:
             tex_content = f'$$\n{latex}\n$$'
-        # 行内公式使用 \(...\)
         else:
             tex_content = f'\\({latex}\\)'
 
+        tmp_tex_path = None
         tmp_docx_path = None
+
         try:
-            # 创建临时 .docx 输出文件
+            # 写入临时 .tex 文件
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.tex', delete=False, encoding='utf-8'
+            ) as f:
+                f.write(tex_content)
+                tmp_tex_path = f.name
+
+            # 创建临时 .docx 输出路径
             with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as f:
                 tmp_docx_path = f.name
 
-            # 通过 pypandoc 将 LaTeX 片段转换为 docx 文件（不弹窗）
-            pypandoc.convert_text(
-                tex_content, 'docx', format='latex',
-                outputfile=tmp_docx_path,
-                extra_args=['--from', 'latex+raw_tex']
-            )
+            cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
+
+            if sys.platform == "win32":
+                # 彻底隐藏命令行窗口（必须使用 Popen 并设置所有标志）
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW | subprocess.HIGH_PRIORITY_CLASS  # 可选，提高稳定性
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=startupinfo,
+                    creationflags=creationflags,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                )
+            else:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+            stdout, stderr = process.communicate(timeout=self._pandoc_timeout)
+
+            if process.returncode != 0:
+                if stderr:
+                    self._logger.warning(f"pandoc 失败: {stderr[:200]}")
+                return None
 
             # 从生成的 docx 中提取 OMML
             doc = Document(tmp_docx_path)
@@ -750,13 +783,24 @@ class DocxBuilder:
                     self._set_math_chinese_font(math_el, self.config.font_name)
                     return math_el
             return None
+
+        except subprocess.TimeoutExpired:
+            self._logger.warning("pandoc 转换超时")
+            if process:
+                process.kill()
+            return None
         except Exception as e:
-            self._logger.warning(f"Pandoc 转换失败: {e}")
+            self._logger.warning(f"pandoc 转换异常: {e}")
             return None
         finally:
-            if tmp_docx_path and os.path.exists(tmp_docx_path):
-                os.unlink(tmp_docx_path)
-
+            # 清理临时文件
+            for path in (tmp_tex_path, tmp_docx_path):
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                    
     def _extract_math_from_paragraph(self, p_element) -> Element | None:
         """
         从段落元素中提取数学公式

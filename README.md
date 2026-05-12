@@ -170,6 +170,23 @@ winget install pandoc.pandoc
 
 ## 运行命令
 
+### 图形界面（推荐）
+
+提供可视化界面，适合大多数用户：
+
+```bash
+# 安装 GUI 依赖
+pip install -e ".[gui]" && playwright install chromium
+
+# 运行 GUI
+python3 -m gui                          # 开发模式
+pip install -e . && doubao-export-gui   # 安装后
+```
+
+### 命令行
+
+适合高级用户或批量操作：
+
 ```bash
 # 安装依赖 + 浏览器
 pip install -e . && playwright install chromium
@@ -204,6 +221,16 @@ pip install -e .
 
 依赖已在 pyproject.toml 中定义，安装时自动包含。
 
+#### GUI 界面（可选）
+
+如果需要使用图形界面，安装额外的 GUI 依赖：
+
+```bash
+pip install -e ".[gui]"
+```
+
+这将安装 Flet 框架，提供可视化的操作界面。
+
 ### 第三步：安装 Playwright 浏览器
 
 Playwright 需要安装浏览器内核。执行：
@@ -227,7 +254,30 @@ python3 -c "from docx import Document; print('python-docx OK')"
 
 ## 使用方法
 
-### 基本用法
+### 图形界面（推荐）
+
+安装 GUI 依赖后，运行以下命令启动图形界面：
+
+```bash
+python3 -m gui
+```
+
+或安装后使用：
+
+```bash
+doubao-export-gui
+```
+
+GUI 界面支持：
+- 多链接批量输入（每行一个）
+- 反爬级别选择
+- 并发数设置
+- 实时进度显示
+- 导出结果预览
+
+### 命令行
+
+#### 基本用法
 
 在终端中运行以下命令：
 
@@ -439,6 +489,15 @@ doubao-export/
 │       ├── latex_converter.py  # LaTeX 公式转换
 │       ├── doc_namer.py        # 文档命名 + 序号管理
 │       └── batch_report.py     # 批量导出报告
+├── gui/                         # 图形界面（Flet）
+│   ├── __init__.py             # GUI 包初始化
+│   ├── __main__.py             # GUI 入口，支持 python3 -m gui 运行
+│   ├── app.py                  # Flet 应用初始化
+│   ├── config_manager.py       # GUI 配置管理
+│   ├── reporter.py             # GUI 进度报告器
+│   └── pages/                  # 界面页面
+│       ├── __init__.py
+│       └── main_page.py        # 主界面
 ├── data/                        # 数据输出目录
 │   ├── export/                  # 导出的 Word 文档（按日期分类）
 │   └── link_index.json         # 链接索引文件
