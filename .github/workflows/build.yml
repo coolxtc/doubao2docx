@@ -110,6 +110,9 @@ jobs:
           name: DoubaoExport-macOS
           path: artifacts/macos
 
+      - name: Remove empty files
+        run: find artifacts -type f -empty -delete
+
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
