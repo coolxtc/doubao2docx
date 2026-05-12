@@ -1,5 +1,6 @@
 """主界面页面 - 现代化优化版（底部设置抽屉）"""
 
+import os
 import platform
 import subprocess
 from datetime import datetime
@@ -10,7 +11,10 @@ import flet as ft
 
 from src.cli import fetch_and_export_batch
 from gui.reporter import FletReporter
+from gui import config_manager
 from src.cli import _get_url_tag
+import logging
+logger = logging.getLogger("doubao.gui")
 
 
 # 配色方案
@@ -20,6 +24,32 @@ ON_PRIMARY_CONTAINER = ft.Colors.BLUE_900
 SURFACE = ft.Colors.WHITE
 OUTLINE = ft.Colors.GREY_300
 BACKGROUND = ft.Colors.GREY_100
+
+
+def _is_browser_installed():
+    """检查 Playwright Chromium 是否可用，优先使用内置路径"""
+    # 如果设置了 PLAYWRIGHT_BROWSERS_PATH 且目录存在，直接认为已安装
+    p = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if p and Path(p).exists():
+        return True
+
+    # 否则检查默认缓存目录（开发环境）
+    system = platform.system()
+    if system == "Darwin":
+        cache_dir = Path.home() / "Library/Caches/ms-playwright"
+    elif system == "Windows":
+        cache_dir = Path.home() / ".cache/ms-playwright"
+    else:
+        cache_dir = Path.home() / ".cache/ms-playwright"
+
+    for d in cache_dir.glob("chromium-*"):
+        if d.is_dir():
+            candidates = list(d.glob("**/chrome-headless-shell")) + \
+                         list(d.glob("**/chrome.exe")) + \
+                         list(d.glob("**/chrome"))
+            if candidates:
+                return True
+    return False
 
 
 class MainPage(ft.Column):
@@ -75,8 +105,9 @@ class MainPage(ft.Column):
             fill_color=SURFACE,
             text_align=ft.TextAlign.CENTER,
         )
+        # 默认导出路径从配置管理器读取
         self.dir_text = ft.Text(
-            "data/export/",
+            config_manager.get_export_dir(),
             size=13,
             italic=True,
             color=ft.Colors.GREY_700,
@@ -374,7 +405,14 @@ class MainPage(ft.Column):
 
         urls = [u.strip() for u in self.url_field.value.splitlines() if u.strip()]
         if not urls:
+            logger.warning("未输入任何链接")
             self._page.snack_bar = ft.SnackBar(ft.Text("请至少输入一个链接"))
+            self._page.update()
+            return
+
+        if not _is_browser_installed():
+            logger.warning("浏览器未安装")
+            self._page.snack_bar = ft.SnackBar(ft.Text("浏览器尚未就绪，请稍后重试"))
             self._page.update()
             return
 
@@ -387,9 +425,13 @@ class MainPage(ft.Column):
         # 隐藏结果卡片
         self.result_card.visible = False
 
-        dir_str = self.dir_text.value.rstrip("/\\")
-        output_dir = Path(dir_str if dir_str else "data")
-        # 导出子目录（用于拼接文件完整路径）
+        # 解析导出目录，默认使用配置中的路径
+        dir_str = self.dir_text.value.strip()
+        if not dir_str:
+            dir_str = config_manager.get_export_dir()
+        output_dir = Path(dir_str)
+        # 确保导出目录存在
+        output_dir.mkdir(parents=True, exist_ok=True)
         export_subdir = output_dir / "export" / datetime.now().strftime("%y%m%d")
 
         # 只创建一次 reporter
@@ -416,10 +458,12 @@ class MainPage(ft.Column):
             success_count = sum(1 for r in report.results if r.success)
             fail_count = len(report.results) - success_count
             self.result_text.value = f"成功 {success_count} 个，失败 {fail_count} 个"
-            self._last_export_dir = output_dir / "export" / datetime.now().strftime("%y%m%d")
+            self._last_export_dir = export_subdir
             self.open_folder_btn.visible = True
             self.result_card.visible = True
         except Exception as ex:
+            logger.exception(f"导出过程出现异常：{ex}")
+            print(f"导出失败: {ex}")   # 终端可见
             self.result_text.value = f"❌ 导出失败: {ex}"
             self._add_log(f"错误: {ex}")
             self._page.snack_bar = ft.SnackBar(ft.Text(f"导出失败: {ex}"))
@@ -439,13 +483,15 @@ class MainPage(ft.Column):
             if dir_path:
                 self.dir_text.value = dir_path
                 self.dir_text.update()
+                config_manager.set_export_dir(dir_path)  # 持久化导出目录
         except Exception as ex:
             self._add_log(f"目录选择失败: {ex}")
 
     def _open_folder(self, e: ft.ControlEvent) -> None:
         folder = getattr(self, "_last_export_dir", None)
         if not folder:
-            folder = Path(self.dir_text.value.rstrip("/\\"))
+            # 使用配置中的导出目录
+            folder = Path(config_manager.get_export_dir()) / "export" / datetime.now().strftime("%y%m%d")
         folder = Path(folder).resolve()
         folder.mkdir(parents=True, exist_ok=True)
         system = platform.system()

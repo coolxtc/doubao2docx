@@ -16,27 +16,33 @@ jobs:
         with:
           python-version: '3.14'
 
-      - name: install requirements
+      - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      # 不再下载 Playwright 浏览器（应用启动时自动下载）
-
-      - name: download Pandoc (Windows)
+      - name: 下载 Playwright Chromium（用于内置打包）
         shell: pwsh
         run: |
-          mkdir pandoc
+          $env:PLAYWRIGHT_BROWSERS_PATH = "${{ github.workspace }}\playwright_browsers"
+          playwright install chromium
+
+      - name: 下载 Pandoc (Windows)
+        shell: pwsh
+        run: |
           curl -L -o pandoc.zip https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-windows-x86_64.zip
           7z x pandoc.zip -opandoc_temp -y
-          Get-ChildItem -Path pandoc_temp -Recurse -Filter pandoc.exe | Move-Item -Destination pandoc\pandoc.exe
+          Get-ChildItem -Path pandoc_temp -Recurse -Filter pandoc.exe | Move-Item -Destination .\pandoc.exe
 
-      - name: build exe
+      - name: 打包并嵌入资源
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc;pandoc" 2>&1
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src"
+          # 将 pandoc.exe 和浏览器复制到 dist/DoubaoExport/ 目录（与可执行文件同级）
+          Copy-Item .\pandoc.exe dist\DoubaoExport\
+          Copy-Item -Recurse .\playwright_browsers dist\DoubaoExport\
 
-      - name: upload dist
+      - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-Windows
@@ -44,33 +50,40 @@ jobs:
 
   # 任务2: 为macOS打包
   build-macos:
-    runs-on: macos-13   # <-- 改为 Intel 运行器
+    runs-on: macos-13   # Intel Mac 构建（兼容性更好）
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
 
-      - name: install requirements
+      - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      # 不再下载 Playwright 浏览器
-
-      - name: download Pandoc (macOS)
+      - name: 下载 Playwright Chromium（用于内置打包）
         run: |
-          mkdir -p pandoc
+          export PLAYWRIGHT_BROWSERS_PATH="${{ github.workspace }}/playwright_browsers"
+          playwright install chromium
+
+      - name: 下载 Pandoc (macOS)
+        run: |
           curl -L -o pandoc.zip https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-x86_64-macOS.zip
           unzip pandoc.zip -d pandoc_temp
-          mv pandoc_temp/pandoc-*/bin/pandoc pandoc/pandoc
-          chmod +x pandoc/pandoc
+          mv pandoc_temp/pandoc-*/bin/pandoc ./pandoc
+          chmod +x ./pandoc
+          rm -rf pandoc_temp pandoc.zip
 
-      - name: build app
+      - name: 打包并嵌入资源
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src" --add-data "pandoc:pandoc" 2>&1
+          export PYINSTALLER_CODESIGN_IDENTITY=""
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src"
+          # 将 pandoc 和浏览器复制到 App Bundle 内部
+          cp ./pandoc dist/DoubaoExport.app/Contents/MacOS/pandoc
+          cp -r playwright_browsers dist/DoubaoExport.app/Contents/MacOS/
 
-      - name: upload dist
+      - name: 上传 macOS 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-macOS

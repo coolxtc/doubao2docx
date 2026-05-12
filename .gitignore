@@ -48,3 +48,18 @@ data/
 .opencode
 .sisyphus
 .playwright-mcp
+
+# Built resources (browsers and pandoc are downloaded during build)
+playwright_browsers/
+pandoc
+pandoc.exe
+
+# App packaging output
+dist/
+build/
+
+# Logs
+doubao_export.log
+
+# macOS specific
+**/.DS_Store
