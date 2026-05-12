@@ -87,3 +87,31 @@ jobs:
         with:
           name: DoubaoExport-macOS
           path: dist/
+
+  # 新增发布任务
+  release:
+    needs: [build-windows, build-macos]  # 等待两个构建完成
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')  # 仅在推送标签时触发
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DoubaoExport-Windows
+          path: artifacts/windows
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DoubaoExport-macOS
+          path: artifacts/macos
+
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            artifacts/windows/**
+            artifacts/macos/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,9 +3,9 @@
 import logging
 import os
 import re
-import subprocess
-import sys
 import tempfile
+import pypandoc
+
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional
@@ -717,18 +717,8 @@ class DocxBuilder:
                 self._set_run_font(run)
 
     def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
-        """
-        使用 pandoc 将 LaTeX 转换为 OMML
-
-        Args:
-            latex: LaTeX 公式文本
-            is_display: 是否为展示公式
-
-        Returns:
-            Element | None: OMML 元素，转换失败返回 None
-        """
-        deps_ok, _ = self.latex_converter.check_dependencies()  # pandoc 是否可用
-        # pandoc 不可用时直接返回
+        """使用 pypandoc 将 LaTeX 转换为 OMML，完全无弹窗"""
+        deps_ok, _ = self.latex_converter.check_dependencies()
         if not deps_ok:
             return None
 
@@ -739,76 +729,33 @@ class DocxBuilder:
         else:
             tex_content = f'\\({latex}\\)'
 
-        tmp_tex_path = None  # 临时 tex 文件路径
-        tmp_docx_path = None  # 临时 docx 文件路径
-
+        tmp_docx_path = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode='w', suffix='.tex', delete=False, encoding='utf-8'
-            ) as tmp_tex:
-                tmp_tex.write(tex_content)
-                tmp_tex_path = tmp_tex.name
+            # 创建临时 .docx 输出文件
+            with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as f:
+                tmp_docx_path = f.name
 
-            with tempfile.NamedTemporaryFile(
-                suffix='.docx', delete=False
-            ) as tmp_docx:
-                tmp_docx_path = tmp_docx.name
+            # 通过 pypandoc 将 LaTeX 片段转换为 docx 文件（不弹窗）
+            pypandoc.convert_text(
+                tex_content, 'docx', format='latex',
+                outputfile=tmp_docx_path,
+                extra_args=['--from', 'latex+raw_tex']
+            )
 
-            cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
-
-            # 在 Windows 上隐藏命令行窗口
-            if sys.platform == "win32":
-                si = subprocess.STARTUPINFO()
-                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                si.wShowWindow = subprocess.SW_HIDE
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    startupinfo=si,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    text=True,
-                )
-            else:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-
-            try:
-                stdout, stderr = process.communicate(timeout=self._pandoc_timeout)
-                result = subprocess.CompletedProcess(
-                    cmd, process.returncode, stdout=stdout, stderr=stderr
-                )
-            except subprocess.TimeoutExpired:
-                process.kill()
-                stdout, stderr = process.communicate()
-                raise
-
-            # pandoc 转换成功：从生成的 docx 中提取公式
-            if result.returncode == 0 and os.path.exists(tmp_docx_path):
-                doc = Document(tmp_docx_path)
-                for para in doc.paragraphs:
-                    math_el = self._extract_math_from_paragraph(para._element)
-                    if math_el is not None:
-                        self._set_math_chinese_font(math_el, self.config.font_name)
-                        return math_el
-            if result.stderr:
-                self._logger.warning(f"pandoc警告: {result.stderr[:200]}")
+            # 从生成的 docx 中提取 OMML
+            doc = Document(tmp_docx_path)
+            for para in doc.paragraphs:
+                math_el = self._extract_math_from_paragraph(para._element)
+                if math_el is not None:
+                    self._set_math_chinese_font(math_el, self.config.font_name)
+                    return math_el
+            return None
         except Exception as e:
-            raise ExportError(f"Pandoc转换失败: {e}") from e
+            self._logger.warning(f"Pandoc 转换失败: {e}")
+            return None
         finally:
-            for path in [tmp_tex_path, tmp_docx_path]:
-                if path:
-                    try:
-                        if os.path.exists(path):
-                            os.unlink(path)
-                    except OSError as e:
-                        self._logger.debug(f"临时文件清理失败: {e}")
-
-        return None
+            if tmp_docx_path and os.path.exists(tmp_docx_path):
+                os.unlink(tmp_docx_path)
 
     def _extract_math_from_paragraph(self, p_element) -> Element | None:
         """
