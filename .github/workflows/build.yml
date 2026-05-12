@@ -37,8 +37,8 @@ jobs:
       - name: 打包并内置资源 (Windows)
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc.exe;." --add-data "playwright_browsers;playwright_browsers" -- --console 2>&1
-
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc.exe;." --add-data "playwright_browsers;playwright_browsers" 2>&1
+          
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
         with:

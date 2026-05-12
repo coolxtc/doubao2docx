@@ -716,9 +716,9 @@ class DocxBuilder:
             else:
                 run = para.add_run(unicode_text)
                 self._set_run_font(run)
-                
+
     def _latex_to_omml(self, latex: str, is_display: bool = False) -> Element | None:
-        """使用 pandoc 将 LaTeX 转换为 OMML"""
+        """使用 pandoc 将 LaTeX 转换为 OMML，完全无弹窗"""
         deps_ok, _ = self.latex_converter.check_dependencies()
         if not deps_ok:
             return None
@@ -742,9 +742,38 @@ class DocxBuilder:
                 tmp_docx_path = f.name
 
             cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._pandoc_timeout)
 
-            if result.returncode != 0:
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=startupinfo,
+                    creationflags=subprocess.DETACHED_PROCESS,
+                    text=True,
+                )
+            else:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+
+            try:
+                stdout, stderr = process.communicate(timeout=self._pandoc_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                self._logger.warning("pandoc 转换超时")
+                return None
+
+            if process.returncode != 0:
+                if stderr:
+                    self._logger.warning(f"pandoc 失败: {stderr[:200]}")
                 return None
 
             doc = Document(tmp_docx_path)
