@@ -758,22 +758,34 @@ class DocxBuilder:
 
             # 在 Windows 上隐藏命令行窗口
             if sys.platform == "win32":
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                creationflags = subprocess.CREATE_NO_WINDOW
+                si = subprocess.STARTUPINFO()
+                si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                si.wShowWindow = subprocess.SW_HIDE
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    startupinfo=si,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    text=True,
+                )
             else:
-                startupinfo = None
-                creationflags = 0
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=self._pandoc_timeout,
-                startupinfo=startupinfo,
-                creationflags=creationflags
-            )
+            try:
+                stdout, stderr = process.communicate(timeout=self._pandoc_timeout)
+                result = subprocess.CompletedProcess(
+                    cmd, process.returncode, stdout=stdout, stderr=stderr
+                )
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise
 
             # pandoc 转换成功：从生成的 docx 中提取公式
             if result.returncode == 0 and os.path.exists(tmp_docx_path):
