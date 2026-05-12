@@ -7,7 +7,7 @@ on:
       - 'v*'
 
 jobs:
-  # 任务1: 为Windows打包
+  # Windows 构建
   build-windows:
     runs-on: windows-latest
     steps:
@@ -21,7 +21,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: 下载 Playwright Chromium（用于内置打包）
+      - name: 下载 Playwright Chromium
         shell: pwsh
         run: |
           $env:PLAYWRIGHT_BROWSERS_PATH = "${{ github.workspace }}\playwright_browsers"
@@ -34,22 +34,24 @@ jobs:
           7z x pandoc.zip -opandoc_temp -y
           Get-ChildItem -Path pandoc_temp -Recurse -Filter pandoc.exe | Move-Item -Destination .\pandoc.exe
 
-      - name: 打包并内置资源 (Windows)
+      - name: 打包 & 整理 (Windows)
         shell: pwsh
         run: |
-          # 打包为目录模式，不添加大资源，保持 exe 苗条
+          # 打包为目录模式，不内嵌大型二进制文件
           flet pack gui/__main__.py --name DoubaoExport --onedir --add-data "config.yaml;." --add-data "src;src"
-          # 将 pandoc.exe 和 playwright_browsers 复制到 dist\DoubaoExport 目录
+          # 复制 pandoc.exe 和浏览器到 dist\DoubaoExport\
           Copy-Item -Path .\pandoc.exe -Destination dist\DoubaoExport\
           Copy-Item -Recurse -Path .\playwright_browsers -Destination dist\DoubaoExport\
+          # 创建 zip 压缩包
+          Compress-Archive -Path dist\DoubaoExport\* -DestinationPath DoubaoExport-windows.zip
 
-      - name: 上传 Windows 产物（打包整个目录）
+      - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-Windows
-          path: dist/DoubaoExport/   # 上传目录，而不是 dist/
+          path: DoubaoExport-windows.zip
 
-  # 任务2: 为macOS打包
+  # macOS 构建
   build-macos:
     runs-on: macos-26-intel   # Intel Mac 构建（兼容性更好）
     steps:
@@ -63,7 +65,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-pack.txt
 
-      - name: 下载 Playwright Chromium（用于内置打包）
+      - name: 下载 Playwright Chromium
         run: |
           export PLAYWRIGHT_BROWSERS_PATH="${{ github.workspace }}/playwright_browsers"
           playwright install chromium
@@ -76,49 +78,47 @@ jobs:
           chmod +x ./pandoc
           rm -rf pandoc_temp pandoc.zip
 
-      - name: 打包并嵌入资源
+      - name: 打包 & 嵌入资源
         run: |
           export PYINSTALLER_CODESIGN_IDENTITY=""
           flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml:." --add-data "src:src"
-          # 将 pandoc 和浏览器复制到 App Bundle 内部
           cp ./pandoc dist/DoubaoExport.app/Contents/MacOS/pandoc
           cp -r playwright_browsers dist/DoubaoExport.app/Contents/MacOS/
+          # 创建 macOS 压缩包
+          tar -czf DoubaoExport-macos.tar.gz -C dist DoubaoExport.app
 
       - name: 上传 macOS 产物
         uses: actions/upload-artifact@v4
         with:
           name: DoubaoExport-macOS
-          path: dist/
+          path: DoubaoExport-macos.tar.gz
 
-  # 新增发布任务
+  # 发布到 Release
   release:
+    needs: [build-windows, build-macos]
     runs-on: ubuntu-latest
     permissions:
-      contents: write          # 允许创建 Release 和上传文件
-    needs: [build-windows, build-macos]
+      contents: write
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: DoubaoExport-Windows
-          path: artifacts/windows
+          path: .
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: DoubaoExport-macOS
-          path: artifacts/macos
-
-      - name: Remove empty files
-        run: find artifacts -type f -empty -delete
+          path: .
 
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            artifacts/windows/**
-            artifacts/macos/**
+            DoubaoExport-windows.zip
+            DoubaoExport-macos.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
