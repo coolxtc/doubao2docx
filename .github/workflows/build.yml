@@ -49,7 +49,7 @@ jobs:
 
   # 任务2: 为macOS打包
   build-macos:
-    runs-on: macos-13   # Intel Mac 构建（兼容性更好）
+    runs-on: macos-26-intel   # Intel Mac 构建（兼容性更好）
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
