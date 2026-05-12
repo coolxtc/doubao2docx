@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from copy import deepcopy
 from dataclasses import dataclass
@@ -754,7 +755,25 @@ class DocxBuilder:
                 tmp_docx_path = tmp_docx.name
 
             cmd = ["pandoc", tmp_tex_path, "-o", tmp_docx_path]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=self._pandoc_timeout)
+
+            # 在 Windows 上隐藏命令行窗口
+            if sys.platform == "win32":
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                creationflags = subprocess.CREATE_NO_WINDOW
+            else:
+                startupinfo = None
+                creationflags = 0
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._pandoc_timeout,
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
 
             # pandoc 转换成功：从生成的 docx 中提取公式
             if result.returncode == 0 and os.path.exists(tmp_docx_path):
