@@ -57,6 +57,7 @@ pandoc.exe
 # App packaging output
 dist/
 build/
+DoubaoExport.spec
 
 # Logs
 doubao_export.log

@@ -34,13 +34,10 @@ jobs:
           7z x pandoc.zip -opandoc_temp -y
           Get-ChildItem -Path pandoc_temp -Recurse -Filter pandoc.exe | Move-Item -Destination .\pandoc.exe
 
-      - name: 打包并嵌入资源
+      - name: 打包并内置资源
         shell: pwsh
         run: |
-          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src"
-          # 将 pandoc.exe 和浏览器复制到 dist/DoubaoExport/ 目录（与可执行文件同级）
-          Copy-Item .\pandoc.exe dist\DoubaoExport\
-          Copy-Item -Recurse .\playwright_browsers dist\DoubaoExport\
+          flet pack gui/__main__.py --name DoubaoExport --add-data "config.yaml;." --add-data "src;src" --add-data "pandoc.exe;." --add-data "playwright_browsers;playwright_browsers" 2>&1
 
       - name: 上传 Windows 产物
         uses: actions/upload-artifact@v4
