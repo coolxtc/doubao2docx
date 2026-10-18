@@ -32,6 +32,28 @@ def _parse_chromium_args() -> list[str]:
     return [arg.strip() for arg in raw.split(",") if arg.strip()]
 
 
+def _reap_orphan_zombies() -> None:
+    """
+    收割转为孤儿僵尸的浏览器子进程
+
+    browser.close() 能终止主进程，但其部分子进程会转为孤儿挂到 PID 1 下变成僵尸；
+    容器里 PID 1 通常是 uvicorn，不会主动 waitpid，长期运行会持续累积直至耗尽 PID。
+    必须在 playwright 已停止之后调用，避免抢走其内部等待的子进程状态。
+    Windows 无 waitpid 语义，直接跳过。
+    """
+    if is_windows():
+        return
+    try:
+        while True:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid == 0:
+                break
+        logger.debug("已收割残留的浏览器子进程")
+    except ChildProcessError:
+        # 没有可收割的子进程属正常情况
+        pass
+
+
 class BrowserManager:
     """
     浏览器生命周期管理器
@@ -121,6 +143,9 @@ class BrowserManager:
                 await self.playwright.stop()
         except Exception as e:
             logger.debug(f"停止 Playwright 时出错: {e}")
+
+        # playwright 停止后，其 driver 与浏览器子进程的退出状态已无人认领
+        _reap_orphan_zombies()
 
         if is_windows():
             await windows_compat_close(self.config.browser_close_delay)
