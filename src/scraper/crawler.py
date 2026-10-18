@@ -28,6 +28,9 @@ class DoubaoSpider:
 
     DOUBAO_URL_PATTERN: str = r"https?://(?:www\.)?doubao\.com/thread/[^?\s#]+"
 
+    # 消息容器选择器，与 extractor 及 preprocessor 的 message_item_selector 保持一致
+    MESSAGE_ITEM_SELECTOR: str = "[class*='message-item']"
+
     def __init__(
         self,
         anti_detect_level: str = "medium",
@@ -127,8 +130,12 @@ class DoubaoSpider:
 
         for attempt in range(max_retries):
             try:
-                await page.goto(url, timeout=self.config.page_load_timeout, wait_until="networkidle")
-
+                await page.goto(url, timeout=self.config.page_load_timeout, wait_until="domcontentloaded")
+                # 只等消息节点出现：networkidle 要求全局网络静默 500ms，豆包持续的埋点与
+                # 轮询会让它独占总耗时约 80%，且等待期间没有任何进度可上报，前端因此看似卡死
+                await page.wait_for_selector(
+                    self.MESSAGE_ITEM_SELECTOR, timeout=self.config.page_load_timeout
+                )
                 current_url = page.url
                 # 检测到登录页重定向 → 反爬触发
                 if "/login" in current_url or current_url == "https://www.doubao.com/" or current_url == "https://www.doubao.com":

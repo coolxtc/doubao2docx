@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f5f7">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#17181c">
+<title>豆包聊天记录导出</title>
+<!-- 内联图标：避免浏览器自动请求 /favicon.ico 产生 404 -->
+<link rel="icon" href="data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%232563eb'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="page-head">
+  <div class="page-head-main">
+    <h1 class="page-title">豆包聊天记录导出</h1>
+    <p class="page-sub">粘贴分享链接，导出为 Word 文档</p>
+  </div>
+  <!-- 健康状态可点击重检（容器刚重启时不必刷新整页） -->
+  <button type="button" class="health" id="health" data-state="checking">
+    <span class="health-dot" aria-hidden="true"></span>
+    <span class="health-text" id="healthText">检查服务状态…</span>
+  </button>
+</header>
+
+<main class="wrap">
+
+  <section class="panel" aria-labelledby="inputTitle">
+    <h2 class="panel-title" id="inputTitle">链接与参数</h2>
+
+    <label class="field-label" for="urls">豆包链接（每行一个）</label>
+    <textarea id="urls" name="urls" rows="5" spellcheck="false" autocapitalize="off"
+              autocomplete="off" placeholder="从豆包 App 点「分享 → 复制链接」，在这里粘贴，一行一个链接&#10;例如：https://www.doubao.com/thread/abc123"></textarea>
+    <p class="field-hint" id="urlCount">已识别 0 个链接</p>
+
+    <div class="options">
+      <div class="option">
+        <label class="field-label" for="level">反爬级别</label>
+        <select id="level" name="level">
+          <option value="low">低（速度快，易被拦）</option>
+          <option value="medium" selected>中（默认，推荐）</option>
+          <option value="high">高（最慢，成功率最高）</option>
+        </select>
+      </div>
+      <div class="option">
+        <label class="field-label" for="concurrency">并发数</label>
+        <input type="number" id="concurrency" name="concurrency" value="3"
+               min="1" max="10" step="1" inputmode="numeric">
+        <span class="option-hint">8GB 内存的 NAS 建议 ≤3</span>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn btn-primary" id="submit">开始导出</button>
+      <button type="button" class="btn btn-ghost" id="clear">清空</button>
+    </div>
+  </section>
+
+  <section class="alerts" id="alerts" aria-live="polite" aria-label="提示信息"></section>
+
+  <section class="panel" aria-labelledby="progressTitle">
+    <div class="panel-head">
+      <h2 class="panel-title" id="progressTitle">导出进度</h2>
+      <p class="panel-note" id="summary">等待开始</p>
+    </div>
+    <ul class="task-list" id="taskList"></ul>
+    <p class="empty" id="empty">还没有任务。粘贴链接后点「开始导出」，完成后可在卡片上点「下载」保存到手机，也可勾选多张一起打包下载 zip。</p>
+  </section>
+
+  <p class="page-foot">导出文件保存在 NAS 的 data/export 目录，下载链接在任务结束后仍然有效。</p>
+
+</main>
+
+<!-- 吸底操作条：仅在出现可勾选卡片时才占用屏幕与正文空间 -->
+<section class="selection-bar" id="selectionBar" role="region" aria-label="批量下载" hidden>
+  <div class="selection-bar-inner">
+    <div class="selection-info">
+      <strong class="selection-count" id="selectionCount">已选 0 个</strong>
+      <span class="selection-hint" id="selectionHint">将打包为 1 个 zip，包含选中的 Word 文档</span>
+    </div>
+    <div class="selection-actions">
+      <button type="button" class="btn btn-ghost btn-select-all" id="selectAll">全选</button>
+      <button type="button" class="btn btn-primary btn-zip" id="downloadZip" disabled>下载 zip</button>
+    </div>
+  </div>
+</section>
+
+<!-- zip 下载锚点：点击后由浏览器按响应头 content-disposition 原生落地，不走 fetch+blob -->
+<a class="zip-nav" id="zipLink" aria-hidden="true" tabindex="-1"></a>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -19,6 +19,15 @@ SCROLL_IMAGES_JS = """
 }
 """
 
+# 图片容器选择器（与 extractor 取图范围一致）
+IMAGE_SELECTOR = "picture img, img[class*='image']"
+
+# 统计已挂载的 picture 容器数量，作为滚动收敛的判据
+PICTURE_COUNT_JS = "() => document.querySelectorAll('picture').length"
+
+# 滚动-挂载收敛的最大轮数，防止异常页面死循环
+MAX_IMAGE_SCROLL_ROUNDS = 6
+
 # 点击展开代码按钮
 CLICK_EXPAND_BUTTONS_JS = """
 () => {
@@ -94,10 +103,7 @@ class PageActions:
 
         if progress_callback:
             progress_callback(FetchStep.LOADING_IMAGES.value)
-        imgs = await page.query_selector_all("picture img, img[class*='image']")
-        for img in imgs:
-            await img.scroll_into_view_if_needed()
-        await page.wait_for_timeout(base_wait)
+        await self._scroll_until_images_settled(page, base_wait)
 
         await page.evaluate(SCROLL_TO_TOP_JS)
 
@@ -108,3 +114,25 @@ class PageActions:
         await page.wait_for_timeout(base_wait)
 
         await page.evaluate(SCROLL_TO_BOTTOM_JS)
+
+    async def _scroll_until_images_settled(self, page: "Page", step_wait_ms: int) -> None:
+        """
+        反复滚动直到 picture 容器数量不再增长
+
+        豆包的图片容器由滚动触发挂载，而刚挂载的容器位于视口外、需再滚一次才会
+        填充真实 URL，因此必须让滚动持续追赶挂载直到数量收敛；只滚一轮会随机漏图。
+        连续两轮数量相同即视为收敛（含恒为 0 的无图会话），轮数上限兜底。
+
+        Args:
+            page: Playwright 页面对象
+            step_wait_ms: 每轮滚动后的等待毫秒数
+        """
+        last_total: int = -1  # 上一轮已挂载的 picture 数量
+        for _ in range(MAX_IMAGE_SCROLL_ROUNDS):
+            for img in await page.query_selector_all(IMAGE_SELECTOR):
+                await img.scroll_into_view_if_needed()
+            await page.wait_for_timeout(step_wait_ms)
+            total: int = await page.evaluate(PICTURE_COUNT_JS)  # 本轮已挂载的 picture 数量
+            if total == last_total:
+                return
+            last_total = total

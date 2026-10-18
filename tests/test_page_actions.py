@@ -205,3 +205,102 @@ class TestPageActionsEdgeCases:
         await actions.scroll_all(page)
 
         page.wait_for_timeout.assert_called()
+
+
+def picture_count_sequence(counts: list[int]):
+    """
+    构造按脚本分流的 evaluate 副作用
+
+    Args:
+        counts: 每轮返回的 picture 数量，序列耗尽后固定返回 0
+
+    Returns:
+        可作为 AsyncMock(side_effect=...) 的协程函数
+    """
+    async def _evaluate(script: str, *args) -> object:
+        # 仅图片计数脚本需要返回值，其余滚动与展开脚本无返回
+        if "querySelectorAll('picture').length" in script:
+            return counts.pop(0) if counts else 0
+        return None
+
+    return _evaluate
+
+
+class TestImageScrollConvergence:
+    """滚动-挂载收敛循环"""
+
+    @pytest.fixture
+    def actions(self):
+        """等待时间极短的 PageActions"""
+        from src.scraper.page_actions import PageActions
+        config = Mock()
+        config.scroll_wait_ms = 10
+        return PageActions(config)
+
+    @pytest.mark.asyncio
+    async def test_keeps_scrolling_while_pictures_grow(self, actions):
+        """容器数量仍在增长时必须继续滚动，不得提前收敛"""
+        page = AsyncMock()
+        page.evaluate = AsyncMock(side_effect=picture_count_sequence([0, 2, 2]))
+        page.query_selector_all = AsyncMock(return_value=[])
+        page.wait_for_timeout = AsyncMock()
+
+        await actions.scroll_all(page)
+
+        # 首轮尚未挂载、次轮挂载完成仍在变化、第三轮数量不变才收敛
+        assert page.query_selector_all.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_converges_when_count_stable(self, actions):
+        """数量连续两轮相同即收敛，不跑满轮数上限"""
+        from src.scraper.page_actions import MAX_IMAGE_SCROLL_ROUNDS
+        page = AsyncMock()
+        page.evaluate = AsyncMock(side_effect=picture_count_sequence([1, 1]))
+        page.query_selector_all = AsyncMock(return_value=[])
+        page.wait_for_timeout = AsyncMock()
+
+        await actions.scroll_all(page)
+
+        assert page.query_selector_all.call_count == 2
+        assert page.query_selector_all.call_count < MAX_IMAGE_SCROLL_ROUNDS
+
+    @pytest.mark.asyncio
+    async def test_no_image_page_exits_early(self, actions):
+        """无图会话不应白耗轮数"""
+        from src.scraper.page_actions import MAX_IMAGE_SCROLL_ROUNDS
+        page = AsyncMock()
+        page.evaluate = AsyncMock(side_effect=picture_count_sequence([0, 0]))
+        page.query_selector_all = AsyncMock(return_value=[])
+        page.wait_for_timeout = AsyncMock()
+
+        await actions.scroll_all(page)
+
+        assert page.query_selector_all.call_count < MAX_IMAGE_SCROLL_ROUNDS
+
+    @pytest.mark.asyncio
+    async def test_stops_at_round_cap_when_still_growing(self, actions):
+        """容器持续增长时靠轮数上限兜底退出"""
+        from src.scraper.page_actions import MAX_IMAGE_SCROLL_ROUNDS
+        page = AsyncMock()
+        growing = list(range(1, MAX_IMAGE_SCROLL_ROUNDS + 3))  # 每轮都变多，永不收敛
+        page.evaluate = AsyncMock(side_effect=picture_count_sequence(growing))
+        page.query_selector_all = AsyncMock(return_value=[])
+        page.wait_for_timeout = AsyncMock()
+
+        await actions.scroll_all(page)
+
+        assert page.query_selector_all.call_count == MAX_IMAGE_SCROLL_ROUNDS
+
+    @pytest.mark.asyncio
+    async def test_reevaluates_selector_each_round(self, actions):
+        """每轮都重新查询图片节点，才能滚到本轮新挂载的容器"""
+        img = AsyncMock()
+        img.scroll_into_view_if_needed = AsyncMock()
+        page = AsyncMock()
+        page.evaluate = AsyncMock(side_effect=picture_count_sequence([1, 1]))
+        page.query_selector_all = AsyncMock(return_value=[img])
+        page.wait_for_timeout = AsyncMock()
+
+        await actions.scroll_all(page)
+
+        assert img.scroll_into_view_if_needed.call_count == 2

@@ -1,6 +1,7 @@
 """浏览器生命周期管理"""
 
 import logging
+import os
 import random
 from typing import TYPE_CHECKING, Any
 
@@ -12,6 +13,23 @@ if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page
 
 logger = logging.getLogger(__name__)
+
+# Chromium 启动参数环境变量名（逗号分隔）
+CHROMIUM_ARGS_ENV = "CHROMIUM_ARGS"
+
+
+def _parse_chromium_args() -> list[str]:
+    """
+    从环境变量解析 Chromium 启动参数
+
+    容器内以 root 运行必须带 --no-sandbox，桌面端不设置该环境变量时
+    返回空列表，启动行为与 Playwright 默认一致。
+
+    Returns:
+        list[str]: 解析后的参数列表，未设置时为空列表
+    """
+    raw = os.environ.get(CHROMIUM_ARGS_ENV, "")
+    return [arg.strip() for arg in raw.split(",") if arg.strip()]
 
 
 class BrowserManager:
@@ -25,6 +43,7 @@ class BrowserManager:
         self,
         anti_detect_level: str = "medium",
         config: CrawlerConfig | None = None,
+        launch_args: list[str] | None = None,
     ) -> None:
         """
         初始化浏览器管理器
@@ -32,12 +51,16 @@ class BrowserManager:
         Args:
             anti_detect_level: 反爬级别（low/medium/high）
             config: 爬虫配置，None 时自动从全局配置获取
+            launch_args: Chromium 启动参数，None 时读取 CHROMIUM_ARGS 环境变量
         """
         self.config: CrawlerConfig = config or get_config().crawler  # 爬虫配置
         self.anti_detect: AntiDetectMiddleware = create_anti_detect_middleware(
             anti_detect_level,
             user_agents=self.config.user_agents
         )  # 反爬中间件（直接传入 UA 列表，避免重复获取配置）
+        self.launch_args: list[str] = (
+            list(launch_args) if launch_args is not None else _parse_chromium_args()
+        )  # Chromium 启动参数（容器内 root 需 --no-sandbox）
         self.browser: "Browser | None" = None  # Playwright 浏览器实例
         self.context: "BrowserContext | None" = None  # Playwright 浏览器上下文
         self.playwright: "Any" = None  # Playwright 实例
@@ -62,7 +85,10 @@ class BrowserManager:
 
         self.playwright = await async_playwright().start()
         chromium = self.playwright.chromium
-        self.browser = await chromium.launch(headless=True)
+        self.browser = await chromium.launch(
+            headless=True,
+            args=self.launch_args,
+        )
         if self.browser:
             self.context = await self.browser.new_context(
                 locale="zh-CN",

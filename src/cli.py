@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 import re
 import sys
 import time
@@ -471,7 +472,10 @@ def main() -> int:
 
     print()
 
-    output_dir = Path(__file__).parent.parent / "data"
+    # 输出目录：默认仓库 data/，容器部署时由 DOUBAO_OUTPUT_DIR 指向挂载卷
+    output_dir = Path(
+        os.environ.get("DOUBAO_OUTPUT_DIR") or Path(__file__).parent.parent / "data"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     from src.utils import windows_compat_setup, windows_compat_cleanup

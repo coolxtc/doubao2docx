@@ -1,0 +1,24 @@
+# 构建上下文瘦身：源码只需 config.yaml 与 src/
+.git
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+gui
+tests
+docs
+data
+build
+dist
+playwright_browsers
+*.docx
+*.log
+*.spec
+.DS_Store
+.idea
+.vscode
+docker-compose.yml
+Dockerfile
+.dockerignore

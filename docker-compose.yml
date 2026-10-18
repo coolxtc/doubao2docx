@@ -1,0 +1,27 @@
+# 绿联 DXP4800 部署编排
+# 宿主路径需按 UGOS 实际卷位置调整，Docker 项目目录通常是 /volume1/docker/doubao-export
+services:
+  doubao-export:
+    build: .
+    image: doubao-export:latest
+    container_name: doubao-export
+    environment:
+      # 容器内以 root 运行 Chromium 必须关沙箱，/dev/shm 不足时需退回 /tmp
+      CHROMIUM_ARGS: "--no-sandbox,--disable-dev-shm-usage,--disable-gpu"
+      DOUBAO_OUTPUT_DIR: "/app/data"
+      TZ: "Asia/Shanghai"
+      # 同一时刻只跑一个导出批次（N100 四核 + 8GB 内存的上限）
+      MAX_CONCURRENT_EXPORTS: "1"
+      # 单批次超时，一次贴很多链接时按需上调（秒）
+      EXPORT_TIMEOUT: "600"
+    ports:
+      # 手机浏览器访问 http://<NAS_IP>:8090
+      - "8090:8000"
+    volumes:
+      # 导出结果落在 NAS 阵列，可直接在绿联云 App 中查看
+      - ./data:/app/data
+      # 挂载配置以便调并发（global.concurrency 建议 ≤3）
+      - ./config.yaml:/app/config.yaml:ro
+    # Chromium 共享内存默认 64MB 会直接崩溃，必须放大
+    shm_size: "1gb"
+    restart: unless-stopped

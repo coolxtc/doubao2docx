@@ -1,0 +1,594 @@
+/* 豆包导出 H5 样式：移动端优先，零外部依赖 */
+
+:root {
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --text: #1b1d21;
+  --muted: #6b7280;
+  --line: #e3e6ea;
+  --field-bg: #ffffff;
+  --accent: #2563eb;
+  --accent-press: #1b4ecb;
+  --ok: #16703a;
+  --ok-bg: #e7f4ec;
+  --warn: #8a5a00;
+  --warn-bg: #fdf3e0;
+  --bad: #b42318;
+  --bad-bg: #fdeceb;
+  --idle: #6b7280;
+  --idle-bg: #eef0f3;
+  /* 彩色底上的前景色：深色模式下强调色本身被提亮，白字对比不足，需换成深色 */
+  --on-accent: #ffffff;
+  --on-ok: #ffffff;
+  --on-bad: #ffffff;
+  --on-warn: #211a06;
+  --shadow: 0 1px 2px rgba(17, 20, 24, .06);
+  --radius: 12px;
+  /* 勾选态描边与吸底条投影：深色模式下强调色被提亮，半透明描边与投影需一并换色 */
+  --ring: rgba(37, 99, 235, .30);
+  --bar-shadow: 0 -6px 20px rgba(17, 20, 24, .10);
+}
+
+/* 深色模式：低饱和背景 + 提亮强调色，避免纯黑造成的高对比刺眼 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181c;
+    --panel: #1f2126;
+    --text: #e8eaed;
+    --muted: #9aa0a6;
+    --line: #2f333a;
+    --field-bg: #17181c;
+    --accent: #7aa2f7;
+    --accent-press: #9bbcff;
+    --ok: #7cd99a;
+    --ok-bg: #1c3325;
+    --warn: #f0c674;
+    --warn-bg: #332a17;
+    --bad: #ff8a80;
+    --bad-bg: #3a201e;
+    --idle: #9aa0a6;
+    --idle-bg: #262930;
+    --on-accent: #10141c;
+    --on-ok: #0e2116;
+    --on-bad: #2a0d0a;
+    --on-warn: #211a06;
+    --shadow: none;
+    --ring: rgba(122, 162, 247, .42);
+    --bar-shadow: 0 -6px 20px rgba(0, 0, 0, .55);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  /* 关闭 iOS 横竖屏对字号的自动放大，保持排版一致 */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--bg);
+  /* 100vh 在移动端浏览器里含地址栏高度，会撑出看不见的底部区域；优先用 dvh，旧浏览器回落 vh */
+  min-height: 100vh;
+  min-height: 100dvh;
+  touch-action: manipulation;
+  -webkit-font-smoothing: antialiased;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+a, button, input, textarea, select, label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, p { margin: 0; }
+
+/* ---------- 头部 ---------- */
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.page-title { font-size: 18px; font-weight: 600; }
+
+.page-sub { font-size: 13px; color: var(--muted); }
+
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 0 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--idle-bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.health-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+
+.health[data-state="ok"] .health-dot { background: var(--ok); }
+.health[data-state="degraded"] .health-dot { background: var(--bad); }
+.health[data-state="degraded"] { color: var(--bad); background: var(--bad-bg); border-color: transparent; }
+.health[data-state="offline"] { color: var(--warn); background: var(--warn-bg); border-color: transparent; }
+.health[data-state="offline"] .health-dot { background: var(--warn); }
+.health[data-state="checking"] .health-dot { animation: blink 1.2s infinite ease-in-out; }
+
+@keyframes blink { 50% { opacity: .25; } }
+
+/* ---------- 布局 ---------- */
+
+.wrap {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 16px;
+  /* iPhone 底部横条区域不遮挡最后的可点元素 */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
+/* 吸底操作条出现时正文要让开它，否则最后一条卡片被盖住点不到；
+   变量里存的是实测条高（已含安全区内边距），所以这里不再叠加 env() */
+body.has-selection .wrap {
+  padding-bottom: calc(16px + var(--selection-bar-h, 0px));
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.panel-head .panel-title { margin-bottom: 12px; }
+
+.panel-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.page-foot {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- 表单 ----------
+   关键：iOS Safari 在聚焦字号 <16px 的输入框时会强制放大页面，
+   因此所有 input/textarea/select 的 font-size 一律 16px，不得下调。
+*/
+
+.field-label {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+textarea, input, select {
+  width: 100%;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  min-height: 48px;
+}
+
+textarea {
+  min-height: 132px;
+  resize: vertical;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 18px center, right 12px center;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+
+textarea:focus, input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .18);
+}
+
+.field-hint {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 6px 0 14px;
+}
+
+.options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.option-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+input[type="number"] { -moz-appearance: textfield; }
+
+.actions {
+  display: grid;
+  /* 主按钮占满剩余宽度、清空按钮保持自身宽度：360px 小屏也能同排，不靠换行 */
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+/* ---------- 按钮：触摸目标 ≥44px，间距 12px 防误触 ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  min-width: 96px;
+  padding: 0 20px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+  text-decoration: none;
+}
+
+.btn-primary {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.btn-primary:active { background: var(--accent-press); }
+
+.btn-ghost {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--line);
+}
+
+.btn-ghost:active { background: var(--idle-bg); }
+
+.btn[disabled] {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+/* ---------- 提示区 ---------- */
+
+.alerts:empty { display: none; }
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.alert-error { background: var(--bad-bg); color: var(--bad); }
+.alert-warn { background: var(--warn-bg); color: var(--warn); }
+.alert-info { background: var(--idle-bg); color: var(--text); }
+
+.alert-body { flex: 1 1 auto; }
+
+.alert-close {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -11px -11px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* ---------- 进度卡片：单列，窄屏不挤 ---------- */
+
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.task-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--idle);
+  border-radius: 10px;
+  background: var(--field-bg);
+  margin-bottom: 12px;
+}
+
+.task-card:last-child { margin-bottom: 0; }
+
+.task-state-running { border-left-color: var(--accent); }
+.task-state-success { border-left-color: var(--ok); background: var(--ok-bg); }
+.task-state-failed { border-left-color: var(--bad); background: var(--bad-bg); }
+.task-state-interrupted { border-left-color: var(--warn); background: var(--warn-bg); }
+
+.task-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.task-index {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.task-tag {
+  flex: 1 1 120px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.badge {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--idle-bg);
+  color: var(--idle);
+}
+
+.task-state-running .badge { background: rgba(37, 99, 235, .14); color: var(--accent); }
+.task-state-success .badge { background: var(--ok); color: var(--on-ok); }
+.task-state-failed .badge { background: var(--bad); color: var(--on-bad); }
+.task-state-interrupted .badge { background: var(--warn); color: var(--on-warn); }
+
+/* 分段进度条：每段一个步骤，直观表达后端 0-6 的步骤语义 */
+.bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.bar-seg {
+  flex: 1 1 0;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--idle-bg);
+}
+
+.bar-seg-done { background: var(--accent); }
+.task-state-success .bar-seg-done { background: var(--ok); }
+.task-state-failed .bar-seg-done { background: var(--bad); }
+.task-state-interrupted .bar-seg-done { background: var(--warn); }
+
+.task-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.task-step { color: var(--text); font-size: 14px; }
+
+.task-detail {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.task-file {
+  display: block;
+  font-size: 14px;
+  margin: 10px 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.btn-download {
+  min-height: 48px;
+  min-width: 0;
+  padding: 0 18px;
+  font-size: 15px;
+  color: var(--ok);
+  background: var(--panel);
+  border-color: currentColor;
+  width: 100%;
+}
+
+.task-foot {
+  margin-top: 4px;
+  display: grid;
+  gap: 10px;
+}
+
+/* ---------- 多选与吸底操作条 ---------- */
+
+/* 勾选行整块 label 可点：48px 高的命中区，比裸复选框好按 */
+.pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px;
+  font-size: 15px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.pick-input {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  /* 全局 input 规则给了 min-height 48px，不收回来的话原生复选框会被拉成长方形 */
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.pick-text { flex: 1 1 auto; }
+
+/* 选中态：整圈描边 + 外环，成功卡片自带彩底也看得出来 */
+.task-card.is-picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+.task-card.is-picked .pick {
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+/* 吸底条：内边距含 env(safe-area-inset-bottom)，不被 Safari 底部工具栏与横条盖住 */
+.selection-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  box-shadow: var(--bar-shadow);
+}
+
+.selection-bar-inner {
+  display: grid;
+  gap: 10px;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.selection-info {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+
+.selection-count {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.selection-hint {
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* 主按钮吃满剩余宽度、全选按钮保持自身宽度：360px 窄屏也同排不换行 */
+.selection-actions {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.btn-select-all {
+  min-width: 0;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+.btn-zip { width: 100%; }
+
+/* 承载 zip 导航下载的锚点：必须仍在渲染树里（display:none 时部分浏览器不执行 a.click() 的默认行为），
+   但要移出可视区且不响应手指命中 */
+.zip-nav {
+  position: fixed;
+  top: -12px;
+  left: -12px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.empty {
+  font-size: 14px;
+  color: var(--muted);
+  padding: 8px 2px;
+}
+
+/* ---------- 平板 / 宽屏 ---------- */
+
+@media (min-width: 560px) {
+  .options { grid-template-columns: 1fr 1fr; }
+  .btn-download { width: auto; }
+  .page-title { font-size: 20px; }
+}

@@ -1,0 +1,30 @@
+# 绿联 UGOS Docker「项目」页专用编排
+#
+# 为什么单独一份：UGOS 的 Docker GUI 不能构建 Dockerfile（「创建」只能选现成镜像，
+# 「导入」下拉导入的是容器配置 JSON 而非镜像 tar），所以镜像需先由本机推到 ACR，
+# 这里只引用镜像地址、不含 build。
+#
+# 使用前替换两处：
+#   1. image 里的 <ACR_HOST>/<NAMESPACE> → 你的实际仓库地址
+#   2. volumes 里的宿主路径 → NAS 上实际存放目录
+services:
+  doubao-export:
+    image: <ACR_HOST>/<NAMESPACE>/doubao-export:latest
+    container_name: doubao-export
+    environment:
+      # 容器内以 root 运行 Chromium 必须关沙箱；
+      # disable-dev-shm-usage 让它改用 /tmp，因此 GUI 里设不了 shm_size 也不影响
+      CHROMIUM_ARGS: "--no-sandbox,--disable-dev-shm-usage,--disable-gpu"
+      DOUBAO_OUTPUT_DIR: "/app/data"
+      TZ: "Asia/Shanghai"
+      # link_index.json 写入无文件锁，只能单批次串行
+      MAX_CONCURRENT_EXPORTS: "1"
+      EXPORT_TIMEOUT: "600"
+    ports:
+      # 手机浏览器访问 http://<NAS_IP>:8090
+      - "8090:8000"
+    volumes:
+      # GUI 项目里用绝对路径更稳妥；导出结果在此目录，绿联云 App 可直接查看分享
+      # config.yaml 无需挂载：镜像内有兜底副本，且 Web 服务并发数由前端请求传入
+      - /volume1/docker/doubao-export/data:/app/data
+    restart: unless-stopped
