@@ -175,7 +175,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="豆包聊天记录导出",
         description="豆包聊天记录导出 Web 服务",
-        version="0.1.0",
+        version="1.1.0",
         lifespan=lifespan,
     )
     # 尽早挂载 handler，否则本函数与生命周期内的 info 日志会被静默丢弃
