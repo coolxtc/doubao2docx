@@ -59,17 +59,17 @@ class TestDownloadZipSuccess:
     @pytest.mark.asyncio
     async def test_returns_zip_with_flat_basenames(self, export_root: Path) -> None:
         """zip 条目名为 basename 平铺，数量与请求一致且不解压即损坏"""
-        write_docx(export_root, "261017/261017-1 国产CBRN防护服价格.docx", b"docx-A")
+        write_docx(export_root, "261017/261017-1 示例会话标题一.docx", b"docx-A")
         write_docx(export_root, "261017/261017-2 另一个会话.docx", b"docx-B")
         response = await download_zip(paths=[
-            "261017/261017-1 国产CBRN防护服价格.docx",
+            "261017/261017-1 示例会话标题一.docx",
             "261017/261017-2 另一个会话.docx",
         ])
         assert response.media_type == "application/zip"
         with zipfile.ZipFile(response.path) as archive:
-            assert archive.namelist() == ["261017-1 国产CBRN防护服价格.docx", "261017-2 另一个会话.docx"]
+            assert archive.namelist() == ["261017-1 示例会话标题一.docx", "261017-2 另一个会话.docx"]
             assert archive.testzip() is None
-            assert archive.read("261017-1 国产CBRN防护服价格.docx") == b"docx-A"
+            assert archive.read("261017-1 示例会话标题一.docx") == b"docx-A"
             # deflate 压缩算法，与约束一致
             assert all(info.compress_type == zipfile.ZIP_DEFLATED for info in archive.infolist())
         await response.background()
@@ -223,10 +223,10 @@ class TestDownloadZipHttpContract:
 
     def test_repeated_encoded_query_params(self, client: TestClient, export_root: Path) -> None:
         """中文加空格的重复 paths 参数能被正确解码并打包"""
-        write_docx(export_root, "261017/261017-1 国产CBRN防护服价格.docx", b"A")
-        write_docx(export_root, "261017/261017-2 医疗废物分类.docx", b"B")
+        write_docx(export_root, "261017/261017-1 示例会话标题一.docx", b"A")
+        write_docx(export_root, "261017/261017-2 示例会话标题二.docx", b"B")
         response = client.get("/api/download-zip", params={
-            "paths": ["261017/261017-1 国产CBRN防护服价格.docx", "261017/261017-2 医疗废物分类.docx"],
+            "paths": ["261017/261017-1 示例会话标题一.docx", "261017/261017-2 示例会话标题二.docx"],
         })
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/zip"
