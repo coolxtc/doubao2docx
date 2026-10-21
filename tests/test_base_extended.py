@@ -66,6 +66,33 @@ class TestWalkHandleLineBreakDiv:
         assert len(newline_items) == 0
 
 
+class TestEmptyDivAsSoftBreak:
+    """无 class 的空 div 是豆包段内软换行占位符"""
+
+    def test_empty_div_does_not_split_paragraph(self):
+        """空 div 不应让含加粗的内联容器被拆成多个块"""
+        parser = MockParser()
+        soup = BeautifulSoup(
+            '<div class="container-test">主电缆（电池到总母排）：<div></div>\n'
+            '总持续 901A，选用<strong>多股软硅橡胶线缆，4 根 120mm² 并联</strong>，'
+            '单根 120mm² 载流≈280A</div>',
+            "lxml",
+        )
+        blocks = []
+        parser._handle_div_or_section(soup.find("div"), blocks)
+
+        assert len(blocks) == 1
+        items = blocks[0].items
+        bold_index = next(i for i, item in enumerate(items) if item.bold)
+        assert items[bold_index].content == "多股软硅橡胶线缆，4 根 120mm² 并联"
+        # 加粗项两侧必须是同行文本，而不是换行项
+        assert items[bold_index - 1].content == "总持续 901A，选用"
+        assert items[bold_index + 1].content.startswith("，单根 120mm²")
+        # 空 div 的软换行语义保留在前文之后
+        assert items[0].content == "主电缆（电池到总母排）："
+        assert items[1].content == "\n"
+
+
 class TestExtractTitle:
     def test_fallback_to_title_tag(self):
         parser = MockParser()

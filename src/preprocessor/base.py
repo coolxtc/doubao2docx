@@ -572,6 +572,9 @@ class BaseParser(ABC):
         for child in element.children:
             if isinstance(child, Tag):
                 if child.name in block_tags:
+                    # 空 div 是豆包段内软换行的占位符，不构成块级内容
+                    if child.name == HTML_DIV and not child.contents:
+                        continue
                     return False
                 # 公式元素应作为独立公式块处理，不视为纯内联
                 if self._is_math_element(child):
@@ -1252,6 +1255,14 @@ class BaseParser(ABC):
                 self._walk_handle_line_break_div(child, ctx)
                 return
             # 否则：忽略 line-break 语义，继续执行后续普通容器递归
+        elif child.name == HTML_DIV and not child.contents:
+            # 无 class 的空 div：豆包用它表示段内软换行（markdown 单换行）
+            if ctx.options.handle_line_break_div:
+                prev = self._skip_whitespace_siblings(child.previous_sibling)
+                if prev is not None:
+                    ctx.flush()
+                    ctx.items.append(InlineContent(type=INLINE_TEXT, content="\n"))
+            return
 
         if not ctx.options.parse_div_span_inline:
             return  # 不解析内联内容
