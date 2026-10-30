@@ -1,6 +1,6 @@
 [project]
 name = "doubao-export"
-version = "1.1.0"
+version = "1.1.1"
 description = "导出豆包聊天记录为Word文档"
 requires-python = ">=3.10"
 dependencies = [
@@ -20,8 +20,8 @@ dev = [
     "pytest-cov>=4.0.0",
 ]
 gui = [
-    "flet>=0.85.0",
-    "flet-desktop>=0.85.0",
+    "flet>=0.85.0,<1.0",
+    "flet-desktop>=0.85.0,<1.0",
 ]
 web = [
     "fastapi>=0.136.0",

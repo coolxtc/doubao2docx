@@ -24,12 +24,10 @@ def acquire_lock():
         return False
 
 def main():
-    if getattr(sys, 'frozen', False):
-        if not acquire_lock():
-            sys.exit(0)
-        ft.app(target=main_app)
-    else:
-        ft.run(main_app)
+    # 打包后限制单实例；开发模式允许多开
+    if getattr(sys, 'frozen', False) and not acquire_lock():
+        sys.exit(0)
+    ft.run(main_app)
 
 if __name__ == "__main__":
     main()
